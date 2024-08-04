@@ -164,3 +164,4 @@ rlgym-ppo.code-workspace
 # testing data
 /data
 /wandb
+config.json
