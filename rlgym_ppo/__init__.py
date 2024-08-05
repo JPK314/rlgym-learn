@@ -1,1 +1,2 @@
-from .learner import Learner, LearnerConfig, ProcessConfig
+from .learner import Learner
+from .learner_config import LearnerConfig, ProcessConfig

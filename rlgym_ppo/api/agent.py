@@ -1,4 +1,4 @@
-from typing import Generic, List, Optional, Tuple, cast
+from typing import Any, Dict, Generic, List, Optional, Tuple
 
 from rlgym.api import (
     ActionSpaceType,
@@ -10,14 +10,15 @@ from rlgym.api import (
 )
 from torch import Tensor, device
 
-from rlgym_ppo import LearnerConfig
 from rlgym_ppo.experience import Timestep
 
-from .typing import AgentData, StateMetrics
+from ..learner_config import LearnerConfig, ProcessConfig
+from .typing import AgentConfig, AgentConfigModel, AgentData, StateMetrics
 
 
 class Agent(
     Generic[
+        AgentConfig,
         AgentID,
         ObsType,
         ActionType,
@@ -55,15 +56,19 @@ class Agent(
     def set_space_types(self, obs_space: ObsSpaceType, action_space: ActionSpaceType):
         pass
 
+    # TODO: is this needed?
     def set_device(self, device: device):
         pass
 
-    def load(self, agent_name: str, config: LearnerConfig):
+    def validate_config(self, config_obj: Any) -> AgentConfigModel[AgentConfig]:
+        pass
+
+    def load(self, agent_config: AgentConfigModel[AgentConfig]):
         """
         Function to load the agent. set_space_type and set_device will always
         be called at least once before this method.
         :param agent_name: String name of this agent, for logging and config.
-        :param config: LearnerConfig. Configuration specific to this agent can be retrieved from config.agents_config[agent_name].
+        :param agent_config: config specific for this agent.
         """
 
     def save(self):

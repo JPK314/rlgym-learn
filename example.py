@@ -32,7 +32,8 @@ from rlgym_ppo.util import reporting
 
 class ExampleLogger(PPOMetricsLogger[Tuple[np.ndarray]]):
     def report_metrics(
-        cls,
+        self,
+        agent_name,
         collected_state_metrics,
         agent_metrics,
         wandb_run,
@@ -54,7 +55,7 @@ class ExampleLogger(PPOMetricsLogger[Tuple[np.ndarray]]):
             **agent_metrics,
             "Policy Reward": np.nan,
         }
-        reporting.report_metrics(report, None, wandb_run=wandb_run)
+        reporting.report_metrics(agent_name, report, None, wandb_run=wandb_run)
 
 
 class CustomObs(DefaultObs):
@@ -226,7 +227,7 @@ if __name__ == "__main__":
         log_to_wandb=True,
         load_wandb=True,
         wandb_project_name=None,
-        wandb_group_name="rlgym-ppo-testing",
+        wandb_group_name="rlgym-learn-testing",
         wandb_run_name=None,
         save_every_ts=100_000,  # not working yet
         checkpoints_save_folder=None,  # not working yet
@@ -243,12 +244,11 @@ if __name__ == "__main__":
             critic_factory,
             trajectory_processor_factory,
             metrics_logger_factory,
-            config=agent_config,
         )
     }
 
     Learner.generate_config(
-        config=LearnerConfig(
+        learner_config=LearnerConfig(
             process_config=ProcessConfig(
                 n_proc=n_proc, min_inference_size=min_inference_size, render=False
             ),

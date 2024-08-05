@@ -6,7 +6,7 @@ import torch
 from rlgym.api import ActionType, AgentID, ObsType, RewardType
 
 from rlgym_ppo.api import ObsStandardizer
-from rlgym_ppo.ppo import TrajectoryProcessor
+from rlgym_ppo.standard_impl.ppo import TrajectoryProcessor
 from rlgym_ppo.util import WelfordRunningStat
 
 

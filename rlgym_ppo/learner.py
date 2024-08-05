@@ -8,6 +8,7 @@ and sends them to PPO, keeps track of the misc. variables and statistics for log
 reports to wandb and the console, and handles checkpointing.
 """
 
+import json
 import os
 import random
 from typing import Any, Callable, Dict, Generic, List, Optional, Tuple, Type
@@ -39,25 +40,12 @@ from rlgym_ppo.env_processing import EnvProcessInterface
 from rlgym_ppo.util import KBHit
 from rlgym_ppo.util.torch_functions import get_device
 
+from .learner_config import LearnerConfig, ProcessConfig
+
 DEFAULT_CONFIG_FILENAME = "config.json"
-
-
-class ProcessConfig(BaseModel):
-    n_proc: int = 8
-    shm_buffer_size: int = 8192
-    min_inference_size: int = 6
-    render: bool = False
-    render_delay: float = 0
-    timestep_limit: int = 5_000_000_000
-    instance_launch_delay: Optional[float] = None
-    recalculate_agent_id_every_step: bool = False
-
-
-class LearnerConfig(BaseModel):
-    device: str = "auto"
-    random_seed: int = 123
-    process_config: ProcessConfig = ProcessConfig()
-    agents_config: Dict[str, BaseModel] = Field(default_factory=dict)
+LEARNER_CONFIG = "learner_config"
+PROCESS_CONFIG = "process_config"
+AGENTS_CONFIG = "agents_config"
 
 
 class Learner(
@@ -91,6 +79,7 @@ class Learner(
         agents: Dict[
             str,
             Agent[
+                Any,
                 AgentID,
                 ObsType,
                 ActionType,
@@ -122,11 +111,11 @@ class Learner(
         with open(config_location, "rt") as f:
             self.config = LearnerConfig.model_validate_json(f.read())
 
-        torch.manual_seed(self.config.random_seed)
-        np.random.seed(self.config.random_seed)
-        random.seed(self.config.random_seed)
+        torch.manual_seed(self.config.base_config.random_seed)
+        np.random.seed(self.config.base_config.random_seed)
+        random.seed(self.config.base_config.random_seed)
 
-        self.device = get_device(self.config.device)
+        self.device = get_device(self.config.base_config.device)
         print(f"Using device {self.device}")
 
         print("Initializing processes...")
@@ -146,7 +135,7 @@ class Learner(
             collect_state_metrics_fn=collect_state_metrics_fn,
             obs_standardizer=obs_standardizer,
             min_inference_size=self.config.process_config.min_inference_size,
-            seed=self.config.random_seed,
+            seed=self.config.base_config.random_seed,
             recalculate_agent_id_every_step=self.config.process_config.recalculate_agent_id_every_step,
         )
         obs_space, action_space, self.initial_obs_list = (
@@ -161,12 +150,12 @@ class Learner(
         print("Loading agents...")
         self.agent_manager.set_space_types(obs_space, action_space)
         self.agent_manager.set_device(self.device)
-        self.agent_manager.load_agents(self.config.agents_config)
+        self.agent_manager.load_agents(self.config)
         print("Learner successfully initialized!")
 
     @staticmethod
     def generate_config(
-        config=LearnerConfig(),
+        learner_config=LearnerConfig(),
         config_location: Optional[str] = None,
     ):
         if config_location is None:
@@ -176,12 +165,12 @@ class Learner(
                 f"File {config_location} exists already. Overwrite? (y)/n\t"
             )
             if confirmation != "" and confirmation.lower() != "y":
-                print("Aborting config generation.")
+                print("Aborting config generation, proceeding with existing config...")
             else:
                 print("Proceeding with config creation...")
-        with open(config_location, "wt") as f:
-            f.write(config.model_dump_json(indent=4))
-        print(f"Config created at {config_location}.")
+                with open(config_location, "wt") as f:
+                    f.write(learner_config.model_dump_json(indent=4))
+                print(f"Config created at {config_location}.")
 
     def learn(self):
         """
@@ -224,7 +213,7 @@ class Learner(
 
         # While the number of timesteps we have collected so far is less than the
         # amount we are allowed to collect.
-        while self.cumulative_timesteps < self.config.timestep_limit:
+        while self.cumulative_timesteps < self.config.base_config.timestep_limit:
             # Collect the desired number of timesteps from our agent.
             obs_list, timesteps, state_metrics = (
                 self.env_process_interface.collect_step_data()

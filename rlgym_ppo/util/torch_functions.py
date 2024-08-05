@@ -21,18 +21,6 @@ def get_device(device: str):
         return device
 
 
-def get_layers(model: torch.Module):
-    layers = []
-    first = True
-    for layer in model:
-        if first and hasattr(layer, "in_features"):
-            layer.append(layer.in_features)
-            first = False
-        if hasattr(layer, "out_features"):
-            layer.append(layer.out_features)
-    return tuple(layers)
-
-
 class MapContinuousToAction(nn.Module):
     """
     A class for policies using the continuous action space. Continuous policies output N*2 values for N actions where

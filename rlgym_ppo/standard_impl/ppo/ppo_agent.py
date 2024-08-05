@@ -5,7 +5,6 @@ from typing import Any, Callable, Dict, Generic, List, Optional, Tuple
 from uuid import UUID
 
 import torch
-from numpy import ndarray
 from pydantic import BaseModel, Field
 from rlgym.api import (
     ActionSpaceType,
@@ -19,11 +18,17 @@ from torch import device as _device
 from wandb.wandb_run import Run
 
 import wandb
-from rlgym_ppo import LearnerConfig
-from rlgym_ppo.api import Agent, MetricsLogger, RewardTypeWrapper, StateMetrics
+from rlgym_ppo.api import (
+    Agent,
+    AgentConfigModel,
+    MetricsLogger,
+    RewardTypeWrapper,
+    StateMetrics,
+)
 from rlgym_ppo.experience import Timestep
-from rlgym_ppo.util.torch_functions import get_device, get_layers
+from rlgym_ppo.util.torch_functions import get_device
 
+from ...learner_config import LearnerConfig, ProcessConfig
 from .actor import Actor
 from .critic import Critic
 from .experience_buffer import ExperienceBuffer
@@ -55,6 +60,7 @@ class PPOAgentConfig(BaseModel):
     random_seed: int = 123
     device: str = "auto"
     trajectory_processor_args: Dict[str, Any] = Field(default_factory=dict)
+    additional_wandb_config: Dict[str, Any] = Field(default_factory=dict)
 
 
 @dataclass
@@ -70,6 +76,7 @@ class PPOAgentData(Generic[TrajectoryProcessorData]):
 # TODO: return stats, average reward
 class PPOAgent(
     Agent[
+        PPOAgentConfig,
         AgentID,
         ObsType,
         ActionType,
@@ -125,28 +132,30 @@ class PPOAgent(
         self.obs_space = obs_space
         self.action_space = action_space
 
-    def load(self, agent_name: str, learner_config: LearnerConfig):
-        self.agent_name = agent_name
-        self.config = PPOAgentConfig.model_validate(
-            learner_config.agents_config[agent_name]
-        )
-        self.device = get_device(self.config.device)
+    def validate_config(self, config_obj: Any) -> AgentConfigModel[PPOAgentConfig]:
+        return AgentConfigModel[PPOAgentConfig].model_validate(config_obj)
+
+    def load(self, agent_config):
+        self.config = agent_config
+        self.device = get_device(self.config.base_config.device)
         self.experience_buffer = ExperienceBuffer(
-            self.trajectory_processor_factory(**self.config.trajectory_processor_args),
-            self.config.exp_buffer_size,
-            self.config.random_seed,
+            self.trajectory_processor_factory(
+                **self.config.agent_config.trajectory_processor_args
+            ),
+            self.config.agent_config.exp_buffer_size,
+            self.config.agent_config.random_seed,
             self.device,
         )
         self.learner = PPOLearner(
             self.actor_factory(self.obs_space, self.action_space, self.device),
             self.critic_factory(self.obs_space, self.device),
-            self.config.batch_size,
-            self.config.n_epochs,
-            self.config.actor_lr,
-            self.config.critic_lr,
-            self.config.clip_range,
-            self.config.ent_coef,
-            self.config.minibatch_size,
+            self.config.agent_config.batch_size,
+            self.config.agent_config.n_epochs,
+            self.config.agent_config.actor_lr,
+            self.config.agent_config.critic_lr,
+            self.config.agent_config.clip_range,
+            self.config.agent_config.ent_coef,
+            self.config.agent_config.minibatch_size,
             self.device,
         )
         if self.metrics_logger_factory is not None:
@@ -154,29 +163,29 @@ class PPOAgent(
         else:
             self.metrics_logger = None
 
-        print(f"{self.agent_name}: Using device {self.device}")
+        print(f"{self.config.agent_name}: Using device {self.device}")
 
-        checkpoints_save_folder = self.config.checkpoints_save_folder
+        checkpoints_save_folder = self.config.agent_config.checkpoints_save_folder
         if checkpoints_save_folder is None:
             checkpoints_save_folder = os.path.join(
                 os.getcwd(), "data", "checkpoints", "rlgym-ppo-run"
             )
         # Add the option for the user to turn off the addition of Unix Timestamps to
         # the ``checkpoints_save_folder`` path
-        if self.config.add_unix_timestamp:
+        if self.config.agent_config.add_unix_timestamp:
             checkpoints_save_folder = f"{checkpoints_save_folder}-{time.time_ns()}"
         self.checkpoints_save_folder = checkpoints_save_folder
         print(
-            f"{self.agent_name}: Saving checkpoints to {self.checkpoints_save_folder}"
+            f"{self.config.agent_name}: Saving checkpoints to {self.checkpoints_save_folder}"
         )
 
-        self._load_wandb(self, learner_config)
+        self._load_wandb()
         self.ts_since_last_save = 0
 
-    def _load_wandb(self, learner_config: LearnerConfig):
+    def _load_wandb(self):
         wandb_config_agent = {
             key: value
-            for (key, value) in self.config.__dict__.items()
+            for (key, value) in self.config.agent_config.__dict__.items()
             if key
             in [
                 "timesteps_per_iteration",
@@ -190,47 +199,44 @@ class PPOAgent(
                 "critic_lr",
             ]
         }
-        wandb_config_process = {
-            key: value
-            for (key, value) in learner_config.__dict__.items()
-            if key
-            in [
-                "n_proc",
-                "min_inference_size",
-                "timestep_limit",
-            ]
-        }
         wandb_config = {
             **wandb_config_agent,
-            **wandb_config_process,
-            "actor_layer_sizes": get_layers(self.learner.actor),
-            "critic_layer_sizes": get_layers(self.learner.critic),
-            **self.config.trajectory_processor_args,
+            "n_proc": self.config.process_config.n_proc,
+            "min_inference_size": self.config.process_config.min_inference_size,
+            "timestep_limit": self.config.base_config.timestep_limit,
+            **self.config.agent_config.trajectory_processor_args,
+            **self.config.agent_config.additional_wandb_config,
         }
-        wandb_loaded = self.config.checkpoint_load_folder is not None and self.load(
-            self.config.checkpoint_load_folder,
-            self.config.load_wandb,
-            self.config.actor_lr,
-            self.config.critic_lr,
-        )
+        wandb_loaded = False
+        # TODO: add loading for wandb and other persistent values
+        # wandb_loaded = self.config.agent_config.checkpoint_load_folder is not None and self.load(
+        #     self.config.agent_config.checkpoint_load_folder,
+        #     self.config.agent_config.load_wandb,
+        #     self.config.agent_config.actor_lr,
+        #     self.config.agent_config.critic_lr,
+        # )
 
-        if self.config.log_to_wandb and self.wandb_run is None and not wandb_loaded:
+        if (
+            self.config.agent_config.log_to_wandb
+            and self.wandb_run is None
+            and not wandb_loaded
+        ):
             project = (
-                "rlgym-ppo"
-                if self.config.wandb_project_name is None
-                else self.config.wandb_project_name
+                "rlgym-learn"
+                if self.config.agent_config.wandb_project_name is None
+                else self.config.agent_config.wandb_project_name
             )
             group = (
                 "unnamed-runs"
-                if self.config.wandb_group_name is None
-                else self.config.wandb_group_name
+                if self.config.agent_config.wandb_group_name is None
+                else self.config.agent_config.wandb_group_name
             )
             run_name = (
-                "rlgym-ppo-run"
-                if self.config.wandb_run_name is None
-                else self.config.wandb_run_name
+                "rlgym-learn-run"
+                if self.config.agent_config.wandb_run_name is None
+                else self.config.agent_config.wandb_run_name
             )
-            print(f"{self.agent_name}: Attempting to create new wandb run...")
+            print(f"{self.config.agent_name}: Attempting to create new wandb run...")
             self.wandb_run = wandb.init(
                 project=project,
                 group=group,
@@ -238,7 +244,9 @@ class PPOAgent(
                 name=run_name,
                 reinit=True,
             )
-            print(f"{self.agent_name}: Created new wandb run!", self.wandb_run.id)
+            print(
+                f"{self.config.agent_name}: Created new wandb run!", self.wandb_run.id
+            )
 
     @torch.no_grad
     def get_actions(self, obs_list):
@@ -261,7 +269,7 @@ class PPOAgent(
         self.iteration_timesteps += len(timesteps)
         self.cumulative_timesteps += len(timesteps)
         self.iteration_state_metrics += state_metrics
-        if self.iteration_timesteps >= self.config.timesteps_per_iteration:
+        if self.iteration_timesteps >= self.config.agent_config.timesteps_per_iteration:
             self.timestep_collection_end_time = time.perf_counter()
             self._learn()
 
@@ -293,7 +301,7 @@ class PPOAgent(
                 self.iteration_state_metrics
             )
             self.metrics_logger.report_metrics(
-                self.agent_name,
+                self.config.agent_name,
                 state_metrics,
                 agent_metrics,
                 self.wandb_run,

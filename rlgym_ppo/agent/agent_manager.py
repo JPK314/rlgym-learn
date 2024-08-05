@@ -1,4 +1,4 @@
-from typing import Dict, Generic, Iterable, List, Tuple
+from typing import Any, Dict, Generic, Iterable, List, Tuple
 
 import numpy as np
 from pydantic import BaseModel
@@ -12,9 +12,10 @@ from rlgym.api import (
 )
 from torch import Tensor, as_tensor, int64, stack
 
-from rlgym_ppo import LearnerConfig
-from rlgym_ppo.api import Agent, AgentData, StateMetrics
+from rlgym_ppo.api import Agent, AgentConfigModel, AgentData, StateMetrics
 from rlgym_ppo.experience import Timestep
+
+from ..learner_config import LearnerConfig, ProcessConfig
 
 
 class AgentManager(
@@ -26,7 +27,6 @@ class AgentManager(
         ObsSpaceType,
         ActionSpaceType,
         StateMetrics,
-        AgentData,
     ]
 ):
     def __init__(
@@ -34,6 +34,7 @@ class AgentManager(
         agents: Dict[
             str,
             Agent[
+                Any,
                 AgentID,
                 ObsType,
                 ActionType,
@@ -41,7 +42,7 @@ class AgentManager(
                 ObsSpaceType,
                 ActionSpaceType,
                 StateMetrics,
-                AgentData,
+                Any,
             ],
         ],
     ) -> None:
@@ -103,12 +104,23 @@ class AgentManager(
         for agent in self.agents_list:
             agent.set_device(device)
 
-    def load_agents(self, config: LearnerConfig):
+    def load_agents(
+        self,
+        learner_config: LearnerConfig,
+    ):
         for agent_name, agent in self.agents.items():
             assert (
-                agent_name in config.agents_config
-            ), f"Agent {agent_name} not present in config"
-            agent.load(agent_name, config)
+                agent_name in learner_config.agents_config
+            ), f"Agent {agent_name} not present in agents_config"
+            agent_config = agent.validate_config(
+                AgentConfigModel(
+                    agent_name=agent_name,
+                    agent_config=learner_config.agents_config[agent_name],
+                    base_config=learner_config.base_config,
+                    process_config=learner_config.process_config,
+                ).model_dump()
+            )
+            agent.load(agent_config)
 
     def save_agents(self):
         for agent in self.agents_list:
