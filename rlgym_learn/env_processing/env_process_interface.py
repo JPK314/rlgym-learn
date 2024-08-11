@@ -120,7 +120,8 @@ class EnvProcessInterface(
         self.cumulative_timesteps = 0
         self.min_inference_size = min_inference_size
 
-        self.trajectory_id_map: List[Dict[AgentID, UUID]]
+        self.current_timestep_id_map: List[Dict[AgentID, UUID]] = []
+        self.current_timestep_new_episode: List[bool] = []
         self.prev_time = 0
 
         self.recalculate_agent_id_every_step = recalculate_agent_id_every_step
@@ -315,9 +316,16 @@ class EnvProcessInterface(
 
         timesteps: List[Timestep] = []
         for agent_id in agent_ids:
+            prev_timestep_id = self.current_timestep_id_map[proc_id][agent_id]
+            self.current_timestep_id_map[proc_id][agent_id] = uuid4()
             timesteps.append(
                 Timestep(
-                    self.trajectory_id_map[proc_id][agent_id],
+                    self.current_timestep_id_map[proc_id][agent_id],
+                    (
+                        None
+                        if self.current_timestep_new_episode[proc_id]
+                        else prev_timestep_id
+                    ),
                     agent_id,
                     self.current_obs[proc_id][agent_id],
                     obs_dict[agent_id],
@@ -329,13 +337,10 @@ class EnvProcessInterface(
                 )
             )
         if new_episode:
-            self.trajectory_id_map[proc_id].clear()
-            for agent_id in new_episode_agent_ids:
-                self.trajectory_id_map[proc_id][agent_id] = uuid4()
-
             self.current_obs[proc_id] = new_episode_obs_dict
         else:
             self.current_obs[proc_id] = obs_dict
+        self.current_timestep_new_episode[proc_id] = new_episode
 
         return timesteps, obs_dict, metrics
 
@@ -356,6 +361,7 @@ class EnvProcessInterface(
                 offset = 0
                 (n_agents, offset) = comm_consts.retrieve_int(shm_view, offset)
                 obs_dict = {}
+                timestep_dict = {}
                 new_episode_agent_ids: List[AgentID] = []
                 for _ in range(n_agents):
                     (agent_id_bytes, offset) = comm_consts.retrieve_bytes(
@@ -366,8 +372,10 @@ class EnvProcessInterface(
                     (obs_bytes, offset) = comm_consts.retrieve_bytes(shm_view, offset)
                     obs = self.obs_type_serde.from_bytes(obs_bytes)
                     obs_dict[agent_id] = obs
-                    self.trajectory_id_map[proc_id][agent_id] = uuid4()
+                    timestep_dict[agent_id] = None
                 self.current_obs[proc_id] = obs_dict
+                self.current_timestep_id_map[proc_id] = timestep_dict
+                self.current_timestep_new_episode[proc_id] = True
 
         obs_dict_list = self.current_obs
 
@@ -445,7 +453,8 @@ class EnvProcessInterface(
             "b", n_processes * self.shm_size
         )
         self.processes = [None for i in range(n_processes)]
-        self.trajectory_id_map = [{} for _ in range(n_processes)]
+        self.current_timestep_id_map = [{} for _ in range(n_processes)]
+        self.current_timestep_new_episode = [True for _ in range(n_processes)]
 
         self.current_obs: List[Optional[Dict[AgentID, ObsType]]] = [
             None for i in range(n_processes)

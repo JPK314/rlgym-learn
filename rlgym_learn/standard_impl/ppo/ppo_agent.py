@@ -126,7 +126,7 @@ class PPOAgent(
         else:
             self.metrics_logger = None
 
-        self.current_trajectories: Dict[
+        self.current_trajectories_by_latest_timestep_id: Dict[
             UUID,
             Trajectory[AgentID, ActionType, ObsType, RewardTypeWrapper[RewardType]],
         ] = {}
@@ -391,12 +391,23 @@ class PPOAgent(
         state_metrics: List[StateMetrics],
     ):
         for timestep in timesteps:
-            if timestep.trajectory_id in self.current_trajectories:
-                self.current_trajectories[timestep.trajectory_id].add_timestep(timestep)
+            if (
+                timestep.previous_timestep_id is not None
+                and timestep.previous_timestep_id
+                in self.current_trajectories_by_latest_timestep_id
+            ):
+                self.current_trajectories_by_latest_timestep_id[
+                    timestep.timestep_id
+                ] = self.current_trajectories_by_latest_timestep_id.pop(
+                    timestep.previous_timestep_id
+                )
+                self.current_trajectories_by_latest_timestep_id[
+                    timestep.timestep_id
+                ].add_timestep(timestep)
             else:
                 trajectory = Trajectory(timestep.agent_id)
                 trajectory.add_timestep(timestep)
-                self.current_trajectories[timestep.trajectory_id] = trajectory
+                self.current_trajectories[timestep.timestep_id] = trajectory
         self.iteration_timesteps += len(timesteps)
         self.cumulative_timesteps += len(timesteps)
         self.iteration_state_metrics += state_metrics
