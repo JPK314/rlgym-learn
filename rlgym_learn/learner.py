@@ -28,17 +28,17 @@ from rlgym.api import (
     StateType,
 )
 
-from rlgym_ppo.agent import AgentManager
-from rlgym_ppo.api import (
+from rlgym_learn.agent import AgentManager
+from rlgym_learn.api import (
     Agent,
     ObsStandardizer,
     RewardTypeWrapper,
     StateMetrics,
     TypeSerde,
 )
-from rlgym_ppo.env_processing import EnvProcessInterface
-from rlgym_ppo.util import KBHit
-from rlgym_ppo.util.torch_functions import get_device
+from rlgym_learn.env_processing import EnvProcessInterface
+from rlgym_learn.util import KBHit
+from rlgym_learn.util.torch_functions import get_device
 
 from .learner_config import DEFAULT_CONFIG_FILENAME, LearnerConfigModel
 

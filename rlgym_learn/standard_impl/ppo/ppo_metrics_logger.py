@@ -2,9 +2,9 @@ from typing import Any, Dict, List
 
 from wandb.wandb_run import Run
 
-from rlgym_ppo.api import MetricsLogger, StateMetrics
-from rlgym_ppo.standard_impl.ppo import PPOAgentData
-from rlgym_ppo.util import reporting
+from rlgym_learn.api import MetricsLogger, StateMetrics
+from rlgym_learn.standard_impl.ppo import PPOAgentData
+from rlgym_learn.util import reporting
 
 from .gae_trajectory_processor import GAETrajectoryProcessorData
 

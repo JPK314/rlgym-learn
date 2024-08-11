@@ -4,7 +4,7 @@ from typing import Generic, List, Tuple, TypeVar
 from rlgym.api import ActionType, AgentID, ObsType, RewardType
 from torch import Tensor, device, dtype
 
-from rlgym_ppo.api import RewardTypeWrapper
+from rlgym_learn.api import RewardTypeWrapper
 
 from .trajectory import Trajectory
 

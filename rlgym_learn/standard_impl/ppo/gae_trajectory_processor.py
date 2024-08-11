@@ -5,7 +5,7 @@ import numpy as np
 import torch
 from rlgym.api import ActionType, AgentID, ObsType, RewardType
 
-from rlgym_ppo.util import WelfordRunningStat
+from rlgym_learn.util import WelfordRunningStat
 
 from .trajectory_processor import TrajectoryProcessor
 

@@ -11,7 +11,7 @@ from rlgym.api import (
 )
 from torch import Tensor, device
 
-from rlgym_ppo.experience import Timestep
+from rlgym_learn.experience import Timestep
 
 from ..learner_config import BaseConfigModel, ProcessConfigModel
 from .typing import AgentConfig, AgentData, StateMetrics

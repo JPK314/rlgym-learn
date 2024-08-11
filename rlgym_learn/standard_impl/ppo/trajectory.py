@@ -5,7 +5,7 @@ import torch
 from rlgym.api import ActionType, AgentID, ObsType, RewardType
 from torch import Tensor
 
-from rlgym_ppo.experience import Timestep
+from rlgym_learn.experience import Timestep
 
 
 class Trajectory(Generic[AgentID, ActionType, ObsType, RewardType]):

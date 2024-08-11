@@ -3,7 +3,7 @@ from typing import Type
 from rlgym.api import AgentID, RewardFunction, RewardType, StateType
 from torch import as_tensor as _as_tensor
 
-from rlgym_ppo.api import RewardTypeWrapper
+from rlgym_learn.api import RewardTypeWrapper
 
 
 class FloatRewardTypeWrapper(RewardTypeWrapper[float]):

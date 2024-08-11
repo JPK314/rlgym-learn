@@ -21,15 +21,15 @@ from torch import device as _device
 from wandb.wandb_run import Run
 
 import wandb
-from rlgym_ppo.api import (
+from rlgym_learn.api import (
     Agent,
     DerivedMetricsLoggerConfig,
     MetricsLogger,
     RewardTypeWrapper,
     StateMetrics,
 )
-from rlgym_ppo.experience import Timestep
-from rlgym_ppo.util.torch_functions import get_device
+from rlgym_learn.experience import Timestep
+from rlgym_learn.util.torch_functions import get_device
 
 from ...learner_config import BaseConfigModel, ProcessConfigModel, WandbConfigModel
 from .actor import Actor

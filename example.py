@@ -6,7 +6,7 @@ from rlgym.rocket_league.api import GameState
 from rlgym.rocket_league.common_values import CAR_MAX_SPEED
 from rlgym.rocket_league.obs_builders import DefaultObs
 
-from rlgym_ppo import (
+from rlgym_learn import (
     BaseConfigModel,
     Learner,
     LearnerConfigModel,
@@ -14,7 +14,7 @@ from rlgym_ppo import (
     WandbConfigModel,
     generate_config,
 )
-from rlgym_ppo.standard_impl import (
+from rlgym_learn.standard_impl import (
     FloatRewardTypeWrapper,
     FloatSerde,
     HomogeneousTupleSerde,
@@ -26,7 +26,7 @@ from rlgym_ppo.standard_impl import (
     StrIntTupleSerde,
     StrSerde,
 )
-from rlgym_ppo.standard_impl.ppo import (
+from rlgym_learn.standard_impl.ppo import (
     BasicCritic,
     DiscreteFF,
     ExperienceBufferConfigModel,
@@ -36,7 +36,7 @@ from rlgym_ppo.standard_impl.ppo import (
     PPOLearnerConfigModel,
     PPOMetricsLogger,
 )
-from rlgym_ppo.util import reporting
+from rlgym_learn.util import reporting
 
 
 class ExampleLogger(PPOMetricsLogger[Tuple[np.ndarray]]):
@@ -243,7 +243,7 @@ if __name__ == "__main__":
         timesteps_per_iteration=10_000,
         save_every_ts=100_000,
         add_unix_timestamp=True,
-        checkpoint_load_folder="agents_checkpoints/PPO1/rlgym-learn-run-1723343938931125500/1723343960393463000",
+        checkpoint_load_folder="agents_checkpoints/PPO1/rlgym-learn-run-1723394601682346400/1723394622757846600",
         checkpoints_save_folder=None,
         n_checkpoints_to_keep=5,
         random_seed=123,

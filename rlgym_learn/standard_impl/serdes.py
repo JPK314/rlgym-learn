@@ -4,7 +4,7 @@ from typing import Generic, Iterable, List, Tuple, Type, TypeVar, Union
 import numpy as np
 from rlgym.api import RewardType
 
-from rlgym_ppo.api import RewardTypeWrapper, TypeSerde
+from rlgym_learn.api import RewardTypeWrapper, TypeSerde
 
 FLOAT_SIZE = struct.calcsize("f")
 INTEGER_SIZE = struct.calcsize("I")

@@ -12,8 +12,8 @@ from rlgym.api import (
     StateType,
 )
 
-from rlgym_ppo.api import StateMetrics, TypeSerde
-from rlgym_ppo.util.comm_consts import PACKET_MAX_SIZE
+from rlgym_learn.api import StateMetrics, TypeSerde
+from rlgym_learn.util.comm_consts import PACKET_MAX_SIZE
 
 
 def env_process(
@@ -69,7 +69,7 @@ def env_process(
 
     import numpy as np
 
-    from rlgym_ppo.util import comm_consts
+    from rlgym_learn.util import comm_consts
 
     if render:
         try:

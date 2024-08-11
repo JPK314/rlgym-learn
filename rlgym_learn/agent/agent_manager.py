@@ -12,8 +12,8 @@ from rlgym.api import (
 )
 from torch import Tensor, as_tensor, int64, stack
 
-from rlgym_ppo.api import Agent, DerivedAgentConfig, StateMetrics
-from rlgym_ppo.experience import Timestep
+from rlgym_learn.api import Agent, DerivedAgentConfig, StateMetrics
+from rlgym_learn.experience import Timestep
 
 from ..learner_config import LearnerConfigModel
 

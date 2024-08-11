@@ -14,7 +14,7 @@ import torch
 import torch.nn as nn
 from rlgym.api import AgentID
 
-from rlgym_ppo.util import torch_functions
+from rlgym_learn.util import torch_functions
 
 from .actor import Actor
 

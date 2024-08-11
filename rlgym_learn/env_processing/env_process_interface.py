@@ -19,10 +19,10 @@ import numpy as np
 import torch
 from numpy import frombuffer
 
-from rlgym_ppo.api import ObsStandardizer, TypeSerde
-from rlgym_ppo.env_processing.env_process import env_process
-from rlgym_ppo.util import comm_consts
-from rlgym_ppo.util.comm_consts import PACKET_MAX_SIZE
+from rlgym_learn.api import ObsStandardizer, TypeSerde
+from rlgym_learn.env_processing.env_process import env_process
+from rlgym_learn.util import comm_consts
+from rlgym_learn.util.comm_consts import PACKET_MAX_SIZE
 
 try:
     from tqdm import tqdm
@@ -48,8 +48,8 @@ from rlgym.api import (
 )
 from torch import Tensor
 
-from rlgym_ppo.api import StateMetrics
-from rlgym_ppo.experience import Timestep
+from rlgym_learn.api import StateMetrics
+from rlgym_learn.experience import Timestep
 
 
 class EnvProcessInterface(
