@@ -184,7 +184,8 @@ class Learner(
         # TODO: add keys to increase / decrease number of env processes
         kb = KBHit()
         print(
-            "Press (p) to pause (c) to checkpoint, (q) to checkpoint and quit (after next iteration)\n"
+            "Press (p) to pause, (c) to checkpoint, (q) to checkpoint and quit (after next iteration)\n"
+            + "(a) to add an env process, (d) to delete an env process\n"
         )
 
         # Handle actions for observations created on process init
@@ -220,6 +221,18 @@ class Learner(
                     return
                 if c in ("c", "p"):
                     print("Resuming...\n")
+                if c == "a":
+                    print("Adding process...")
+                    self.env_process_interface.add_process()
+                    print(
+                        f"Process added. ({self.env_process_interface.n_procs} total)"
+                    )
+                if c == "d":
+                    print("Deleting process...")
+                    self.env_process_interface.delete_process()
+                    print(
+                        f"Process deleted. ({self.env_process_interface.n_procs} total)"
+                    )
 
     def save(self, cumulative_timesteps):
         raise NotImplementedError

@@ -244,7 +244,6 @@ if __name__ == "__main__":
         save_every_ts=100_000,
         add_unix_timestamp=True,
         checkpoint_load_folder="agents_checkpoints/PPO1/rlgym-learn-run-1723394601682346400/1723394622757846600",
-        checkpoints_save_folder=None,
         n_checkpoints_to_keep=5,
         random_seed=123,
         device="auto",

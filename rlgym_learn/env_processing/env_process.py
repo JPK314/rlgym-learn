@@ -43,7 +43,6 @@ def env_process(
         [StateType, Dict[AgentID, RewardType]], StateMetrics
     ],
     shm_buffer,
-    shm_offset: int,
     shm_size: int,
     seed,
     render: bool,
@@ -86,7 +85,7 @@ def env_process(
     shm_view = np.frombuffer(
         buffer=shm_buffer,
         dtype=np.byte,
-        offset=shm_offset,
+        offset=0,
         count=shm_size,
     )
 

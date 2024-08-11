@@ -9,7 +9,7 @@ Description:
 """
 
 import multiprocessing as mp
-import pickle
+import multiprocessing.sharedctypes
 import selectors
 import socket
 import time
@@ -128,6 +128,8 @@ class EnvProcessInterface(
 
         self.n_procs = 0
 
+        self.new_process_observations: List[Tuple[int, Dict[AgentID, ObsType]]] = []
+
         self.packed_actions_header = comm_consts.pack_header(
             comm_consts.POLICY_ACTIONS_HEADER
         )
@@ -205,7 +207,10 @@ class EnvProcessInterface(
         """
         n_collected = 0
         collected_timesteps: List[Timestep] = []
-        observations: List[Tuple[int, Dict[AgentID, ObsType]]] = []
+        observations: List[Tuple[int, Dict[AgentID, ObsType]]] = (
+            self.new_process_observations
+        )
+        self.new_process_observations = []
         collected_metrics: List[List[np.ndarray]] = []
         while n_collected < n_obs_per_inference:
             for key, event in self.selector.select():
@@ -362,13 +367,11 @@ class EnvProcessInterface(
                 (n_agents, offset) = comm_consts.retrieve_int(shm_view, offset)
                 obs_dict = {}
                 timestep_dict = {}
-                new_episode_agent_ids: List[AgentID] = []
                 for _ in range(n_agents):
                     (agent_id_bytes, offset) = comm_consts.retrieve_bytes(
                         shm_view, offset
                     )
                     agent_id = self.agent_id_serde.from_bytes(agent_id_bytes)
-                    new_episode_agent_ids.append(agent_id)
                     (obs_bytes, offset) = comm_consts.retrieve_bytes(shm_view, offset)
                     obs = self.obs_type_serde.from_bytes(obs_bytes)
                     obs_dict[agent_id] = obs
@@ -376,6 +379,8 @@ class EnvProcessInterface(
                 self.current_obs[proc_id] = obs_dict
                 self.current_timestep_id_map[proc_id] = timestep_dict
                 self.current_timestep_new_episode[proc_id] = True
+            else:
+                raise Exception(f"Unexpected header received from process: {header}")
 
         obs_dict_list = self.current_obs
 
@@ -420,6 +425,97 @@ class EnvProcessInterface(
 
         return (obs_space, action_space)
 
+    # TODO: allow changing of min inference size?
+    def add_process(self, shm_buffer_size=8192):
+        proc_id = self.n_procs
+        self.n_procs += 1
+        can_fork = "forkserver" in mp.get_all_start_methods()
+        start_method = "forkserver" if can_fork else "spawn"
+        context = mp.get_context(start_method)
+        shm_buffer = multiprocessing.sharedctypes.RawArray("b", shm_buffer_size)
+        shm_view = frombuffer(
+            buffer=shm_buffer,
+            dtype=np.byte,
+            offset=0,
+            count=shm_buffer_size,
+        )
+
+        self.processes.append(None)
+        self.current_timestep_id_map.append({})
+        self.current_timestep_new_episode.append(True)
+        self.current_obs.append(None)
+        self.current_actions.append(None)
+        self.current_log_probs.append(None)
+
+        # Set up process
+        parent_end = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        parent_end.bind(("127.0.0.1", 0))
+        process = context.Process(
+            target=env_process,
+            args=(
+                proc_id,
+                parent_end.getsockname(),
+                self.build_env_fn,
+                self.agent_id_serde,
+                self.action_type_serde,
+                self.obs_type_serde,
+                self.reward_type_serde,
+                self.action_space_type_serde,
+                self.obs_space_type_serde,
+                self.state_metrics_type_serde,
+                self.collect_state_metrics_fn,
+                shm_buffer,
+                shm_buffer_size,
+                self.seed + proc_id,
+                False,
+                None,
+                self.recalculate_agent_id_every_step,
+            ),
+        )
+        process.start()
+        self.selector.register(parent_end, selectors.EVENT_READ, proc_id)
+
+        _, child_endpoint = parent_end.recvfrom(1)
+        self.processes[proc_id] = (process, parent_end, child_endpoint, shm_view)
+
+        # Get initial obs
+        obs_dict = {}
+        timestep_dict = {}
+        socket_data = parent_end.recv(PACKET_MAX_SIZE)
+        (header, _) = comm_consts.unpack_header(socket_data)
+        if header == comm_consts.ENV_RESET_STATE_HEADER:
+            self.current_pids.append(proc_id)
+            offset = 0
+            (n_agents, offset) = comm_consts.retrieve_int(shm_view, offset)
+            for _ in range(n_agents):
+                (agent_id_bytes, offset) = comm_consts.retrieve_bytes(shm_view, offset)
+                agent_id = self.agent_id_serde.from_bytes(agent_id_bytes)
+                (obs_bytes, offset) = comm_consts.retrieve_bytes(shm_view, offset)
+                obs = self.obs_type_serde.from_bytes(obs_bytes)
+                obs_dict[agent_id] = obs
+                timestep_dict[agent_id] = None
+        else:
+            raise Exception(f"Unexpected header received from process: {header}")
+
+        self.current_obs[proc_id] = obs_dict
+        self.current_timestep_id_map[proc_id] = timestep_dict
+        self.current_timestep_new_episode[proc_id] = True
+        self.new_process_observations.append((proc_id, obs_dict))
+
+    def delete_process(self):
+        self.n_procs -= 1
+        self._cleanup_process(self.n_procs)
+        (process, parent_end, child_endpoint, shm_view) = self.processes.pop()
+        self.current_timestep_id_map.pop()
+        self.current_timestep_new_episode.pop()
+        self.current_obs.pop()
+        self.current_actions.pop()
+        self.current_log_probs.pop()
+        if self.n_procs in self.current_pids:
+            self.current_pids.remove(self.n_procs)
+
+        self.selector.unregister(parent_end)
+
     def init_processes(
         self,
         n_processes: int,
@@ -446,16 +542,22 @@ class EnvProcessInterface(
         self.n_procs = n_processes
         self.min_inference_size = min(self.min_inference_size, n_processes)
 
-        import multiprocessing.sharedctypes
-
-        self.shm_size = shm_buffer_size
-        self.shm_buffer = multiprocessing.sharedctypes.RawArray(
-            "b", n_processes * self.shm_size
-        )
+        shm_buffers = [
+            multiprocessing.sharedctypes.RawArray("b", shm_buffer_size)
+            for _ in range(n_processes)
+        ]
+        shm_views = [
+            frombuffer(
+                buffer=shm_buffers[proc_id],
+                dtype=np.byte,
+                offset=0,
+                count=shm_buffer_size,
+            )
+            for proc_id in range(n_processes)
+        ]
         self.processes = [None for i in range(n_processes)]
         self.current_timestep_id_map = [{} for _ in range(n_processes)]
         self.current_timestep_new_episode = [True for _ in range(n_processes)]
-
         self.current_obs: List[Optional[Dict[AgentID, ObsType]]] = [
             None for i in range(n_processes)
         ]
@@ -474,8 +576,6 @@ class EnvProcessInterface(
             parent_end = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             parent_end.bind(("127.0.0.1", 0))
 
-            shm_offset = proc_id * self.shm_size
-
             process = context.Process(
                 target=env_process,
                 args=(
@@ -490,9 +590,8 @@ class EnvProcessInterface(
                     self.obs_space_type_serde,
                     self.state_metrics_type_serde,
                     self.collect_state_metrics_fn,
-                    self.shm_buffer,
-                    shm_offset,
-                    self.shm_size,
+                    shm_buffers[proc_id],
+                    shm_buffer_size,
                     self.seed + proc_id,
                     render_this_proc,
                     render_delay,
@@ -501,14 +600,7 @@ class EnvProcessInterface(
             )
             process.start()
 
-            shm_view = frombuffer(
-                buffer=self.shm_buffer,
-                dtype=np.byte,
-                offset=shm_offset,
-                count=self.shm_size,
-            )
-
-            self.processes[proc_id] = (process, parent_end, None, shm_view)
+            self.processes[proc_id] = (process, parent_end, None, shm_views[proc_id])
 
             self.selector.register(parent_end, selectors.EVENT_READ, proc_id)
 
@@ -532,30 +624,33 @@ class EnvProcessInterface(
         """
         Clean up resources and terminate processes.
         """
+        for proc_id in range(len(self.processes)):
+            self._cleanup_process(proc_id)
+
+    def _cleanup_process(self, proc_id):
         import traceback
 
-        for proc_id, proc_package in enumerate(self.processes):
-            process, parent_end, child_endpoint, shm_view = proc_package
+        process, parent_end, child_endpoint, shm_view = self.processes[proc_id]
 
-            try:
-                parent_end.sendto(
-                    comm_consts.pack_header(comm_consts.STOP_MESSAGE_HEADER),
-                    child_endpoint,
-                )
-            except Exception:
-                print("Unable to join process")
-                traceback.print_exc()
-                print("Failed to send stop signal to child process!")
-                traceback.print_exc()
+        try:
+            parent_end.sendto(
+                comm_consts.pack_header(comm_consts.STOP_MESSAGE_HEADER),
+                child_endpoint,
+            )
+        except Exception:
+            print("Unable to join process")
+            traceback.print_exc()
+            print("Failed to send stop signal to child process!")
+            traceback.print_exc()
 
-            try:
-                process.join()
-            except Exception:
-                print("Unable to join process")
-                traceback.print_exc()
+        try:
+            process.join()
+        except Exception:
+            print("Unable to join process")
+            traceback.print_exc()
 
-            try:
-                parent_end.close()
-            except Exception:
-                print("Unable to close parent connection")
-                traceback.print_exc()
+        try:
+            parent_end.close()
+        except Exception:
+            print("Unable to close parent connection")
+            traceback.print_exc()
