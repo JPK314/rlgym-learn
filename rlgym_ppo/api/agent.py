@@ -1,4 +1,5 @@
-from typing import Any, Dict, Generic, List, Optional, Tuple
+from dataclasses import dataclass
+from typing import Any, Generic, List, Optional, Tuple
 
 from rlgym.api import (
     ActionSpaceType,
@@ -12,8 +13,17 @@ from torch import Tensor, device
 
 from rlgym_ppo.experience import Timestep
 
-from ..learner_config import LearnerConfig, ProcessConfig
-from .typing import AgentConfig, AgentConfigModel, AgentData, StateMetrics
+from ..learner_config import BaseConfigModel, ProcessConfigModel
+from .typing import AgentConfig, AgentData, StateMetrics
+
+
+@dataclass
+class DerivedAgentConfig(Generic[AgentConfig]):
+    agent_name: str
+    agent_config: AgentConfig
+    base_config: BaseConfigModel
+    process_config: ProcessConfigModel
+    save_folder: str
 
 
 class Agent(
@@ -60,10 +70,10 @@ class Agent(
     def set_device(self, device: device):
         pass
 
-    def validate_config(self, config_obj: Any) -> AgentConfigModel[AgentConfig]:
+    def validate_config(self, config_obj: Any) -> AgentConfig:
         pass
 
-    def load(self, agent_config: AgentConfigModel[AgentConfig]):
+    def load(self, config: DerivedAgentConfig[AgentConfig]):
         """
         Function to load the agent. set_space_type and set_device will always
         be called at least once before this method.
@@ -71,9 +81,9 @@ class Agent(
         :param agent_config: config specific for this agent.
         """
 
-    def save(self):
+    def save_checkpoint(self):
         """
-        Function to save the agent.
+        Function to save a checkpoint of the agent.
         """
         pass
 

@@ -127,7 +127,7 @@ class WelfordRunningStat(object):
         self.running_variance = np.reshape(other_var, self.shape)
         self.count = other_count
 
-    def to_json(self):
+    def state_dict(self):
         return {
             "mean": self.running_mean.ravel().tolist(),
             "var": self.running_variance.ravel().tolist(),
@@ -135,23 +135,11 @@ class WelfordRunningStat(object):
             "count": self.count,
         }
 
-    def from_json(self, other_json):
-        shape = other_json["shape"]
-        self.count = other_json["count"]
-        self.running_mean = np.asarray(other_json["mean"]).reshape(shape)
-        self.running_variance = np.asarray(other_json["var"]).reshape(shape)
+    def load_state_dict(self, state):
+        shape = state["shape"]
+        self.count = state["count"]
+        self.running_mean = np.asarray(state["mean"]).reshape(shape)
+        self.running_variance = np.asarray(state["var"]).reshape(shape)
         print(
             f"LOADED RUNNING STATS FROM JSON | Mean: {self.running_mean} | Variance: {self.running_variance} | Count: {self.count}"
         )
-
-    def save(self, directory):
-        full_path = os.path.join(directory, "RUNNING_STATS.json")
-        with open(full_path, "w") as f:
-            json_data = self.to_json()
-            json.dump(obj=json_data, fp=f, indent=4)
-
-    def load(self, directory):
-        full_path = os.path.join(directory, "RUNNING_STATS.json")
-        with open(full_path, "r") as f:
-            json_data = dict(json.load(f))
-            self.from_json(json_data)

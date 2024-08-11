@@ -40,12 +40,7 @@ from rlgym_ppo.env_processing import EnvProcessInterface
 from rlgym_ppo.util import KBHit
 from rlgym_ppo.util.torch_functions import get_device
 
-from .learner_config import LearnerConfig, ProcessConfig
-
-DEFAULT_CONFIG_FILENAME = "config.json"
-LEARNER_CONFIG = "learner_config"
-PROCESS_CONFIG = "process_config"
-AGENTS_CONFIG = "agents_config"
+from .learner_config import DEFAULT_CONFIG_FILENAME, LearnerConfigModel
 
 
 class Learner(
@@ -109,7 +104,7 @@ class Learner(
         ), f"{config_location} is not a valid location from which to read config, aborting."
 
         with open(config_location, "rt") as f:
-            self.config = LearnerConfig.model_validate_json(f.read())
+            self.config = LearnerConfigModel.model_validate_json(f.read())
 
         torch.manual_seed(self.config.base_config.random_seed)
         np.random.seed(self.config.base_config.random_seed)
@@ -153,25 +148,6 @@ class Learner(
         self.agent_manager.load_agents(self.config)
         print("Learner successfully initialized!")
 
-    @staticmethod
-    def generate_config(
-        learner_config=LearnerConfig(),
-        config_location: Optional[str] = None,
-    ):
-        if config_location is None:
-            config_location = os.path.join(os.getcwd(), DEFAULT_CONFIG_FILENAME)
-        if os.path.isfile(config_location):
-            confirmation = input(
-                f"File {config_location} exists already. Overwrite? (y)/n\t"
-            )
-            if confirmation != "" and confirmation.lower() != "y":
-                print("Aborting config generation, proceeding with existing config...")
-            else:
-                print("Proceeding with config creation...")
-                with open(config_location, "wt") as f:
-                    f.write(learner_config.model_dump_json(indent=4))
-                print(f"Config created at {config_location}.")
-
     def learn(self):
         """
         Function to wrap the _learn function in a try/catch/finally
@@ -211,10 +187,8 @@ class Learner(
         actions, log_probs = self.agent_manager.get_actions(self.initial_obs_list)
         self.env_process_interface.send_actions(actions, log_probs)
 
-        # While the number of timesteps we have collected so far is less than the
-        # amount we are allowed to collect.
+        # Collect the desired number of timesteps from our agents and environments.
         while self.cumulative_timesteps < self.config.base_config.timestep_limit:
-            # Collect the desired number of timesteps from our agent.
             obs_list, timesteps, state_metrics = (
                 self.env_process_interface.collect_step_data()
             )

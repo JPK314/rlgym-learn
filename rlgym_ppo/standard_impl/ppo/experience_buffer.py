@@ -8,14 +8,37 @@ Description:
     a FIFO fashion.
 """
 
-from typing import Generic, List, Tuple
+import json
+import os
+import pickle
+from dataclasses import dataclass
+from typing import Any, Callable, Dict, Generic, List, Optional, Tuple
 
 import numpy as np
 import torch
+from pydantic import BaseModel, Field
 from rlgym.api import ActionType, AgentID, ObsType, RewardType
+from torch import device as _device
 
 from .trajectory import Trajectory
-from .trajectory_processing import TrajectoryProcessor, TrajectoryProcessorData
+from .trajectory_processor import TrajectoryProcessor, TrajectoryProcessorData
+
+EXPERIENCE_BUFFER_FILE = "experience_buffer.pkl"
+TRAJECTORY_PROCESSOR_FILE = "trajectory_processor.json"
+
+
+class ExperienceBufferConfigModel(BaseModel):
+    max_size: int = 100000
+    trajectory_processor_args: Dict[str, Any] = Field(default_factory=dict)
+
+
+@dataclass
+class DerivedExperienceBufferConfig:
+    max_size: int
+    seed: int
+    device: _device
+    trajectory_processor_args: dict
+    checkpoint_load_folder: Optional[str] = None
 
 
 class ExperienceBuffer(
@@ -60,23 +83,65 @@ class ExperienceBuffer(
 
     def __init__(
         self,
-        trajectory_processor: TrajectoryProcessor[
-            AgentID, ObsType, ActionType, RewardType, TrajectoryProcessorData
+        trajectory_processor_factory: Callable[
+            ...,
+            TrajectoryProcessor[
+                AgentID, ObsType, ActionType, RewardType, TrajectoryProcessorData
+            ],
         ],
-        max_size,
-        seed,
-        device,
     ):
-        self.device = device
-        self.seed = seed
+        self.trajectory_processor_factory = trajectory_processor_factory
         self.observations: List[Tuple[AgentID, ObsType]] = []
         self.actions: List[ActionType] = []
-        self.log_probs = torch.FloatTensor().to(self.device)
-        self.values = torch.FloatTensor().to(self.device)
-        self.advantages = torch.FloatTensor().to(self.device)
-        self.max_size = max_size
-        self.rng = np.random.RandomState(seed)
-        self.trajectory_processor = trajectory_processor
+        self.log_probs = torch.FloatTensor()
+        self.values = torch.FloatTensor()
+        self.advantages = torch.FloatTensor()
+
+    def load(self, config: DerivedExperienceBufferConfig):
+        self.config = config
+        self.rng = np.random.RandomState(self.config.seed)
+        self.trajectory_processor = self.trajectory_processor_factory(
+            **config.trajectory_processor_args
+        )
+        if self.config.checkpoint_load_folder is not None:
+            self._load_from_checkpoint()
+        self.log_probs = self.log_probs.to(self.config.device)
+        self.values = self.values.to(self.config.device)
+        self.advantages = self.advantages.to(self.config.device)
+
+    def _load_from_checkpoint(self):
+        # lazy way
+        with open(
+            os.path.join(self.config.checkpoint_load_folder, EXPERIENCE_BUFFER_FILE),
+            "rb",
+        ) as f:
+            _exp_buffer: ExperienceBuffer[
+                AgentID, ObsType, ActionType, RewardType, TrajectoryProcessorData
+            ] = pickle.load(f)
+        with open(
+            os.path.join(self.config.checkpoint_load_folder, TRAJECTORY_PROCESSOR_FILE),
+            "rt",
+        ) as f:
+            trajectory_processor_state_dict = json.load(f)
+        self.observations = _exp_buffer.observations
+        self.actions = _exp_buffer.actions
+        self.log_probs = _exp_buffer.log_probs
+        self.values = _exp_buffer.values
+        self.advantages = _exp_buffer.advantages
+        self.trajectory_processor.load_state_dict(trajectory_processor_state_dict)
+
+    def save_checkpoint(self, folder_path):
+        os.makedirs(folder_path, exist_ok=True)
+        with open(
+            os.path.join(folder_path, EXPERIENCE_BUFFER_FILE),
+            "wb",
+        ) as f:
+            pickle.dump(self, f)
+        with open(
+            os.path.join(folder_path, TRAJECTORY_PROCESSOR_FILE),
+            "wt",
+        ) as f:
+            json.dump(self.trajectory_processor.state_dict(), f, indent=4)
 
     # TODO: update docs
     def submit_experience(
@@ -101,27 +166,29 @@ class ExperienceBuffer(
         _cat_list = ExperienceBuffer._cat_list
         exp_buffer_data, trajectory_processor_data = (
             self.trajectory_processor.process_trajectories(
-                trajectories, dtype=torch.float32, device=self.device
+                trajectories, dtype=torch.float32, device=self.config.device
             )
         )
         (observations, actions, log_probs, values, advantages) = exp_buffer_data
 
-        self.observations = _cat_list(self.observations, observations, self.max_size)
-        self.actions = _cat_list(self.actions, actions, self.max_size)
+        self.observations = _cat_list(
+            self.observations, observations, self.config.max_size
+        )
+        self.actions = _cat_list(self.actions, actions, self.config.max_size)
         self.log_probs = _cat(
             self.log_probs,
             log_probs,
-            self.max_size,
+            self.config.max_size,
         )
         self.values = _cat(
             self.values,
             values,
-            self.max_size,
+            self.config.max_size,
         )
         self.advantages = _cat(
             self.advantages,
             advantages,
-            self.max_size,
+            self.config.max_size,
         )
 
         return trajectory_processor_data

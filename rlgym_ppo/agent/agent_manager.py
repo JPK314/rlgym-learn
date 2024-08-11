@@ -1,7 +1,7 @@
+import os
 from typing import Any, Dict, Generic, Iterable, List, Tuple
 
 import numpy as np
-from pydantic import BaseModel
 from rlgym.api import (
     ActionSpaceType,
     ActionType,
@@ -12,10 +12,10 @@ from rlgym.api import (
 )
 from torch import Tensor, as_tensor, int64, stack
 
-from rlgym_ppo.api import Agent, AgentConfigModel, AgentData, StateMetrics
+from rlgym_ppo.api import Agent, DerivedAgentConfig, StateMetrics
 from rlgym_ppo.experience import Timestep
 
-from ..learner_config import LearnerConfig, ProcessConfig
+from ..learner_config import LearnerConfigModel
 
 
 class AgentManager(
@@ -106,25 +106,30 @@ class AgentManager(
 
     def load_agents(
         self,
-        learner_config: LearnerConfig,
+        learner_config: LearnerConfigModel,
     ):
         for agent_name, agent in self.agents.items():
             assert (
                 agent_name in learner_config.agents_config
             ), f"Agent {agent_name} not present in agents_config"
             agent_config = agent.validate_config(
-                AgentConfigModel(
+                learner_config.agents_config[agent_name]
+            )
+            agent.load(
+                DerivedAgentConfig(
                     agent_name=agent_name,
-                    agent_config=learner_config.agents_config[agent_name],
+                    agent_config=agent_config,
                     base_config=learner_config.base_config,
                     process_config=learner_config.process_config,
-                ).model_dump()
+                    save_folder=os.path.join(
+                        learner_config.agents_save_folder, str(agent_name)
+                    ),
+                )
             )
-            agent.load(agent_config)
 
     def save_agents(self):
         for agent in self.agents_list:
-            agent.save()
+            agent.save_checkpoint()
 
     def cleanup(self):
         for agent in self.agents_list:

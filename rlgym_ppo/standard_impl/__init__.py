@@ -1,9 +1,4 @@
-from .metrics_logger import PPOMetricsLogger
-from .misc import (
-    GAETrajectoryProcessor,
-    GAETrajectoryProcessorData,
-    NumpyObsStandardizer,
-)
+from .obs_standardizer import NumpyObsStandardizer
 from .serdes import (
     BoolSerde,
     DynamicPrimitiveTupleSerde,

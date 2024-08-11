@@ -1,53 +1,15 @@
 from dataclasses import dataclass
-from typing import List, Optional, Tuple
+from typing import List, Tuple
 
 import numpy as np
 import torch
 from rlgym.api import ActionType, AgentID, ObsType, RewardType
 
-from rlgym_ppo.api import ObsStandardizer
-from rlgym_ppo.standard_impl.ppo import TrajectoryProcessor
 from rlgym_ppo.util import WelfordRunningStat
 
-
-class NumpyObsStandardizer(ObsStandardizer[AgentID, np.ndarray]):
-    def __init__(
-        self, steps_per_obs_stats_update: int, steps_until_fixed: int = np.inf
-    ):
-        self.obs_stats = None
-        self.steps_per_obs_stats_update = steps_per_obs_stats_update
-        self.obs_stats_start_index = 0
-        self.steps_until_fixed = steps_until_fixed
-        self.steps = 0
-
-    def standardize(self, obs_list) -> List[Tuple[AgentID, np.ndarray]]:
-        if self.obs_stats == None:
-            (_, obs) = obs_list[0]
-            self.obs_stats = WelfordRunningStat(obs.shape)
-        if self.steps < self.steps_until_fixed:
-            stats_update_batch = [
-                o[1]
-                for o in obs_list[
-                    self.obs_stats_start_index :: self.steps_per_obs_stats_update
-                ]
-            ]
-            self.obs_stats_start_index = (
-                self.steps_per_obs_stats_update
-                - 1
-                - (
-                    (len(obs_list) - self.obs_stats_start_index - 1)
-                    % self.steps_per_obs_stats_update
-                )
-            )
-            for sample in stats_update_batch:
-                self.obs_stats.update(sample)
-        return [
-            (agent_id, (obs - self.obs_stats.mean) / self.obs_stats.std)
-            for (agent_id, obs) in obs_list
-        ]
+from .trajectory_processor import TrajectoryProcessor
 
 
-# TODO: move to ppo
 @dataclass
 class GAETrajectoryProcessorData:
     average_undiscounted_episodic_return: float
@@ -145,18 +107,18 @@ class GAETrajectoryProcessor(
             trajectory_processor_data,
         )
 
-    def save(self) -> dict:
+    def state_dict(self) -> dict:
         return {
             "gamma": self.gamma,
             "lambda": self.lmbda,
             "standardize_returns": self.standardize_returns,
             "max_returns_per_stats_increment": self.max_returns_per_stats_increment,
-            "return_running_stats": self.return_stats.to_json(),
+            "return_running_stats": self.return_stats.state_dict(),
         }
 
-    def load(self, state):
+    def load_state_dict(self, state: dict):
         self.gamma = state["gamma"]
         self.lmbda = state["lambda"]
         self.standardize_returns = state["standardize_returns"]
         self.max_returns_per_stats_increment = state["max_returns_per_stats_increment"]
-        self.return_stats = self.return_stats.from_json(state["return_running_stats"])
+        self.return_stats.load_state_dict(state["return_running_stats"])

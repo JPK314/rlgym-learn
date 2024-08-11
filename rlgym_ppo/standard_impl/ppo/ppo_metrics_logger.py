@@ -6,7 +6,7 @@ from rlgym_ppo.api import MetricsLogger, StateMetrics
 from rlgym_ppo.standard_impl.ppo import PPOAgentData
 from rlgym_ppo.util import reporting
 
-from .misc import GAETrajectoryProcessorData
+from .gae_trajectory_processor import GAETrajectoryProcessorData
 
 
 class PPOMetricsLogger(

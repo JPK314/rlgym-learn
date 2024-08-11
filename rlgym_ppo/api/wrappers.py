@@ -9,9 +9,6 @@ class RewardTypeWrapper(Generic[RewardType]):
     def __init__(self, reward: RewardType):
         self.reward = reward
 
-    def __getattr__(self, name):
-        return getattr(self.reward, name)
-
     @abstractmethod
     def as_tensor(self, dtype: dtype, device: device) -> Tensor:
         """

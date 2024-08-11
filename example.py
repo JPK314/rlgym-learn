@@ -1,4 +1,3 @@
-from dataclasses import dataclass
 from typing import Any, Dict, List, Tuple
 
 import numpy as np
@@ -7,15 +6,21 @@ from rlgym.rocket_league.api import GameState
 from rlgym.rocket_league.common_values import CAR_MAX_SPEED
 from rlgym.rocket_league.obs_builders import DefaultObs
 
+from rlgym_ppo import (
+    BaseConfigModel,
+    Learner,
+    LearnerConfigModel,
+    ProcessConfigModel,
+    WandbConfigModel,
+    generate_config,
+)
 from rlgym_ppo.standard_impl import (
     FloatRewardTypeWrapper,
     FloatSerde,
-    GAETrajectoryProcessor,
     HomogeneousTupleSerde,
     NumpyDynamicShapeSerde,
     NumpyObsStandardizer,
     NumpyStaticShapeSerde,
-    PPOMetricsLogger,
     RewardFunctionWrapper,
     RewardTypeWrapperSerde,
     StrIntTupleSerde,
@@ -24,36 +29,45 @@ from rlgym_ppo.standard_impl import (
 from rlgym_ppo.standard_impl.ppo import (
     BasicCritic,
     DiscreteFF,
+    ExperienceBufferConfigModel,
+    GAETrajectoryProcessor,
     PPOAgent,
-    PPOAgentConfig,
+    PPOAgentConfigModel,
+    PPOLearnerConfigModel,
+    PPOMetricsLogger,
 )
 from rlgym_ppo.util import reporting
 
 
 class ExampleLogger(PPOMetricsLogger[Tuple[np.ndarray]]):
-    def report_metrics(
-        self,
-        agent_name,
-        collected_state_metrics,
-        agent_metrics,
-        wandb_run,
-    ):
+
+    def collect_state_metrics(self, data: List[Tuple[np.ndarray]]) -> Dict[str, Any]:
         avg_linvel = np.zeros(3)
         avg_angvel = np.zeros(3)
-        for state_metrics in collected_state_metrics:
-            avg_linvel += state_metrics[0]
-            avg_angvel += state_metrics[1]
-        avg_linvel /= len(collected_state_metrics)
-        avg_angvel /= len(collected_state_metrics)
-        report = {
+        for datum in data:
+            avg_linvel += datum[0]
+            avg_angvel += datum[1]
+        avg_linvel /= len(data)
+        avg_angvel /= len(data)
+        return {
             "linvel_x": avg_linvel[0],
             "linvel_y": avg_linvel[1],
             "linvel_z": avg_linvel[2],
             "angvel_x": avg_angvel[0],
             "angvel_y": avg_angvel[1],
             "angvel_z": avg_angvel[2],
+        }
+
+    def report_metrics(
+        self,
+        agent_name,
+        state_metrics,
+        agent_metrics,
+        wandb_run,
+    ):
+        report = {
             **agent_metrics,
-            "Policy Reward": np.nan,
+            **state_metrics,
         }
         reporting.report_metrics(agent_name, report, None, wandb_run=wandb_run)
 
@@ -206,17 +220,11 @@ def env_create_function():
 
 
 if __name__ == "__main__":
-    from rlgym_ppo import Learner, LearnerConfig, ProcessConfig
 
     # 32 processes
     n_proc = 10
 
-    # educated guess - could be slightly higher or lower
-    min_inference_size = max(1, int(round(n_proc * 0.9)))
-
-    agent_config = PPOAgentConfig(
-        timesteps_per_iteration=10_000,
-        exp_buffer_size=150_000,
+    learner_config = PPOLearnerConfigModel(
         n_epochs=1,
         batch_size=10_000,
         minibatch_size=10_000,
@@ -224,20 +232,34 @@ if __name__ == "__main__":
         clip_range=0.2,
         actor_lr=0.0003,
         critic_lr=0.0003,
-        log_to_wandb=True,
-        load_wandb=True,
-        wandb_project_name=None,
-        wandb_group_name="rlgym-learn-testing",
-        wandb_run_name=None,
+    )
+    experience_buffer_config = ExperienceBufferConfigModel(
+        max_size=100_000, trajectory_processor_args={"standardize_returns": True}
+    )
+    wandb_config = WandbConfigModel(group="rlgym-learn-testing", resume=True)
+    ppo_agent_config = PPOAgentConfigModel(
+        timesteps_per_iteration=10_000,
         save_every_ts=100_000,  # not working yet
-        checkpoints_save_folder=None,  # not working yet
-        add_unix_timestamp=True,  # not working yet
-        checkpoint_load_folder=None,  # not working yet
+        add_unix_timestamp=True,
+        checkpoint_load_folder="agents_checkpoints/PPO1/rlgym-learn-run-1723343938931125500/1723343960393463000",
+        checkpoints_save_folder=None,
         n_checkpoints_to_keep=5,  # not working yet
         random_seed=123,
         device="auto",
-        trajectory_processor_args={"standardize_returns": True},
+        log_to_wandb=True,
+        learner_config=learner_config,
+        experience_buffer_config=experience_buffer_config,
+        wandb_config=wandb_config,
     )
+
+    generate_config(
+        learner_config=LearnerConfigModel(
+            process_config=ProcessConfigModel(n_proc=n_proc, render=False),
+            agents_config={"PPO1": ppo_agent_config},
+        ),
+        config_location="config.json",
+    )
+
     agents = {
         "PPO1": PPOAgent(
             actor_factory,
@@ -246,16 +268,6 @@ if __name__ == "__main__":
             metrics_logger_factory,
         )
     }
-
-    Learner.generate_config(
-        learner_config=LearnerConfig(
-            process_config=ProcessConfig(
-                n_proc=n_proc, min_inference_size=min_inference_size, render=False
-            ),
-            agents_config={"PPO1": agent_config},
-        ),
-        config_location="config.json",
-    )
 
     learner = Learner(
         env_create_function=env_create_function,

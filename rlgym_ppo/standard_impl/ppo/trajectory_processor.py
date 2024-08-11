@@ -35,8 +35,8 @@ class TrajectoryProcessor(
         """
         raise NotImplementedError
 
-    def save(self) -> dict:
+    def state_dict(self) -> dict:
         return {}
 
-    def load(self, state: dict):
+    def load_state_dict(self, state: dict):
         pass

@@ -1,3 +1,4 @@
+import json
 import os
 import time
 from dataclasses import dataclass
@@ -5,6 +6,7 @@ from typing import Callable, Generic, Optional
 
 import numpy as np
 import torch
+from pydantic import BaseModel
 from rlgym.api import (
     ActionSpaceType,
     ActionType,
@@ -18,7 +20,33 @@ from torch import nn as nn
 from .actor import Actor
 from .critic import Critic
 from .experience_buffer import ExperienceBuffer
-from .trajectory_processing import TrajectoryProcessorData
+from .trajectory_processor import TrajectoryProcessorData
+
+
+# TODO: change minibatch size to n_minibatches
+class PPOLearnerConfigModel(BaseModel):
+    n_epochs: int = 10
+    batch_size: int = 50000
+    minibatch_size: Optional[int] = None
+    ent_coef: float = 0.005
+    clip_range: float = 0.2
+    actor_lr: float = 3e-4
+    critic_lr: float = 3e-4
+
+
+@dataclass
+class DerivedPPOLearnerConfig:
+    obs_space: ObsSpaceType
+    action_space: ActionSpaceType
+    n_epochs: int = 10
+    batch_size: int = 50000
+    minibatch_size: Optional[int] = None
+    ent_coef: float = 0.005
+    clip_range: float = 0.2
+    actor_lr: float = 3e-4
+    critic_lr: float = 3e-4
+    device: str = "auto"
+    checkpoint_load_folder: Optional[str] = None
 
 
 @dataclass
@@ -31,6 +59,13 @@ class PPOData:
     sb3_clip_fraction: float
     actor_update_magnitude: float
     critic_update_magnitude: float
+
+
+ACTOR_FILE = "actor.pt"
+ACTOR_OPTIMIZER_FILE = "actor_optimizer.pt"
+CRITIC_FILE = "critic.pt"
+CRITIC_OPTIMIZER_FILE = "critic_optimizer.pt"
+MISC_STATE = "misc.json"
 
 
 class PPOLearner(
@@ -46,28 +81,34 @@ class PPOLearner(
 ):
     def __init__(
         self,
-        actor: Actor[AgentID, ObsType, ActionType],
-        critic: Critic[AgentID, ObsType],
-        batch_size,
-        n_epochs,
-        actor_lr,
-        critic_lr,
-        clip_range,
-        ent_coef,
-        mini_batch_size,
-        device,
+        actor_factory: Callable[
+            [ObsSpaceType, ActionSpaceType, torch.device],
+            Actor[AgentID, ObsType, ActionType],
+        ],
+        critic_factory: Callable[
+            [ObsSpaceType, torch.device], Critic[AgentID, ObsType]
+        ],
     ):
-        self.device = device
+        self.actor_factory = actor_factory
+        self.critic_factory = critic_factory
+
+    def load(self, config: DerivedPPOLearnerConfig):
+        self.config = config
 
         assert (
-            batch_size % mini_batch_size == 0
+            self.config.batch_size % self.config.minibatch_size == 0
         ), "MINIBATCH SIZE MUST BE AN INTEGER MULTIPLE OF BATCH SIZE"
-        self.actor = actor
-        self.critic = critic
-        self.mini_batch_size = mini_batch_size
+        self.actor = self.actor_factory(
+            config.obs_space, config.action_space, config.device
+        )
+        self.critic = self.critic_factory(config.obs_space, config.device)
 
-        self.actor_optimizer = torch.optim.Adam(self.actor.parameters(), lr=actor_lr)
-        self.critic_optimizer = torch.optim.Adam(self.critic.parameters(), lr=critic_lr)
+        self.actor_optimizer = torch.optim.Adam(
+            self.actor.parameters(), lr=self.config.actor_lr
+        )
+        self.critic_optimizer = torch.optim.Adam(
+            self.critic.parameters(), lr=self.config.critic_lr
+        )
         self.critic_loss_fn = torch.nn.MSELoss()
 
         # Calculate parameter counts
@@ -91,14 +132,55 @@ class PPOLearner(
         print("-" * 20)
         print(f"{'Total':<10} {total_parameters:<10}")
 
-        print(f"Current Policy Learning Rate: {actor_lr}")
-        print(f"Current Critic Learning Rate: {critic_lr}")
-
-        self.n_epochs = n_epochs
-        self.batch_size = batch_size
-        self.clip_range = clip_range
-        self.ent_coef = ent_coef
+        print(f"Current Policy Learning Rate: {self.config.actor_lr}")
+        print(f"Current Critic Learning Rate: {self.config.critic_lr}")
         self.cumulative_model_updates = 0
+
+        if self.config.checkpoint_load_folder is not None:
+            self._load_from_checkpoint()
+
+    def _load_from_checkpoint(self):
+
+        assert os.path.exists(
+            self.config.checkpoint_load_folder
+        ), f"PPO Learner cannot find folder: {self.config.checkpoint_load_folder}"
+
+        self.actor.load_state_dict(
+            torch.load(os.path.join(self.config.checkpoint_load_folder, ACTOR_FILE))
+        )
+        self.critic.load_state_dict(
+            torch.load(os.path.join(self.config.checkpoint_load_folder, CRITIC_FILE))
+        )
+        self.actor_optimizer.load_state_dict(
+            torch.load(
+                os.path.join(self.config.checkpoint_load_folder, ACTOR_OPTIMIZER_FILE)
+            )
+        )
+        self.critic_optimizer.load_state_dict(
+            torch.load(
+                os.path.join(self.config.checkpoint_load_folder, CRITIC_OPTIMIZER_FILE)
+            )
+        )
+        with open(
+            os.path.join(self.config.checkpoint_load_folder, MISC_STATE), "rt"
+        ) as f:
+            misc_state = json.load(f)
+            self.cumulative_model_updates = misc_state["cumulative_model_updates"]
+
+    def save_checkpoint(self, folder_path):
+        os.makedirs(folder_path, exist_ok=True)
+        torch.save(self.actor.state_dict(), os.path.join(folder_path, ACTOR_FILE))
+        torch.save(self.critic.state_dict(), os.path.join(folder_path, CRITIC_FILE))
+        torch.save(
+            self.actor_optimizer.state_dict(),
+            os.path.join(folder_path, ACTOR_OPTIMIZER_FILE),
+        )
+        torch.save(
+            self.critic_optimizer.state_dict(),
+            os.path.join(folder_path, CRITIC_OPTIMIZER_FILE),
+        )
+        with open(os.path.join(folder_path, MISC_STATE), "wt") as f:
+            json.dump({"cumulative_model_updates": self.cumulative_model_updates}, f)
 
     def learn(
         self,
@@ -130,9 +212,9 @@ class PPOLearner(
         ).cpu()
 
         t1 = time.time()
-        for epoch in range(self.n_epochs):
+        for epoch in range(self.config.n_epochs):
             # Get all shuffled batches from the experience buffer.
-            batches = exp.get_all_batches_shuffled(self.batch_size)
+            batches = exp.get_all_batches_shuffled(self.config.batch_size)
             for batch in batches:
                 (
                     batch_obs,
@@ -145,16 +227,20 @@ class PPOLearner(
                 self.actor_optimizer.zero_grad()
                 self.critic_optimizer.zero_grad()
 
-                for minibatch_slice in range(0, self.batch_size, self.mini_batch_size):
+                for minibatch_slice in range(
+                    0, self.config.batch_size, self.config.minibatch_size
+                ):
                     # Send everything to the device and enforce correct shapes.
                     start = minibatch_slice
-                    stop = start + self.mini_batch_size
+                    stop = start + self.config.minibatch_size
 
                     acts = batch_acts[start:stop]
                     obs = batch_obs[start:stop]
-                    advantages = batch_advantages[start:stop].to(self.device)
-                    old_probs = batch_old_probs[start:stop].to(self.device)
-                    target_values = batch_target_values[start:stop].to(self.device)
+                    advantages = batch_advantages[start:stop].to(self.config.device)
+                    old_probs = batch_old_probs[start:stop].to(self.config.device)
+                    target_values = batch_target_values[start:stop].to(
+                        self.config.device
+                    )
 
                     # Compute value estimates.
                     vals = self.critic(obs).view_as(target_values)
@@ -166,7 +252,9 @@ class PPOLearner(
                     # Compute PPO loss.
                     ratio = torch.exp(log_probs - old_probs)
                     clipped = torch.clamp(
-                        ratio, 1.0 - self.clip_range, 1.0 + self.clip_range
+                        ratio,
+                        1.0 - self.config.clip_range,
+                        1.0 + self.config.clip_range,
                     )
 
                     # Compute KL divergence & clip fraction using SB3 method for reporting.
@@ -177,7 +265,9 @@ class PPOLearner(
 
                         # From the stable-baselines3 implementation of PPO.
                         clip_fraction = (
-                            torch.mean((torch.abs(ratio - 1) > self.clip_range).float())
+                            torch.mean(
+                                (torch.abs(ratio - 1) > self.config.clip_range).float()
+                            )
                             .cpu()
                             .item()
                         )
@@ -188,9 +278,9 @@ class PPOLearner(
                     ).mean()
                     value_loss = self.critic_loss_fn(vals, target_values)
                     ppo_loss = (
-                        (actor_loss - entropy * self.ent_coef)
-                        * self.mini_batch_size
-                        / self.batch_size
+                        (actor_loss - entropy * self.config.ent_coef)
+                        * self.config.minibatch_size
+                        / self.config.batch_size
                     )
 
                     ppo_loss.backward()
@@ -245,37 +335,4 @@ class PPOLearner(
             mean_clip,
             actor_update_magnitude,
             critic_update_magnitude,
-        )
-
-    def save_to(self, folder_path):
-        os.makedirs(folder_path, exist_ok=True)
-        torch.save(self.actor.state_dict(), os.path.join(folder_path, "PPO_POLICY.pt"))
-        torch.save(
-            self.critic.state_dict(), os.path.join(folder_path, "PPO_VALUE_NET.pt")
-        )
-        torch.save(
-            self.actor_optimizer.state_dict(),
-            os.path.join(folder_path, "PPO_POLICY_OPTIMIZER.pt"),
-        )
-        torch.save(
-            self.critic_optimizer.state_dict(),
-            os.path.join(folder_path, "PPO_VALUE_NET_OPTIMIZER.pt"),
-        )
-
-    def load_from(self, folder_path):
-        assert os.path.exists(folder_path), "PPO LEARNER CANNOT FIND FOLDER {}".format(
-            folder_path
-        )
-
-        self.actor.load_state_dict(
-            torch.load(os.path.join(folder_path, "PPO_POLICY.pt"))
-        )
-        self.critic.load_state_dict(
-            torch.load(os.path.join(folder_path, "PPO_VALUE_NET.pt"))
-        )
-        self.actor_optimizer.load_state_dict(
-            torch.load(os.path.join(folder_path, "PPO_POLICY_OPTIMIZER.pt"))
-        )
-        self.critic_optimizer.load_state_dict(
-            torch.load(os.path.join(folder_path, "PPO_VALUE_NET_OPTIMIZER.pt"))
         )
