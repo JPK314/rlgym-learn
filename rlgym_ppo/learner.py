@@ -93,7 +93,11 @@ class Learner(
         action_space_type_serde: TypeSerde[ActionSpaceType],
         state_metrics_type_serde: Optional[TypeSerde[StateMetrics]] = None,
         # TODO: add List[Tuple[AgentID, RewardType]] to collect_state_metrics_fn? Or can this be done in trajectory processor impl?
-        collect_state_metrics_fn: Optional[Callable[[StateType], StateMetrics]] = None,
+        collect_state_metrics_fn: Optional[
+            Callable[
+                [StateType, Dict[AgentID, RewardTypeWrapper[RewardType]]], StateMetrics
+            ]
+        ] = None,
         obs_standardizer: Optional[ObsStandardizer] = None,
         config_location: str = None,
     ):

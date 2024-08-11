@@ -1,4 +1,4 @@
-from typing import Callable, Optional
+from typing import Callable, Dict, Optional
 
 from rlgym.api import (
     ActionSpaceType,
@@ -39,7 +39,9 @@ def env_process(
     action_space_type_serde: TypeSerde[ActionSpaceType],
     obs_space_type_serde: TypeSerde[ObsSpaceType],
     state_metrics_type_serde: Optional[TypeSerde[StateMetrics]],
-    collect_state_metrics_fn: Callable[[StateType], StateMetrics],
+    collect_state_metrics_fn: Callable[
+        [StateType, Dict[AgentID, RewardType]], StateMetrics
+    ],
     shm_buffer,
     shm_offset: int,
     shm_size: int,
@@ -163,7 +165,7 @@ def env_process(
                     and state_metrics_type_serde is not None
                 ):
                     metrics_bytes = state_metrics_type_serde.to_bytes(
-                        collect_state_metrics_fn(env.state)
+                        collect_state_metrics_fn(env.state, rew_dict)
                     )
 
                 for agent_id in env.agents:

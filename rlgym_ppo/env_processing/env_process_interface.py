@@ -87,7 +87,9 @@ class EnvProcessInterface(
         obs_space_type_serde: TypeSerde[ObsSpaceType],
         action_space_type_serde: TypeSerde[ActionSpaceType],
         state_metrics_type_serde: Optional[TypeSerde[StateMetrics]] = None,
-        collect_state_metrics_fn: Optional[Callable[[StateType], bytes]] = None,
+        collect_state_metrics_fn: Optional[
+            Callable[[StateType, Dict[AgentID, RewardType]], StateMetrics]
+        ] = None,
         obs_standardizer: Optional[ObsStandardizer[AgentID, ObsType]] = None,
         min_inference_size=8,
         seed=123,

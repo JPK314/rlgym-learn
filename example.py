@@ -140,7 +140,9 @@ def metrics_logger_factory():
     return ExampleLogger()
 
 
-def collect_state_metrics_fn(state: GameState):
+def collect_state_metrics_fn(
+    state: GameState, rew_dict: Dict[str, FloatRewardTypeWrapper]
+):
     tot_cars = 0
     lin_vel_sum = np.zeros(3)
     ang_vel_sum = np.zeros(3)
@@ -239,11 +241,11 @@ if __name__ == "__main__":
     wandb_config = WandbConfigModel(group="rlgym-learn-testing", resume=True)
     ppo_agent_config = PPOAgentConfigModel(
         timesteps_per_iteration=10_000,
-        save_every_ts=100_000,  # not working yet
+        save_every_ts=100_000,
         add_unix_timestamp=True,
         checkpoint_load_folder="agents_checkpoints/PPO1/rlgym-learn-run-1723343938931125500/1723343960393463000",
         checkpoints_save_folder=None,
-        n_checkpoints_to_keep=5,  # not working yet
+        n_checkpoints_to_keep=5,
         random_seed=123,
         device="auto",
         log_to_wandb=True,
