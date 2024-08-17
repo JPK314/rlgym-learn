@@ -16,7 +16,7 @@ class ProcessConfigModel(BaseModel):
     @model_validator(mode="after")
     def set_default_min_inference_size(self):
         if self.min_inference_size < 0:
-            self.min_inference_size = int(0.9 * self.n_proc)
+            self.min_inference_size = max(1, int(0.9 * self.n_proc))
         return self
 
 
