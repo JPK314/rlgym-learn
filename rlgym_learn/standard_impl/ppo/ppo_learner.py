@@ -74,8 +74,8 @@ class PPOLearner(
         ObsType,
         ActionType,
         RewardType,
-        ActionSpaceType,
         ObsSpaceType,
+        ActionSpaceType,
         TrajectoryProcessorData,
     ]
 ):

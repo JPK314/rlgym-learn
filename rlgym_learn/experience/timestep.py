@@ -7,7 +7,7 @@ from torch import Tensor
 
 
 @dataclass
-class Timestep(Generic[AgentID, ActionType, ObsType, RewardType]):
+class Timestep(Generic[AgentID, ObsType, ActionType, RewardType]):
     timestep_id: UUID
     previous_timestep_id: Optional[UUID]
     agent_id: AgentID

@@ -224,7 +224,7 @@ def env_create_function():
 if __name__ == "__main__":
 
     # 32 processes
-    n_proc = 10
+    n_proc = 1
 
     learner_config = PPOLearnerConfigModel(
         n_epochs=1,
@@ -243,11 +243,11 @@ if __name__ == "__main__":
         timesteps_per_iteration=10_000,
         save_every_ts=100_000,
         add_unix_timestamp=True,
-        checkpoint_load_folder="agents_checkpoints/PPO1/rlgym-learn-run-1723394601682346400/1723394622757846600",
+        checkpoint_load_folder=None,  # "agents_checkpoints/PPO1/rlgym-learn-run-1723394601682346400/1723394622757846600",
         n_checkpoints_to_keep=5,
         random_seed=123,
         device="auto",
-        log_to_wandb=True,
+        log_to_wandb=False,
         learner_config=learner_config,
         experience_buffer_config=experience_buffer_config,
         wandb_config=wandb_config,
@@ -256,9 +256,11 @@ if __name__ == "__main__":
     generate_config(
         learner_config=LearnerConfigModel(
             process_config=ProcessConfigModel(n_proc=n_proc, render=False),
+            base_config=BaseConfigModel(timestep_limit=50000),
             agents_config={"PPO1": ppo_agent_config},
         ),
         config_location="config.json",
+        force_overwrite=True,
     )
 
     agents = {
@@ -283,7 +285,7 @@ if __name__ == "__main__":
             NumpyStaticShapeSerde(dtype=np.float64, shape=(3,))
         ),
         collect_state_metrics_fn=collect_state_metrics_fn,
-        obs_standardizer=NumpyObsStandardizer(5),
+        # obs_standardizer=NumpyObsStandardizer(5),
         config_location="config.json",
     )
     learner.learn()

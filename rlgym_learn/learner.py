@@ -8,14 +8,12 @@ and sends them to PPO, keeps track of the misc. variables and statistics for log
 reports to wandb and the console, and handles checkpointing.
 """
 
-import json
 import os
 import random
-from typing import Any, Callable, Dict, Generic, List, Optional, Tuple, Type
+from typing import Any, Callable, Dict, Generic, Optional
 
 import numpy as np
 import torch
-from pydantic import BaseModel, Field
 from rlgym.api import (
     ActionSpaceType,
     ActionType,

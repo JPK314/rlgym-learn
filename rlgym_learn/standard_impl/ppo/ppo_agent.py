@@ -18,7 +18,6 @@ from rlgym.api import (
     RewardType,
 )
 from torch import device as _device
-from wandb.wandb_run import Run
 
 import wandb
 from rlgym_learn.api import (
@@ -31,7 +30,7 @@ from rlgym_learn.api import (
 from rlgym_learn.experience import Timestep
 from rlgym_learn.util.torch_functions import get_device
 
-from ...learner_config import BaseConfigModel, ProcessConfigModel, WandbConfigModel
+from ...learner_config import WandbConfigModel
 from .actor import Actor
 from .critic import Critic
 from .experience_buffer import (
@@ -232,7 +231,6 @@ class PPOAgent(
                 checkpoint_load_folder=metrics_logger_checkpoint_load_folder,
             )
         )
-        self.wandb_run_id = None
 
         if agent_config.checkpoint_load_folder is not None:
             self._load_from_checkpoint()
@@ -248,7 +246,7 @@ class PPOAgent(
             ),
             "rb",
         ) as f:
-            current_trajectories_by_latest_timestep_id: Dict[
+            current_trajectories: Dict[
                 UUID,
                 Trajectory[AgentID, ActionType, ObsType, RewardTypeWrapper[RewardType]],
             ] = pickle.load(f)
@@ -268,9 +266,7 @@ class PPOAgent(
         ) as f:
             state = json.load(f)
 
-        self.current_trajectories_by_latest_timestep_id = (
-            current_trajectories_by_latest_timestep_id
-        )
+        self.current_trajectories = current_trajectories
         self.iteration_state_metrics = iteration_state_metrics
         self.cur_iteration = state["cur_iteration"]
         self.iteration_timesteps = state["iteration_timesteps"]
@@ -302,7 +298,7 @@ class PPOAgent(
             os.path.join(checkpoint_save_folder, CURRENT_TRAJECTORIES_FILE),
             "wb",
         ) as f:
-            pickle.dump(self.current_trajectories_by_latest_timestep_id, f)
+            pickle.dump(self.current_trajectories, f)
         with open(
             os.path.join(checkpoint_save_folder, ITERATION_STATE_METRICS_FILE),
             "wb",
@@ -341,6 +337,15 @@ class PPOAgent(
         self,
         run_suffix: str,
     ):
+        if (
+            self.wandb_run_id is not None
+            and self.config.agent_config.wandb_config.id is not None
+        ):
+            print(
+                f"Wandb run id from checkpoint ({self.wandb_run_id}) is being overridden by wandb run id from config: {self.config.agent_config.wandb_config.id}"
+            )
+            self.wandb_run_id = self.config.agent_config.wandb_config.id
+        # TODO: is this working?
         agent_wandb_config = {
             key: value
             for (key, value) in self.config.__dict__.items()
@@ -381,6 +386,7 @@ class PPOAgent(
         )
         print(f"{self.config.agent_name}: Created wandb run!", self.wandb_run.id)
 
+    # TODO: allow specification of which agent ids to return actions for
     @torch.no_grad
     def get_actions(self, obs_list):
         return self.learner.actor.get_action(obs_list)
@@ -388,7 +394,7 @@ class PPOAgent(
     def process_timestep_data(
         self,
         timesteps: List[
-            Timestep[AgentID, ActionType, ObsType, RewardTypeWrapper[RewardType]]
+            Timestep[AgentID, ObsType, ActionType, RewardTypeWrapper[RewardType]]
         ],
         state_metrics: List[StateMetrics],
     ):
@@ -409,9 +415,7 @@ class PPOAgent(
             else:
                 trajectory = Trajectory(timestep.agent_id)
                 trajectory.add_timestep(timestep)
-                self.current_trajectories_by_latest_timestep_id[
-                    timestep.timestep_id
-                ] = trajectory
+                self.current_trajectories[timestep.timestep_id] = trajectory
         self.iteration_timesteps += len(timesteps)
         self.cumulative_timesteps += len(timesteps)
         self.iteration_state_metrics += state_metrics
@@ -422,7 +426,7 @@ class PPOAgent(
             self.save_checkpoint()
 
     def _learn(self):
-        trajectories = list(self.current_trajectories_by_latest_timestep_id.values())
+        trajectories = list(self.current_trajectories.values())
         # Truncate any unfinished trajectories
         for trajectory in trajectories:
             trajectory.truncated = trajectory.truncated or not trajectory.done
@@ -456,7 +460,7 @@ class PPOAgent(
             )
 
         self.iteration_state_metrics = []
-        self.current_trajectories_by_latest_timestep_id.clear()
+        self.current_trajectories.clear()
         self.iteration_timesteps = 0
         self.iteration_start_time = cur_time
         self.timestep_collection_start_time = time.perf_counter()

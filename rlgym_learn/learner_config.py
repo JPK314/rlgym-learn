@@ -1,7 +1,7 @@
 import os
 from typing import Any, Dict, Optional
 
-from pydantic import BaseModel, Field, SerializeAsAny, model_validator
+from pydantic import BaseModel, Field, model_validator
 
 
 class ProcessConfigModel(BaseModel):
@@ -30,6 +30,7 @@ class WandbConfigModel(BaseModel):
     project: str = "rlgym-learn"
     group: str = "unnamed-runs"
     run: str = "rlgym-learn-run"
+    id: Optional[str] = None
     resume: bool = False
     additional_wandb_config: Dict[str, Any] = Field(default_factory=dict)
 
@@ -68,10 +69,11 @@ DEFAULT_CONFIG_FILENAME = "config.json"
 def generate_config(
     learner_config=LearnerConfigModel(),
     config_location: Optional[str] = None,
+    force_overwrite: bool = False,
 ):
     if config_location is None:
         config_location = os.path.join(os.getcwd(), DEFAULT_CONFIG_FILENAME)
-    if os.path.isfile(config_location):
+    if not force_overwrite and os.path.isfile(config_location):
         confirmation = input(
             f"File {config_location} exists already. Overwrite? (y)/n: "
         )

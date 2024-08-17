@@ -1,6 +1,5 @@
 from typing import Generic, List, Optional, Tuple
 
-import numpy as np
 import torch
 from rlgym.api import ActionType, AgentID, ObsType, RewardType
 from torch import Tensor
@@ -8,7 +7,7 @@ from torch import Tensor
 from rlgym_learn.experience import Timestep
 
 
-class Trajectory(Generic[AgentID, ActionType, ObsType, RewardType]):
+class Trajectory(Generic[AgentID, ObsType, ActionType, RewardType]):
     def __init__(self, agent_id: AgentID):
         """
         agent_id: the AgentID for the agent which is producing this trajectory.

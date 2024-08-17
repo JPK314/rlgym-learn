@@ -9,4 +9,5 @@ numpy>1.21
 sympy>1.10
 torch>1.13
 typing_extensions>4.6
+pydantic>=2.8.2
 wandb>0.15

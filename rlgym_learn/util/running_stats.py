@@ -6,12 +6,7 @@ Description:
     An implementation of Welford's algorithm for running statistics.
 """
 
-import functools
-import json
-import os
-
 import numpy as np
-import torch
 
 
 class WelfordRunningStat(object):
