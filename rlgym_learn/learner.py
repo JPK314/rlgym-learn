@@ -149,6 +149,7 @@ class Learner(
         self.agent_manager.set_space_types(obs_space, action_space)
         self.agent_manager.set_device(self.device)
         self.agent_manager.load_agents(self.config)
+        print("Learner successfully initialized!")
 
     def learn(self):
         """
