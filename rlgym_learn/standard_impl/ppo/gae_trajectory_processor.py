@@ -106,7 +106,7 @@ class GAETrajectoryProcessor(
                 actions,
                 torch.cat(log_probs_list).to(device=device),
                 torch.stack(values_list).to(device=device),
-                torch.stack(advantages_list).to(device=device),
+                torch.stack(advantages_list),
             ),
             trajectory_processor_data,
         )
