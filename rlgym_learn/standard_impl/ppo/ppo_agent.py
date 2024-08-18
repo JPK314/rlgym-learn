@@ -281,6 +281,8 @@ class PPOAgent(
         self.timestep_collection_start_time = state["timestep_collection_start_time"]
         if "wandb_run_id" in state:
             self.wandb_run_id = state["wandb_run_id"]
+        else:
+            self.wandb_run_id = None
 
     def save_checkpoint(self):
         print(f"Saving checkpoint {self.cumulative_timesteps}...")
