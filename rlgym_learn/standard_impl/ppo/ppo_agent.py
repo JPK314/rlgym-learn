@@ -237,6 +237,8 @@ class PPOAgent(
 
         if agent_config.log_to_wandb:
             self._load_wandb(run_suffix)
+        else:
+            self.wandb_run = None
 
     def _load_from_checkpoint(self):
         with open(
