@@ -246,7 +246,7 @@ class PPOAgent(
             ),
             "rb",
         ) as f:
-            current_trajectories: Dict[
+            current_trajectories_by_latest_timestep_id: Dict[
                 UUID,
                 Trajectory[AgentID, ActionType, ObsType, RewardTypeWrapper[RewardType]],
             ] = pickle.load(f)
@@ -266,7 +266,9 @@ class PPOAgent(
         ) as f:
             state = json.load(f)
 
-        self.current_trajectories = current_trajectories
+        self.current_trajectories_by_latest_timestep_id = (
+            current_trajectories_by_latest_timestep_id
+        )
         self.iteration_state_metrics = iteration_state_metrics
         self.cur_iteration = state["cur_iteration"]
         self.iteration_timesteps = state["iteration_timesteps"]
@@ -298,7 +300,7 @@ class PPOAgent(
             os.path.join(checkpoint_save_folder, CURRENT_TRAJECTORIES_FILE),
             "wb",
         ) as f:
-            pickle.dump(self.current_trajectories, f)
+            pickle.dump(self.current_trajectories_by_latest_timestep_id, f)
         with open(
             os.path.join(checkpoint_save_folder, ITERATION_STATE_METRICS_FILE),
             "wb",
@@ -415,7 +417,9 @@ class PPOAgent(
             else:
                 trajectory = Trajectory(timestep.agent_id)
                 trajectory.add_timestep(timestep)
-                self.current_trajectories[timestep.timestep_id] = trajectory
+                self.current_trajectories_by_latest_timestep_id[
+                    timestep.timestep_id
+                ] = trajectory
         self.iteration_timesteps += len(timesteps)
         self.cumulative_timesteps += len(timesteps)
         self.iteration_state_metrics += state_metrics
@@ -426,7 +430,7 @@ class PPOAgent(
             self.save_checkpoint()
 
     def _learn(self):
-        trajectories = list(self.current_trajectories.values())
+        trajectories = list(self.current_trajectories_by_latest_timestep_id.values())
         # Truncate any unfinished trajectories
         for trajectory in trajectories:
             trajectory.truncated = trajectory.truncated or not trajectory.done
@@ -460,7 +464,7 @@ class PPOAgent(
             )
 
         self.iteration_state_metrics = []
-        self.current_trajectories.clear()
+        self.current_trajectories_by_latest_timestep_id.clear()
         self.iteration_timesteps = 0
         self.iteration_start_time = cur_time
         self.timestep_collection_start_time = time.perf_counter()
