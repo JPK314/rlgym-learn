@@ -428,6 +428,12 @@ class EnvProcessInterface(
 
         return (obs_space, action_space)
 
+    def increase_min_inference_size(self):
+        self.min_inference_size = min(self.min_inference_size + 1, self.n_procs)
+
+    def decrease_min_inference_size(self):
+        self.min_inference_size = max(self.min_inference_size - 1, 1)
+
     # TODO: allow changing of min inference size?
     def add_process(self, shm_buffer_size=8192):
         proc_id = self.n_procs
@@ -518,6 +524,7 @@ class EnvProcessInterface(
             self.current_pids.remove(self.n_procs)
 
         self.selector.unregister(parent_end)
+        self.min_inference_size = min(self.min_inference_size, self.n_procs)
 
     def init_processes(
         self,

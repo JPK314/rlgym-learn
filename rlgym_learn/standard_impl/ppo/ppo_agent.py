@@ -226,11 +226,12 @@ class PPOAgent(
                 checkpoint_load_folder=experience_buffer_checkpoint_load_folder,
             )
         )
-        self.metrics_logger.load(
-            DerivedMetricsLoggerConfig(
-                checkpoint_load_folder=metrics_logger_checkpoint_load_folder,
+        if self.metrics_logger is not None:
+            self.metrics_logger.load(
+                DerivedMetricsLoggerConfig(
+                    checkpoint_load_folder=metrics_logger_checkpoint_load_folder,
+                )
             )
-        )
 
         if agent_config.checkpoint_load_folder is not None:
             self._load_from_checkpoint()
@@ -346,7 +347,7 @@ class PPOAgent(
             and self.config.agent_config.wandb_config.id is not None
         ):
             print(
-                f"Wandb run id from checkpoint ({self.wandb_run_id}) is being overridden by wandb run id from config: {self.config.agent_config.wandb_config.id}"
+                f"{self.config.agent_name}: Wandb run id from checkpoint ({self.wandb_run_id}) is being overridden by wandb run id from config: {self.config.agent_config.wandb_config.id}"
             )
             self.wandb_run_id = self.config.agent_config.wandb_config.id
         # TODO: is this working?

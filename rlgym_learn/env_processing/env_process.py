@@ -16,6 +16,7 @@ from rlgym_learn.api import StateMetrics, TypeSerde
 from rlgym_learn.util.comm_consts import PACKET_MAX_SIZE
 
 
+# TODO: update docs
 def env_process(
     proc_id,
     endpoint,
@@ -44,7 +45,7 @@ def env_process(
     ],
     shm_buffer,
     shm_size: int,
-    seed,
+    seed: int,
     render: bool,
     render_delay: float,
     recalculate_agentid_every_step: bool,

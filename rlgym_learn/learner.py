@@ -185,6 +185,7 @@ class Learner(
         print(
             "Press (p) to pause, (c) to checkpoint, (q) to checkpoint and quit (after next iteration)\n"
             + "(a) to add an env process, (d) to delete an env process\n"
+            + "(j) to increase min inference size, (l) to decrease min inference size\n"
         )
 
         # Handle actions for observations created on process init
@@ -231,6 +232,16 @@ class Learner(
                     self.env_process_interface.delete_process()
                     print(
                         f"Process deleted. ({self.env_process_interface.n_procs} total)"
+                    )
+                if c == "j":
+                    self.env_process_interface.increase_min_inference_size()
+                    print(
+                        f"Min inference size increased to {self.env_process_interface.min_inference_size} ({(100 * self.env_process_interface.min_inference_size / self.env_process_interface.n_procs):.2f}% of processes)"
+                    )
+                if c == "l":
+                    self.env_process_interface.decrease_min_inference_size()
+                    print(
+                        f"Min inference size decreased to {self.env_process_interface.min_inference_size} ({(100 * self.env_process_interface.min_inference_size / self.env_process_interface.n_procs):.2f}% of processes)"
                     )
 
     def save(self, cumulative_timesteps):
