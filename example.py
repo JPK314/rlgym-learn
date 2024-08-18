@@ -224,7 +224,7 @@ def env_create_function():
 if __name__ == "__main__":
 
     # 32 processes
-    n_proc = 1
+    n_proc = 30
 
     learner_config = PPOLearnerConfigModel(
         n_epochs=1,
@@ -256,7 +256,7 @@ if __name__ == "__main__":
     generate_config(
         learner_config=LearnerConfigModel(
             process_config=ProcessConfigModel(n_proc=n_proc, render=False),
-            base_config=BaseConfigModel(timestep_limit=50000),
+            base_config=BaseConfigModel(timestep_limit=500_000),
             agents_config={"PPO1": ppo_agent_config},
         ),
         config_location="config.json",

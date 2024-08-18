@@ -40,16 +40,19 @@ class GAETrajectoryProcessor(
         self.standardize_returns = standardize_returns
         self.max_returns_per_stats_increment = max_returns_per_stats_increment
 
+    # TODO: why are dtype and device getting passed here?
     def process_trajectories(self, trajectories, dtype, device):
         return_std = self.return_stats.std[0] if self.standardize_returns else None
         gamma = self.gamma
         lmbda = self.lmbda
+        exp_len = 0
         observations: List[Tuple[AgentID, ObsType]] = []
         actions: List[ActionType] = []
-        log_probs: List[torch.Tensor] = []
-        values: List[float] = []
-        advantages: List[float] = []
-        returns: List[float] = []
+        # For some reason, appending to lists is faster than preallocating the tensor and then indexing into it to assign
+        log_probs_list: List[torch.Tensor] = []
+        values_list: List[torch.Tensor] = []
+        advantages_list: List[torch.Tensor] = []
+        returns_list: List[torch.Tensor] = []
         reward_sum = torch.as_tensor(0, dtype=dtype, device=device)
         for trajectory in trajectories:
             cur_return = torch.as_tensor(0, dtype=dtype, device=device)
@@ -73,18 +76,19 @@ class GAETrajectoryProcessor(
                 next_val_pred = val_pred
                 cur_advantages = delta + gamma * lmbda * cur_advantages
                 cur_return = reward_tensor + gamma * cur_return
-                returns.append(cur_return.detach().item())
+                returns_list.append(cur_return)
                 observations.append((trajectory.agent_id, obs))
                 actions.append(action)
-                log_probs.append(log_prob)
-                values.append(val_pred)
-                advantages.append(cur_advantages)
+                log_probs_list.append(log_prob)
+                values_list.append(val_pred)
+                advantages_list.append(cur_advantages)
 
         if self.standardize_returns:
             # Update the running statistics about the returns.
-            n_to_increment = min(self.max_returns_per_stats_increment, len(returns))
-            for sample in returns[:n_to_increment]:
-                self.return_stats.update(sample)
+            n_to_increment = min(self.max_returns_per_stats_increment, exp_len)
+
+            for sample in returns_list[:n_to_increment]:
+                self.return_stats.update(sample.cpu().item())
             avg_return = self.return_stats.mean
             return_std = self.return_stats.std
         else:
@@ -100,9 +104,9 @@ class GAETrajectoryProcessor(
             (
                 observations,
                 actions,
-                torch.cat(log_probs).to(device=device),
-                torch.stack(values).to(device=device),
-                torch.stack(advantages),
+                torch.cat(log_probs_list).to(device=device),
+                torch.stack(values_list).to(device=device),
+                torch.stack(advantages_list).to(device=device),
             ),
             trajectory_processor_data,
         )

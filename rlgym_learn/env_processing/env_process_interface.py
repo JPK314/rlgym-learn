@@ -207,7 +207,7 @@ class EnvProcessInterface(
         """
         n_collected = 0
         collected_timesteps: List[Timestep] = []
-        observations: List[Tuple[int, Dict[AgentID, ObsType]]] = (
+        collected_observations: List[Tuple[int, Dict[AgentID, ObsType]]] = (
             self.new_process_observations
         )
         self.new_process_observations = []
@@ -219,16 +219,17 @@ class EnvProcessInterface(
 
                 parent_end, fd, events, proc_id = key
                 process, parent_end, child_endpoint, shm_view = self.processes[proc_id]
+
                 response = self._collect_response(proc_id, parent_end, shm_view)
                 if response is not None:
                     timesteps, obs_from_process, metrics_from_process = response
                     collected_timesteps += timesteps
                     n_collected += len(timesteps)
-                    observations.append((proc_id, obs_from_process))
+                    collected_observations.append((proc_id, obs_from_process))
                     if metrics_from_process is not None:
                         collected_metrics.append(metrics_from_process)
 
-        return timesteps, observations, collected_metrics
+        return collected_timesteps, collected_observations, collected_metrics
 
     def _collect_response(
         self,
@@ -347,6 +348,8 @@ class EnvProcessInterface(
             self.current_obs[proc_id] = obs_dict
         self.current_timestep_new_episode[proc_id] = new_episode
 
+        if len(timesteps) == 0:
+            print("wtf happened?")
         return timesteps, obs_dict, metrics
 
     def _get_initial_obs(self) -> List[Tuple[AgentID, ObsType]]:
