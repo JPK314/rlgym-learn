@@ -76,9 +76,9 @@ class AgentManager(
         agents_log_probs = stack(
             [agent_action[1] for agent_action in agents_actions]
         ).to(device="cpu")
-        actions: List[ActionType] = [None] * obs_list_len
+        action_list: List[ActionType] = [None] * obs_list_len
         for action_idx, agent_idx in enumerate(action_idx_agent_idx_map):
-            actions[action_idx] = agents_actions[agent_idx][0][action_idx]
+            action_list[action_idx] = agents_actions[agent_idx][0][action_idx]
         # TODO: this looks insane but probably works? Check the output with multiple agents
         log_prob_gather_index = (
             as_tensor(action_idx_agent_idx_map, dtype=int64)
@@ -88,7 +88,8 @@ class AgentManager(
         log_probs = agents_log_probs.gather(dim=0, index=log_prob_gather_index)[0].to(
             device="cpu"
         )
-        return actions, log_probs
+        # TODO: why am I returning one tensor with the first dimension being parallel to the action list? Why not just a list of tensors?
+        return action_list, log_probs
 
     def process_timestep_data(
         self, timesteps: List[Timestep], state_metrics: List[StateMetrics]

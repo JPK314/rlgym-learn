@@ -39,24 +39,10 @@ from rlgym_learn.standard_impl.ppo import (
 from rlgym_learn.util import reporting
 
 
-class ExampleLogger(PPOMetricsLogger[Tuple[np.ndarray]]):
+class ExampleLogger(PPOMetricsLogger[None]):
 
-    def collect_state_metrics(self, data: List[Tuple[np.ndarray]]) -> Dict[str, Any]:
-        avg_linvel = np.zeros(3)
-        avg_angvel = np.zeros(3)
-        for datum in data:
-            avg_linvel += datum[0]
-            avg_angvel += datum[1]
-        avg_linvel /= len(data)
-        avg_angvel /= len(data)
-        return {
-            "linvel_x": avg_linvel[0],
-            "linvel_y": avg_linvel[1],
-            "linvel_z": avg_linvel[2],
-            "angvel_x": avg_angvel[0],
-            "angvel_y": avg_angvel[1],
-            "angvel_z": avg_angvel[2],
-        }
+    def collect_state_metrics(self, data: List[None]) -> Dict[str, Any]:
+        return {}
 
     def report_metrics(
         self,
@@ -224,23 +210,23 @@ def env_create_function():
 if __name__ == "__main__":
 
     # 32 processes
-    n_proc = 30
+    n_proc = 120
 
     learner_config = PPOLearnerConfigModel(
         n_epochs=1,
-        batch_size=10_000,
-        minibatch_size=10_000,
+        batch_size=50_000,
+        minibatch_size=50_000,
         ent_coef=0.001,
         clip_range=0.2,
         actor_lr=0.0003,
         critic_lr=0.0003,
     )
     experience_buffer_config = ExperienceBufferConfigModel(
-        max_size=100_000, trajectory_processor_args={"standardize_returns": True}
+        max_size=150_000, trajectory_processor_args={"standardize_returns": True}
     )
     wandb_config = WandbConfigModel(group="rlgym-learn-testing", resume=True)
     ppo_agent_config = PPOAgentConfigModel(
-        timesteps_per_iteration=10_000,
+        timesteps_per_iteration=50_000,
         save_every_ts=100_000,
         add_unix_timestamp=True,
         checkpoint_load_folder=None,  # "agents_checkpoints/PPO1/rlgym-learn-run-1723394601682346400/1723394622757846600",
@@ -250,7 +236,7 @@ if __name__ == "__main__":
         log_to_wandb=False,
         learner_config=learner_config,
         experience_buffer_config=experience_buffer_config,
-        wandb_config=wandb_config,
+        # wandb_config=wandb_config,
     )
 
     generate_config(
@@ -272,24 +258,19 @@ if __name__ == "__main__":
         )
     }
 
-    import marshal
-
-    with open("test_env_size", "wb") as f:
-        marshal.dump(env_create_function.__code__, f)
-
     learner = Learner(
         env_create_function=env_create_function,
         agents=agents,
         agent_id_serde=StrSerde(),
-        action_type_serde=NumpyDynamicShapeSerde(dtype=np.int64),
-        obs_type_serde=NumpyDynamicShapeSerde(dtype=np.float64),
-        reward_type_serde=RewardTypeWrapperSerde(FloatRewardTypeWrapper, FloatSerde()),
-        obs_space_type_serde=StrIntTupleSerde(),
-        action_space_type_serde=StrIntTupleSerde(),
-        state_metrics_type_serde=HomogeneousTupleSerde(
+        action_serde=NumpyDynamicShapeSerde(dtype=np.int64),
+        obs_serde=NumpyDynamicShapeSerde(dtype=np.float64),
+        reward_serde=RewardTypeWrapperSerde(FloatRewardTypeWrapper, FloatSerde()),
+        obs_space_serde=StrIntTupleSerde(),
+        action_space_serde=StrIntTupleSerde(),
+        state_metrics_serde=HomogeneousTupleSerde(
             NumpyStaticShapeSerde(dtype=np.float64, shape=(3,))
         ),
-        collect_state_metrics_fn=collect_state_metrics_fn,
+        collect_state_metrics_fn=None,
         # obs_standardizer=NumpyObsStandardizer(5),
         config_location="config.json",
     )

@@ -5,7 +5,6 @@ import shutil
 import time
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, Generic, List, Optional, Tuple
-from uuid import UUID
 
 import torch
 from pydantic import BaseModel, Field
@@ -24,6 +23,7 @@ from rlgym_learn.api import (
     Agent,
     DerivedMetricsLoggerConfig,
     MetricsLogger,
+    ObsStandardizer,
     RewardTypeWrapper,
     StateMetrics,
 )
@@ -116,7 +116,8 @@ class PPOAgent(
                     PPOAgentData[TrajectoryProcessorData],
                 ],
             ]
-        ],
+        ] = None,
+        obs_standardizer: Optional[ObsStandardizer] = None,
     ):
         self.learner = PPOLearner(actor_factory, critic_factory)
         self.experience_buffer = ExperienceBuffer(trajectory_processor_factory)
@@ -125,8 +126,14 @@ class PPOAgent(
         else:
             self.metrics_logger = None
 
+        self.obs_standardizer = obs_standardizer
+        if obs_standardizer is not None:
+            print(
+                "Warning: using an obs standardizer is slow! It is recommended to design your obs to be standardized (i.e. have approximately mean 0 and std 1 for each value) without needing this extra post-processing step."
+            )
+
         self.current_trajectories_by_latest_timestep_id: Dict[
-            UUID,
+            int,
             Trajectory[AgentID, ActionType, ObsType, RewardTypeWrapper[RewardType]],
         ] = {}
         self.iteration_state_metrics: List[StateMetrics] = []
@@ -250,7 +257,7 @@ class PPOAgent(
             "rb",
         ) as f:
             current_trajectories_by_latest_timestep_id: Dict[
-                UUID,
+                int,
                 Trajectory[AgentID, ActionType, ObsType, RewardTypeWrapper[RewardType]],
             ] = pickle.load(f)
         with open(
@@ -398,6 +405,23 @@ class PPOAgent(
     def get_actions(self, obs_list):
         return self.learner.actor.get_action(obs_list)
 
+    def standardize_timestep_observations(
+        self,
+        timesteps: List[
+            Timestep[AgentID, ObsType, ActionType, RewardTypeWrapper[RewardType]]
+        ],
+    ):
+        obs_list = [None] * (2 * len(timesteps))
+        for timestep_idx, timestep in enumerate(timesteps):
+            obs_list[2 * timestep_idx] = (timestep.agent_id, timestep.obs)
+            obs_list[2 * timestep_idx + 1] = (timestep.agent_id, timestep.next_obs)
+        standardized_obs = self.obs_standardizer.standardize(obs_list)
+        for obs_idx, obs in enumerate(standardized_obs):
+            if obs_idx % 2 == 0:
+                timesteps[obs_idx // 2].obs = obs
+            else:
+                timesteps[obs_idx // 2].next_obs = obs
+
     def process_timestep_data(
         self,
         timesteps: List[
@@ -405,6 +429,8 @@ class PPOAgent(
         ],
         state_metrics: List[StateMetrics],
     ):
+        if self.obs_standardizer is not None:
+            self.standardize_timestep_observations(timesteps)
         for timestep in timesteps:
             if (
                 timestep.previous_timestep_id is not None

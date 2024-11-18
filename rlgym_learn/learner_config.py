@@ -6,7 +6,6 @@ from pydantic import BaseModel, Field, model_validator
 
 class ProcessConfigModel(BaseModel):
     n_proc: int = 8
-    shm_buffer_size: int = 8192
     min_inference_size: int = -1
     render: bool = False
     render_delay: float = 0
@@ -23,6 +22,9 @@ class ProcessConfigModel(BaseModel):
 class BaseConfigModel(BaseModel):
     device: str = "auto"
     random_seed: int = 123
+    timestep_id_bits: int = 64
+    shm_buffer_size: int = 8192
+    flinks_folder: str = "shmem_flinks"
     timestep_limit: int = 5_000_000_000
 
 

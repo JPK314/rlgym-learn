@@ -166,5 +166,13 @@ rlgym-ppo.code-workspace
 /wandb
 config.json
 /agents_checkpoints
-tests.py
-tests2.py
+tests*.py
+*.prof
+*.pkl
+
+# generated files
+/shmem_flinks
+
+# Added by cargo
+
+/target
