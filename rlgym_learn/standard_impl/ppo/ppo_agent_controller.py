@@ -20,7 +20,7 @@ from torch import device as _device
 
 import wandb
 from rlgym_learn.api import (
-    Agent,
+    AgentController,
     DerivedMetricsLoggerConfig,
     MetricsLogger,
     ObsStandardizer,
@@ -30,7 +30,7 @@ from rlgym_learn.api import (
 from rlgym_learn.experience import Timestep
 from rlgym_learn.util.torch_functions import get_device
 
-from ...learner_config import WandbConfigModel
+from ...learning_coordinator_config import WandbConfigModel
 from .actor import Actor
 from .critic import Critic
 from .experience_buffer import (
@@ -55,7 +55,7 @@ ITERATION_STATE_METRICS_FILE = "iteration_state_metrics.pkl"
 CURRENT_TRAJECTORIES_FILE = "current_trajectories.pkl"
 
 
-class PPOAgentConfigModel(BaseModel):
+class PPOAgentControllerConfigModel(BaseModel):
     timesteps_per_iteration: int = 50000
     save_every_ts: int = 1_000_000
     add_unix_timestamp: bool = True
@@ -73,7 +73,7 @@ class PPOAgentConfigModel(BaseModel):
 
 
 @dataclass
-class PPOAgentData(Generic[TrajectoryProcessorData]):
+class PPOAgentControllerData(Generic[TrajectoryProcessorData]):
     ppo_data: PPOData
     trajectory_processor_data: TrajectoryProcessorData
     cumulative_timesteps: int
@@ -82,9 +82,9 @@ class PPOAgentData(Generic[TrajectoryProcessorData]):
     timestep_collection_time: float
 
 
-class PPOAgent(
-    Agent[
-        PPOAgentConfigModel,
+class PPOAgentController(
+    AgentController[
+        PPOAgentControllerConfigModel,
         AgentID,
         ObsType,
         ActionType,
@@ -92,7 +92,7 @@ class PPOAgent(
         ObsSpaceType,
         ActionSpaceType,
         StateMetrics,
-        PPOAgentData[TrajectoryProcessorData],
+        PPOAgentControllerData[TrajectoryProcessorData],
     ]
 ):
     def __init__(
@@ -113,7 +113,7 @@ class PPOAgent(
                 [],
                 MetricsLogger[
                     StateMetrics,
-                    PPOAgentData[TrajectoryProcessorData],
+                    PPOAgentControllerData[TrajectoryProcessorData],
                 ],
             ]
         ] = None,
@@ -149,41 +149,47 @@ class PPOAgent(
         self.obs_space = obs_space
         self.action_space = action_space
 
-    def validate_config(self, config_obj: Any) -> PPOAgentConfigModel:
-        return PPOAgentConfigModel.model_validate(config_obj)
+    def validate_config(self, config_obj: Any) -> PPOAgentControllerConfigModel:
+        return PPOAgentControllerConfigModel.model_validate(config_obj)
 
     def load(self, config):
         self.config = config
-        self.device = get_device(config.agent_config.device)
-        print(f"{self.config.agent_name}: Using device {self.device}")
-        agent_config = config.agent_config
-        learner_config = config.agent_config.learner_config
-        experience_buffer_config = config.agent_config.experience_buffer_config
+        self.device = get_device(config.agent_controller_config.device)
+        print(f"{self.config.agent_controller_name}: Using device {self.device}")
+        agent_controller_config = config.agent_controller_config
+        learner_config = config.agent_controller_config.learner_config
+        experience_buffer_config = (
+            config.agent_controller_config.experience_buffer_config
+        )
         learner_checkpoint_load_folder = (
             None
-            if agent_config.checkpoint_load_folder is None
-            else os.path.join(agent_config.checkpoint_load_folder, PPO_LEARNER_FOLDER)
+            if agent_controller_config.checkpoint_load_folder is None
+            else os.path.join(
+                agent_controller_config.checkpoint_load_folder, PPO_LEARNER_FOLDER
+            )
         )
         experience_buffer_checkpoint_load_folder = (
             None
-            if agent_config.checkpoint_load_folder is None
+            if agent_controller_config.checkpoint_load_folder is None
             else os.path.join(
-                agent_config.checkpoint_load_folder, EXPERIENCE_BUFFER_FOLDER
+                agent_controller_config.checkpoint_load_folder, EXPERIENCE_BUFFER_FOLDER
             )
         )
         metrics_logger_checkpoint_load_folder = (
             None
-            if agent_config.checkpoint_load_folder is None
+            if agent_controller_config.checkpoint_load_folder is None
             else os.path.join(
-                agent_config.checkpoint_load_folder, METRICS_LOGGER_FOLDER
+                agent_controller_config.checkpoint_load_folder, METRICS_LOGGER_FOLDER
             )
         )
 
-        run_suffix = f"-{time.time_ns()}" if agent_config.add_unix_timestamp else ""
+        run_suffix = (
+            f"-{time.time_ns()}" if agent_controller_config.add_unix_timestamp else ""
+        )
 
-        if agent_config.checkpoint_load_folder is not None:
+        if agent_controller_config.checkpoint_load_folder is not None:
             loaded_checkpoint_runs_folder = os.path.abspath(
-                os.path.join(agent_config.checkpoint_load_folder, "../..")
+                os.path.join(agent_controller_config.checkpoint_load_folder, "../..")
             )
             abs_save_folder = os.path.abspath(config.save_folder)
             if abs_save_folder == loaded_checkpoint_runs_folder:
@@ -191,22 +197,22 @@ class PPOAgent(
                     "Using the loaded checkpoint's run folder as the checkpoints save folder."
                 )
                 checkpoints_save_folder = os.path.abspath(
-                    os.path.join(agent_config.checkpoint_load_folder, "..")
+                    os.path.join(agent_controller_config.checkpoint_load_folder, "..")
                 )
             else:
                 print(
                     "Runs folder in config does not align with loaded checkpoint's runs folder. Creating new run in the config-based runs folder."
                 )
                 checkpoints_save_folder = os.path.join(
-                    config.save_folder, agent_config.run_name + run_suffix
+                    config.save_folder, agent_controller_config.run_name + run_suffix
                 )
         else:
             checkpoints_save_folder = os.path.join(
-                config.save_folder, agent_config.run_name + run_suffix
+                config.save_folder, agent_controller_config.run_name + run_suffix
             )
         self.checkpoints_save_folder = checkpoints_save_folder
         print(
-            f"{config.agent_name}: Saving checkpoints to {self.checkpoints_save_folder}"
+            f"{config.agent_controller_name}: Saving checkpoints to {self.checkpoints_save_folder}"
         )
 
         self.learner.load(
@@ -227,7 +233,7 @@ class PPOAgent(
         self.experience_buffer.load(
             DerivedExperienceBufferConfig(
                 max_size=experience_buffer_config.max_size,
-                seed=agent_config.random_seed,
+                seed=agent_controller_config.random_seed,
                 device=self.device,
                 trajectory_processor_args=experience_buffer_config.trajectory_processor_args,
                 checkpoint_load_folder=experience_buffer_checkpoint_load_folder,
@@ -240,10 +246,10 @@ class PPOAgent(
                 )
             )
 
-        if agent_config.checkpoint_load_folder is not None:
+        if agent_controller_config.checkpoint_load_folder is not None:
             self._load_from_checkpoint()
 
-        if agent_config.log_to_wandb:
+        if agent_controller_config.log_to_wandb:
             self._load_wandb(run_suffix)
         else:
             self.wandb_run = None
@@ -251,7 +257,7 @@ class PPOAgent(
     def _load_from_checkpoint(self):
         with open(
             os.path.join(
-                self.config.agent_config.checkpoint_load_folder,
+                self.config.agent_controller_config.checkpoint_load_folder,
                 CURRENT_TRAJECTORIES_FILE,
             ),
             "rb",
@@ -262,7 +268,7 @@ class PPOAgent(
             ] = pickle.load(f)
         with open(
             os.path.join(
-                self.config.agent_config.checkpoint_load_folder,
+                self.config.agent_controller_config.checkpoint_load_folder,
                 ITERATION_STATE_METRICS_FILE,
             ),
             "rb",
@@ -270,7 +276,8 @@ class PPOAgent(
             iteration_state_metrics: List[StateMetrics] = pickle.load(f)
         with open(
             os.path.join(
-                self.config.agent_config.checkpoint_load_folder, PPO_AGENT_FILE
+                self.config.agent_controller_config.checkpoint_load_folder,
+                PPO_AGENT_FILE,
             ),
             "rt",
         ) as f:
@@ -326,7 +333,7 @@ class PPOAgent(
                 "iteration_start_time": self.iteration_start_time,
                 "timestep_collection_start_time": self.timestep_collection_start_time,
             }
-            if self.config.agent_config.log_to_wandb:
+            if self.config.agent_controller_config.log_to_wandb:
                 state["wandb_run_id"] = self.wandb_run.id
             json.dump(
                 state,
@@ -338,10 +345,13 @@ class PPOAgent(
         existing_checkpoints = [
             int(arg) for arg in os.listdir(self.checkpoints_save_folder)
         ]
-        if len(existing_checkpoints) > self.config.agent_config.n_checkpoints_to_keep:
+        if (
+            len(existing_checkpoints)
+            > self.config.agent_controller_config.n_checkpoints_to_keep
+        ):
             existing_checkpoints.sort()
             for checkpoint_name in existing_checkpoints[
-                : -self.config.agent_config.n_checkpoints_to_keep
+                : -self.config.agent_controller_config.n_checkpoints_to_keep
             ]:
                 shutil.rmtree(
                     os.path.join(self.checkpoints_save_folder, str(checkpoint_name))
@@ -353,12 +363,12 @@ class PPOAgent(
     ):
         if (
             self.wandb_run_id is not None
-            and self.config.agent_config.wandb_config.id is not None
+            and self.config.agent_controller_config.wandb_config.id is not None
         ):
             print(
-                f"{self.config.agent_name}: Wandb run id from checkpoint ({self.wandb_run_id}) is being overridden by wandb run id from config: {self.config.agent_config.wandb_config.id}"
+                f"{self.config.agent_controller_name}: Wandb run id from checkpoint ({self.wandb_run_id}) is being overridden by wandb run id from config: {self.config.agent_controller_config.wandb_config.id}"
             )
-            self.wandb_run_id = self.config.agent_config.wandb_config.id
+            self.wandb_run_id = self.config.agent_controller_config.wandb_config.id
         # TODO: is this working?
         agent_wandb_config = {
             key: value
@@ -381,24 +391,31 @@ class PPOAgent(
             "n_proc": self.config.process_config.n_proc,
             "min_inference_size": self.config.process_config.min_inference_size,
             "timestep_limit": self.config.base_config.timestep_limit,
-            **self.config.agent_config.experience_buffer_config.trajectory_processor_args,
-            **self.config.agent_config.wandb_config.additional_wandb_config,
+            **self.config.agent_controller_config.experience_buffer_config.trajectory_processor_args,
+            **self.config.agent_controller_config.wandb_config.additional_wandb_config,
         }
 
-        if self.config.agent_config.wandb_config.resume:
-            print(f"{self.config.agent_name}: Attempting to resume wandb run...")
+        if self.config.agent_controller_config.wandb_config.resume:
+            print(
+                f"{self.config.agent_controller_name}: Attempting to resume wandb run..."
+            )
         else:
-            print(f"{self.config.agent_name}: Attempting to create new wandb run...")
+            print(
+                f"{self.config.agent_controller_name}: Attempting to create new wandb run..."
+            )
         self.wandb_run = wandb.init(
-            project=self.config.agent_config.wandb_config.project,
-            group=self.config.agent_config.wandb_config.group,
+            project=self.config.agent_controller_config.wandb_config.project,
+            group=self.config.agent_controller_config.wandb_config.group,
             config=wandb_config,
-            name=self.config.agent_config.wandb_config.run + run_suffix,
+            name=self.config.agent_controller_config.wandb_config.run + run_suffix,
             id=self.wandb_run_id,
             resume="allow",
             reinit=True,
         )
-        print(f"{self.config.agent_name}: Created wandb run!", self.wandb_run.id)
+        print(
+            f"{self.config.agent_controller_name}: Created wandb run!",
+            self.wandb_run.id,
+        )
 
     # TODO: allow specification of which agent ids to return actions for
     @torch.no_grad
@@ -454,10 +471,13 @@ class PPOAgent(
         self.iteration_timesteps += len(timesteps)
         self.cumulative_timesteps += len(timesteps)
         self.iteration_state_metrics += state_metrics
-        if self.iteration_timesteps >= self.config.agent_config.timesteps_per_iteration:
+        if (
+            self.iteration_timesteps
+            >= self.config.agent_controller_config.timesteps_per_iteration
+        ):
             self.timestep_collection_end_time = time.perf_counter()
             self._learn()
-        if self.ts_since_last_save >= self.config.agent_config.save_every_ts:
+        if self.ts_since_last_save >= self.config.agent_controller_config.save_every_ts:
             self.save_checkpoint()
 
     def _learn(self):
@@ -474,7 +494,7 @@ class PPOAgent(
         cur_time = time.perf_counter()
         if self.metrics_logger is not None:
             agent_metrics = self.metrics_logger.collect_agent_metrics(
-                PPOAgentData(
+                PPOAgentControllerData(
                     ppo_data,
                     trajectory_processor_data,
                     self.cumulative_timesteps,
@@ -488,7 +508,7 @@ class PPOAgent(
                 self.iteration_state_metrics
             )
             self.metrics_logger.report_metrics(
-                self.config.agent_name,
+                self.config.agent_controller_name,
                 state_metrics,
                 agent_metrics,
                 self.wandb_run,

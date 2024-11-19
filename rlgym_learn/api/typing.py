@@ -1,5 +1,5 @@
 from typing import TypeVar
 
-AgentConfig = TypeVar("AgentConfig")
-AgentData = TypeVar("AgentData")
+AgentControllerConfig = TypeVar("AgentControllerConfig")
+AgentControllerData = TypeVar("AgentControllerData")
 StateMetrics = TypeVar("StateMetrics")

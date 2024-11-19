@@ -8,8 +8,8 @@ from rlgym.rocket_league.obs_builders import DefaultObs
 
 from rlgym_learn import (
     BaseConfigModel,
-    Learner,
-    LearnerConfigModel,
+    LearningCoordinator,
+    LearningCoordinatorConfigModel,
     ProcessConfigModel,
     WandbConfigModel,
     generate_config,
@@ -31,8 +31,8 @@ from rlgym_learn.standard_impl.ppo import (
     DiscreteFF,
     ExperienceBufferConfigModel,
     GAETrajectoryProcessor,
-    PPOAgent,
-    PPOAgentConfigModel,
+    PPOAgentController,
+    PPOAgentControllerConfigModel,
     PPOLearnerConfigModel,
     PPOMetricsLogger,
 )
@@ -60,7 +60,7 @@ class ExampleLogger(PPOMetricsLogger[Tuple[np.ndarray]]):
 
     def report_metrics(
         self,
-        agent_name,
+        agent_controller_name,
         state_metrics,
         agent_metrics,
         wandb_run,
@@ -69,7 +69,9 @@ class ExampleLogger(PPOMetricsLogger[Tuple[np.ndarray]]):
             **agent_metrics,
             **state_metrics,
         }
-        reporting.report_metrics(agent_name, report, None, wandb_run=wandb_run)
+        reporting.report_metrics(
+            agent_controller_name, report, None, wandb_run=wandb_run
+        )
 
 
 class CustomObs(DefaultObs):
@@ -239,7 +241,7 @@ if __name__ == "__main__":
         max_size=100_000, trajectory_processor_args={"standardize_returns": True}
     )
     wandb_config = WandbConfigModel(group="rlgym-learn-testing", resume=True)
-    ppo_agent_config = PPOAgentConfigModel(
+    ppo_agent_controller_config = PPOAgentControllerConfigModel(
         timesteps_per_iteration=10_000,
         save_every_ts=100_000,
         add_unix_timestamp=True,
@@ -254,17 +256,17 @@ if __name__ == "__main__":
     )
 
     generate_config(
-        learner_config=LearnerConfigModel(
+        learner_config=LearningCoordinatorConfigModel(
             process_config=ProcessConfigModel(n_proc=n_proc, render=False),
             base_config=BaseConfigModel(timestep_limit=500_000),
-            agents_config={"PPO1": ppo_agent_config},
+            agent_controllers_config={"PPO1": ppo_agent_controller_config},
         ),
         config_location="config.json",
         force_overwrite=True,
     )
 
-    agents = {
-        "PPO1": PPOAgent(
+    agent_controllers = {
+        "PPO1": PPOAgentController(
             actor_factory,
             critic_factory,
             trajectory_processor_factory,
@@ -277,9 +279,9 @@ if __name__ == "__main__":
     with open("test_env_size", "wb") as f:
         marshal.dump(env_create_function.__code__, f)
 
-    learner = Learner(
+    coordinator = LearningCoordinator(
         env_create_function=env_create_function,
-        agents=agents,
+        agent_controllers=agent_controllers,
         agent_id_serde=StrSerde(),
         action_type_serde=NumpyDynamicShapeSerde(dtype=np.int64),
         obs_type_serde=NumpyDynamicShapeSerde(dtype=np.float64),
@@ -293,4 +295,4 @@ if __name__ == "__main__":
         # obs_standardizer=NumpyObsStandardizer(5),
         config_location="config.json",
     )
-    learner.learn()
+    coordinator.start()

@@ -6,8 +6,8 @@ from typing import Any, Dict, Generic, List, Optional
 
 from wandb.wandb_run import Run
 
-from .agent import AgentData
-from .typing import AgentData, StateMetrics
+from .agent_controller import AgentControllerData
+from .typing import AgentControllerData, StateMetrics
 
 METRICS_LOGGER_FILE = "metrics_logger.pkl"
 
@@ -21,7 +21,7 @@ class DerivedMetricsLoggerConfig:
 class MetricsLogger(
     Generic[
         StateMetrics,
-        AgentData,
+        AgentControllerData,
     ]
 ):
 
@@ -30,13 +30,13 @@ class MetricsLogger(
         raise NotImplementedError
 
     @abstractmethod
-    def collect_agent_metrics(self, data: AgentData) -> Dict[str, Any]:
+    def collect_agent_metrics(self, data: AgentControllerData) -> Dict[str, Any]:
         raise NotImplementedError
 
     @abstractmethod
     def report_metrics(
         self,
-        agent_name: str,
+        agent_controller_name: str,
         state_metrics: Dict[str, Any],
         agent_metrics: Dict[str, Any],
         wandb_run: Run,
@@ -55,7 +55,7 @@ class MetricsLogger(
         ) as f:
             _metrics_logger: MetricsLogger[
                 StateMetrics,
-                AgentData,
+                AgentControllerData,
             ] = pickle.load(f)
         self.__dict__ = _metrics_logger.__dict__
 

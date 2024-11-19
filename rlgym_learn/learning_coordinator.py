@@ -28,15 +28,24 @@ from rlgym.api import (
 )
 
 from rlgym_learn.agent import AgentManager
-from rlgym_learn.api import Agent, RewardTypeWrapper, RustSerde, StateMetrics, TypeSerde
+from rlgym_learn.api import (
+    AgentController,
+    RewardTypeWrapper,
+    RustSerde,
+    StateMetrics,
+    TypeSerde,
+)
 from rlgym_learn.env_processing import EnvProcessInterface
 from rlgym_learn.util import KBHit
 from rlgym_learn.util.torch_functions import get_device
 
-from .learner_config import DEFAULT_CONFIG_FILENAME, LearnerConfigModel
+from .learning_coordinator_config import (
+    DEFAULT_CONFIG_FILENAME,
+    LearningCoordinatorConfigModel,
+)
 
 
-class Learner(
+class LearningCoordinator(
     Generic[
         AgentID,
         ObsType,
@@ -64,9 +73,9 @@ class Learner(
                 ActionSpaceType,
             ],
         ],
-        agents: Dict[
+        agent_controllers: Dict[
             str,
-            Agent[
+            AgentController[
                 Any,
                 AgentID,
                 ObsType,
@@ -102,7 +111,7 @@ class Learner(
         ), f"{config_location} is not a valid location from which to read config, aborting."
 
         with open(config_location, "rt") as f:
-            self.config = LearnerConfigModel.model_validate_json(f.read())
+            self.config = LearningCoordinatorConfigModel.model_validate_json(f.read())
 
         torch.manual_seed(self.config.base_config.random_seed)
         np.random.seed(self.config.base_config.random_seed)
@@ -113,7 +122,7 @@ class Learner(
 
         print("Initializing processes...")
 
-        self.agent_manager = AgentManager(agents)
+        self.agent_manager = AgentManager(agent_controllers)
 
         self.cumulative_timesteps = 0
         self.env_process_interface = EnvProcessInterface(
@@ -141,23 +150,23 @@ class Learner(
                 render_delay=self.config.process_config.render_delay,
             )
         )
-        print("Loading agents...")
+        print("Loading agent controllers...")
         self.agent_manager.set_space_types(obs_space, action_space)
         self.agent_manager.set_device(self.device)
-        self.agent_manager.load_agents(self.config)
+        self.agent_manager.load_agent_controllers(self.config)
         print("Learner successfully initialized!")
         # TODO: delete and remove import
         self.prof = cProfile.Profile()
         self.prof.enable()
 
-    def learn(self):
+    def start(self):
         """
-        Function to wrap the _learn function in a try/catch/finally
+        Function to wrap the _run function in a try/catch/finally
         block to ensure safe execution and error handling.
         :return: None
         """
         try:
-            self._learn()
+            self._run()
         except Exception:
             import traceback
 
@@ -174,7 +183,7 @@ class Learner(
             self.prof.dump_stats("ppo_prof.prof")
             self.cleanup()
 
-    def _learn(self):
+    def _run(self):
         """
         Learning function. This is where the magic happens.
         :return: None
@@ -192,7 +201,7 @@ class Learner(
         actions, log_probs = self.agent_manager.get_actions(self.initial_obs_list)
         self.env_process_interface.send_actions(actions, log_probs)
 
-        # Collect the desired number of timesteps from our agents and environments.
+        # Collect the desired number of timesteps from our environments.
         loop_iterations = 0
         while self.cumulative_timesteps < self.config.base_config.timestep_limit:
             obs_list, timesteps, state_metrics = (
@@ -221,7 +230,7 @@ class Learner(
                     if kb.kbhit():
                         break
             if c in ("c", "q"):
-                self.agent_manager.save_agents()
+                self.agent_manager.save_agent_controllers()
             if c == "q":
                 return
             if c in ("c", "p"):
@@ -246,7 +255,7 @@ class Learner(
                 )
 
     def save(self):
-        self.agent_manager.save_agents()
+        self.agent_manager.save_agent_controllers()
 
     def cleanup(self):
         """

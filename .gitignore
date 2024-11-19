@@ -165,7 +165,7 @@ rlgym-ppo.code-workspace
 /data
 /wandb
 config.json
-/agents_checkpoints
+/agent_controllers_checkpoints
 tests*.py
 *.prof
 *.pkl

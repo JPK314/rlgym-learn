@@ -13,22 +13,22 @@ from torch import Tensor, device
 
 from rlgym_learn.experience import Timestep
 
-from ..learner_config import BaseConfigModel, ProcessConfigModel
-from .typing import AgentConfig, AgentData, StateMetrics
+from ..learning_coordinator_config import BaseConfigModel, ProcessConfigModel
+from .typing import AgentControllerConfig, AgentControllerData, StateMetrics
 
 
 @dataclass
-class DerivedAgentConfig(Generic[AgentConfig]):
-    agent_name: str
-    agent_config: AgentConfig
+class DerivedAgentControllerConfig(Generic[AgentControllerConfig]):
+    agent_controller_name: str
+    agent_controller_config: AgentControllerConfig
     base_config: BaseConfigModel
     process_config: ProcessConfigModel
     save_folder: str
 
 
-class Agent(
+class AgentController(
     Generic[
-        AgentConfig,
+        AgentControllerConfig,
         AgentID,
         ObsType,
         ActionType,
@@ -36,7 +36,7 @@ class Agent(
         ObsSpaceType,
         ActionSpaceType,
         StateMetrics,
-        AgentData,
+        AgentControllerData,
     ]
 ):
     def __init__(self, *args, **kwargs):
@@ -70,15 +70,14 @@ class Agent(
     def set_device(self, device: device):
         pass
 
-    def validate_config(self, config_obj: Any) -> AgentConfig:
+    def validate_config(self, config_obj: Any) -> AgentControllerConfig:
         pass
 
-    def load(self, config: DerivedAgentConfig[AgentConfig]):
+    def load(self, config: DerivedAgentControllerConfig[AgentControllerConfig]):
         """
         Function to load the agent. set_space_type and set_device will always
         be called at least once before this method.
-        :param agent_name: String name of this agent, for logging and config.
-        :param agent_config: config specific for this agent.
+        :param config: config derived from learning controller config, including the agent controller specific config.
         """
 
     def save_checkpoint(self):
