@@ -4,8 +4,6 @@ from typing import Generic, List, Tuple, TypeVar
 from rlgym.api import ActionType, AgentID, ObsType, RewardType
 from torch import Tensor, device, dtype
 
-from rlgym_learn.api import RewardTypeWrapper
-
 from .trajectory import Trajectory
 
 TrajectoryProcessorData = TypeVar("TrajectoryProcessorData")
@@ -17,9 +15,7 @@ class TrajectoryProcessor(
     @abstractmethod
     def process_trajectories(
         self,
-        trajectories: List[
-            Trajectory[AgentID, ActionType, ObsType, RewardTypeWrapper[RewardType]]
-        ],
+        trajectories: List[Trajectory[AgentID, ActionType, ObsType, RewardType]],
         dtype: dtype,
         device: device,
     ) -> Tuple[

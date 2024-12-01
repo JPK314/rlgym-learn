@@ -24,7 +24,6 @@ from rlgym_learn.api import (
     DerivedMetricsLoggerConfig,
     MetricsLogger,
     ObsStandardizer,
-    RewardTypeWrapper,
     StateMetrics,
 )
 from rlgym_learn.experience import Timestep
@@ -88,7 +87,7 @@ class PPOAgentController(
         AgentID,
         ObsType,
         ActionType,
-        RewardTypeWrapper[RewardType],
+        RewardType,
         ObsSpaceType,
         ActionSpaceType,
         StateMetrics,
@@ -134,7 +133,7 @@ class PPOAgentController(
 
         self.current_trajectories_by_latest_timestep_id: Dict[
             int,
-            Trajectory[AgentID, ActionType, ObsType, RewardTypeWrapper[RewardType]],
+            Trajectory[AgentID, ActionType, ObsType, RewardType],
         ] = {}
         self.iteration_state_metrics: List[StateMetrics] = []
         self.cur_iteration = 0
@@ -264,7 +263,7 @@ class PPOAgentController(
         ) as f:
             current_trajectories_by_latest_timestep_id: Dict[
                 int,
-                Trajectory[AgentID, ActionType, ObsType, RewardTypeWrapper[RewardType]],
+                Trajectory[AgentID, ActionType, ObsType, RewardType],
             ] = pickle.load(f)
         with open(
             os.path.join(
@@ -424,9 +423,7 @@ class PPOAgentController(
 
     def standardize_timestep_observations(
         self,
-        timesteps: List[
-            Timestep[AgentID, ObsType, ActionType, RewardTypeWrapper[RewardType]]
-        ],
+        timesteps: List[Timestep[AgentID, ObsType, ActionType, RewardType]],
     ):
         obs_list = [None] * (2 * len(timesteps))
         for timestep_idx, timestep in enumerate(timesteps):
@@ -441,9 +438,7 @@ class PPOAgentController(
 
     def process_timestep_data(
         self,
-        timesteps: List[
-            Timestep[AgentID, ObsType, ActionType, RewardTypeWrapper[RewardType]]
-        ],
+        timesteps: List[Timestep[AgentID, ObsType, ActionType, RewardType]],
         state_metrics: List[StateMetrics],
     ):
         if self.obs_standardizer is not None:
@@ -523,9 +518,7 @@ class PPOAgentController(
     @torch.no_grad()
     def _update_value_predictions(
         self,
-        trajectories: List[
-            Trajectory[AgentID, ActionType, ObsType, RewardTypeWrapper[RewardType]]
-        ],
+        trajectories: List[Trajectory[AgentID, ActionType, ObsType, RewardType]],
     ):
         """
         Function to add timesteps to our experience buffer and compute the advantage

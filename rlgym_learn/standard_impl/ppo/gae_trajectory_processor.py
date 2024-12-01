@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import List, Tuple
 
@@ -28,17 +29,23 @@ class GAETrajectoryProcessor(
         lmbda=0.95,
         standardize_returns=True,
         max_returns_per_stats_increment=150,
+        reward_type_list_as_tensor: Callable[
+            [List[RewardType]], torch.Tensor
+        ] = lambda rewards: torch.as_tensor(rewards),
     ):
         """
         :param gamma: Gamma hyper-parameter.
         :param lmbda: Lambda hyper-parameter.
-        :param return_std: Standard deviation of the returns (used for reward normalization).
+        :param standardize_returns: True if returns should be standardized to have stddev 1, False otherwise.
+        :max_returns_per_stats_increment: Optimization to limit the number of returns used to calculate the running stat each call to process_trajectories.
+        :param reward_type_list_as_tensor: Function to convert list of n RewardTypes to a parallel Tensor of shape (n,)
         """
         self.gamma = gamma
         self.lmbda = lmbda
         self.return_stats = WelfordRunningStat(1)
         self.standardize_returns = standardize_returns
         self.max_returns_per_stats_increment = max_returns_per_stats_increment
+        self.reward_type_list_as_tensor = reward_type_list_as_tensor
 
     # TODO: why are dtype and device getting passed here?
     def process_trajectories(self, trajectories, dtype, device):
@@ -62,9 +69,19 @@ class GAETrajectoryProcessor(
                 else torch.as_tensor(0, dtype=dtype, device=device)
             )
             cur_advantages = torch.as_tensor(0, dtype=dtype, device=device)
-            for timestep in reversed(trajectory.complete_timesteps):
-                (obs, action, log_prob, reward, val_pred) = timestep
-                reward_tensor = reward.as_tensor(dtype=dtype, device=device)
+            timesteps_reward_tensors = list(
+                zip(
+                    trajectory.complete_timesteps,
+                    self.reward_type_list_as_tensor(
+                        [
+                            reward
+                            for (_, _, _, reward, _) in trajectory.complete_timesteps
+                        ]
+                    ),
+                )
+            )[::-1]
+            for timestep, reward_tensor in timesteps_reward_tensors:
+                (obs, action, log_prob, _, val_pred) = timestep
                 reward_sum += reward_tensor
                 if return_std is not None:
                     norm_reward_tensor = torch.clamp(

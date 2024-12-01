@@ -188,7 +188,7 @@ class EnvProcessInterface(
         self.processes = [None for i in range(n_processes)]
 
         # Spawn child processes
-        for proc_idx in tqdm(range(n_processes)):
+        for proc_idx in range(n_processes):
             proc_id = str(uuid4())
 
             render_this_proc = proc_idx == 0 and render
@@ -226,7 +226,7 @@ class EnvProcessInterface(
             self.selector.register(parent_end, selectors.EVENT_READ, proc_idx)
 
         # Initialize child processes
-        for pid_idx in range(n_processes):
+        for pid_idx in tqdm(range(n_processes)):
             process, parent_end, _, proc_id = self.processes[pid_idx]
 
             # Get child endpoint
@@ -481,5 +481,25 @@ class EnvProcessInterface(
         """
         Clean up resources and terminate processes.
         """
+        self.rust_env_process_interface.cleanup()
         for _ in range(len(self.processes)):
-            self.delete_process()
+            (process, parent_end, _, _) = self.processes.pop()
+            self.pid_idx_current_obs_dict_map.pop()
+            self.pid_idx_current_action_dict_map.pop()
+            self.pid_idx_current_log_prob_dict_map.pop()
+            self.pid_idx_prev_timestep_id_dict_map.pop()
+
+            self.selector.unregister(parent_end)
+            self.min_inference_size = min(self.min_inference_size, self.n_procs)
+
+            try:
+                process.join()
+            except Exception:
+                print("Unable to join process")
+                traceback.print_exc()
+
+            try:
+                parent_end.close()
+            except Exception:
+                print("Unable to close parent connection")
+                traceback.print_exc()

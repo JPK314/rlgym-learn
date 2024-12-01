@@ -7,8 +7,6 @@ from .serdes import (
     IntSerde,
     NumpyDynamicShapeSerde,
     NumpyStaticShapeSerde,
-    RewardTypeWrapperSerde,
     StrIntTupleSerde,
     StrSerde,
 )
-from .wrappers import FloatRewardTypeWrapper, RewardFunctionWrapper

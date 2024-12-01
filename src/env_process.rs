@@ -1,6 +1,7 @@
 use crate::common::{append_bytes_dict_full, py_hash};
 use crate::communication::*;
-use crate::serdes::{get_pyany_serde, Serde};
+use crate::serdes::pyany_serde_impl::get_pyany_serde;
+use crate::serdes::serde_enum::Serde;
 use pyo3::exceptions::asyncio::InvalidStateError;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList, PyTuple};
@@ -128,6 +129,7 @@ pub fn env_process(
         })?
     };
     let shm_slice = unsafe { &mut shmem.as_slice_mut()[used_bytes..] };
+    let swap_space = &mut vec![0_u8; shm_buffer_size][..];
 
     Python::with_gil::<_, PyResult<()>>(|py| {
         // Initial setup
@@ -187,7 +189,7 @@ pub fn env_process(
         let collect_state_metrics_fn_option = collect_state_metrics_fn_option.as_ref();
 
         // Startup complete
-        println!("EP: Initialized for proc_id {}", flink.clone());
+        // println!("EP: Initialized for proc_id {}", flink.clone());
         sync_with_epi_fn.call0(py)?;
 
         let reset_obs = env_reset(&env)?;
@@ -209,11 +211,15 @@ pub fn env_process(
             .collect::<PyResult<Vec<(Bound<'_, PyAny>, i64)>>>()?;
         let mut serialized_agent_id;
         for (agent_id, agent_id_hash) in agent_ids.iter() {
-            (serialized_agent_id, agent_id_pyany_serde_option) = get_python_bytes(
+            let serialized_agent_id_len;
+            (serialized_agent_id_len, agent_id_pyany_serde_option) = append_python(
+                swap_space,
+                0,
                 agent_id,
                 &agent_id_type_serde_option,
                 agent_id_pyany_serde_option,
             )?;
+            serialized_agent_id = swap_space[0..serialized_agent_id_len].to_vec();
             agent_ids_hash_map.insert(*agent_id_hash, agent_id.clone());
             serialized_agent_ids.insert(*agent_id_hash, serialized_agent_id.clone());
             prev_agent_ids_hash_map.insert(*agent_id_hash, agent_id.clone());
@@ -233,7 +239,7 @@ pub fn env_process(
             (offset, obs_pyany_serde_option) = append_python(
                 shm_slice,
                 offset,
-                reset_obs
+                &reset_obs
                     .get_item(agent_ids_hash_map.get(agent_id_hash).ok_or(InvalidStateError::new_err(
                         "AgentIDs hash map did not contain hash present in serialized_agent_ids"
                     ))?)?
@@ -253,6 +259,8 @@ pub fn env_process(
         // Start main loop
         let mut new_episode_obs_dict = PyDict::new_bound(py);
         let mut metrics_bytes = Vec::new();
+        let mut new_agent_id_pyany_serde_option;
+        let mut new_action_pyany_serde_option;
         loop {
             // println!("EP: Waiting for signal from EPI...");
             epi_evt
@@ -272,20 +280,26 @@ pub fn env_process(
                     let mut agent_id;
                     let mut action;
                     for _ in 0..n_agents {
-                        (agent_id, offset, agent_id_pyany_serde_option) = retrieve_python(
+                        (agent_id, offset, new_agent_id_pyany_serde_option) = retrieve_python(
                             py,
                             shm_slice,
                             offset,
                             &agent_id_type_serde_option,
                             &agent_id_pyany_serde_option,
                         )?;
-                        (action, offset, action_pyany_serde_option) = retrieve_python(
+                        if new_agent_id_pyany_serde_option.is_some() {
+                            agent_id_pyany_serde_option = new_agent_id_pyany_serde_option;
+                        }
+                        (action, offset, new_action_pyany_serde_option) = retrieve_python(
                             py,
                             shm_slice,
                             offset,
                             &action_type_serde_option,
                             &action_pyany_serde_option,
                         )?;
+                        if new_action_pyany_serde_option.is_some() {
+                            action_pyany_serde_option = new_action_pyany_serde_option;
+                        }
                         actions_dict.set_item(agent_id, action)?;
                     }
 
@@ -302,12 +316,15 @@ pub fn env_process(
                             .unwrap()
                             .call1(py, (env_state(&env)?, &rew_dict))?
                             .into_bound(py);
-
-                        (metrics_bytes, state_metrics_pyany_serde_option) = get_python_bytes(
+                        let metrics_bytes_len;
+                        (metrics_bytes_len, state_metrics_pyany_serde_option) = append_python(
+                            swap_space,
+                            0,
                             &result,
                             &state_metrics_type_serde_option,
                             state_metrics_pyany_serde_option,
                         )?;
+                        metrics_bytes = swap_space[0..metrics_bytes_len].to_vec();
                     };
 
                     // Recalculate agent ids and anything used with current agents that doesn't get overwritten each step
@@ -325,11 +342,15 @@ pub fn env_process(
                         persistent_truncated_dict.clear();
                         done_agents.clear();
                         for (agent_id, agent_id_hash) in agent_ids.iter() {
-                            (serialized_agent_id, agent_id_pyany_serde_option) = get_python_bytes(
+                            let serialized_agent_id_len;
+                            (serialized_agent_id_len, agent_id_pyany_serde_option) = append_python(
+                                swap_space,
+                                0,
                                 agent_id,
                                 &agent_id_type_serde_option,
                                 agent_id_pyany_serde_option,
                             )?;
+                            serialized_agent_id = swap_space[0..serialized_agent_id_len].to_vec();
                             serialized_agent_ids.insert(*agent_id_hash, serialized_agent_id);
                             agent_ids_hash_map.insert(*agent_id_hash, agent_id.clone());
                         }
@@ -384,11 +405,15 @@ pub fn env_process(
                         agent_ids_hash_map.clear();
                         done_agents.clear();
                         for (agent_id, agent_id_hash) in agent_ids.iter() {
-                            (serialized_agent_id, agent_id_pyany_serde_option) = get_python_bytes(
+                            let serialized_agent_id_len;
+                            (serialized_agent_id_len, agent_id_pyany_serde_option) = append_python(
+                                swap_space,
+                                0,
                                 agent_id,
                                 &agent_id_type_serde_option,
                                 agent_id_pyany_serde_option,
                             )?;
+                            serialized_agent_id = swap_space[0..serialized_agent_id_len].to_vec();
                             serialized_agent_ids.insert(*agent_id_hash, serialized_agent_id);
                             agent_ids_hash_map.insert(*agent_id_hash, agent_id.clone());
                             done_agents.insert(*agent_id_hash, false);
@@ -397,6 +422,7 @@ pub fn env_process(
                         n_agents = agent_ids.len();
                     }
 
+                    // println!("Writing env step message");
                     // Write env step message
                     offset = 0;
                     offset = append_bool(shm_slice, offset, new_episode);
@@ -525,14 +551,14 @@ pub fn env_process(
                     (offset, obs_space_pyany_serde_option) = append_python(
                         shm_slice,
                         offset,
-                        obs_space,
+                        &obs_space,
                         &obs_space_type_serde_option,
                         obs_space_pyany_serde_option,
                     )?;
                     (_, action_space_pyany_serde_option) = append_python(
                         shm_slice,
                         offset,
-                        action_space,
+                        &action_space,
                         &action_space_type_serde_option,
                         action_space_pyany_serde_option,
                     )?;

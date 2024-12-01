@@ -15,14 +15,11 @@ from rlgym_learn import (
     generate_config,
 )
 from rlgym_learn.standard_impl import (
-    FloatRewardTypeWrapper,
     FloatSerde,
     HomogeneousTupleSerde,
     NumpyDynamicShapeSerde,
     NumpyObsStandardizer,
     NumpyStaticShapeSerde,
-    RewardFunctionWrapper,
-    RewardTypeWrapperSerde,
     StrIntTupleSerde,
     StrSerde,
 )
@@ -142,9 +139,7 @@ def metrics_logger_factory():
     return ExampleLogger()
 
 
-def collect_state_metrics_fn(
-    state: GameState, rew_dict: Dict[str, FloatRewardTypeWrapper]
-):
+def collect_state_metrics_fn(state: GameState, rew_dict: Dict[str, float]):
     tot_cars = 0
     lin_vel_sum = np.zeros(3)
     ang_vel_sum = np.zeros(3)
@@ -188,10 +183,7 @@ def env_create_function():
     termination_condition = GoalCondition()
     truncation_condition = NoTouchTimeoutCondition(timeout=timeout_seconds)
 
-    reward_fn = RewardFunctionWrapper(
-        CombinedReward((TouchReward(), 1), (VelocityPlayerToBallReward(), 0.1)),
-        FloatRewardTypeWrapper,
-    )
+    reward_fn = CombinedReward((TouchReward(), 1), (VelocityPlayerToBallReward(), 0.1))
 
     obs_builder = CustomObs(
         zero_padding=None,
@@ -285,7 +277,7 @@ if __name__ == "__main__":
         agent_id_serde=StrSerde(),
         action_type_serde=NumpyDynamicShapeSerde(dtype=np.int64),
         obs_type_serde=NumpyDynamicShapeSerde(dtype=np.float64),
-        reward_type_serde=RewardTypeWrapperSerde(FloatRewardTypeWrapper, FloatSerde()),
+        reward_type_serde=FloatSerde(),
         obs_space_type_serde=StrIntTupleSerde(),
         action_space_type_serde=StrIntTupleSerde(),
         state_metrics_type_serde=HomogeneousTupleSerde(

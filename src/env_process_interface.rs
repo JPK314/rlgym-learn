@@ -16,9 +16,9 @@ use crate::communication::retrieve_bool;
 use crate::communication::retrieve_python;
 use crate::communication::retrieve_usize;
 use crate::communication::Header;
-use crate::serdes::get_pyany_serde;
-use crate::serdes::PyAnySerde;
-use crate::serdes::Serde;
+use crate::serdes::pyany_serde::PyAnySerde;
+use crate::serdes::pyany_serde_impl::get_pyany_serde;
+use crate::serdes::serde_enum::Serde;
 
 #[pyclass(unsendable)]
 pub struct EnvProcessInterface {
@@ -331,6 +331,24 @@ impl EnvProcessInterface {
         Ok(())
     }
 
+    fn cleanup(&mut self) -> PyResult<()> {
+        while let Some(proc_package) = self.proc_packages.pop() {
+            let (_, mut shmem) = proc_package;
+            let (ep_evt, used_bytes) = unsafe {
+                Event::from_existing(shmem.as_ptr()).map_err(|err| {
+                    InvalidStateError::new_err(format!("Failed to get event: {}", err.to_string()))
+                })?
+            };
+            let shm_slice = unsafe { &mut shmem.as_slice_mut()[used_bytes..] };
+            // println!("EPI: Sending signal with header Stop...");
+            append_header(shm_slice, 0, Header::Stop);
+            ep_evt
+                .set(EventState::Signaled)
+                .map_err(|err| InvalidStateError::new_err(err.to_string()))?;
+        }
+        Ok(())
+    }
+
     // We assume this will only be called when the python side has detected that the EP has signaled
     // Returns: (
     //   current episode data (a list of (agent_id, next_obs, reward, terminated, truncated)),
@@ -537,7 +555,7 @@ impl EnvProcessInterface {
         obs_list: Vec<(PyObject, PyObject)>,
         obs_list_idx_pid_idx_map: Vec<usize>,
     ) -> PyResult<()> {
-        // println!("Entering send_actions");
+        // println!("EPI: Entering send_actions");
         let mut pid_idx_agent_id_action_list_map = HashMap::new();
         for ((action, (agent_id, _)), pid_idx) in action_list
             .into_iter()
@@ -576,14 +594,14 @@ impl EnvProcessInterface {
                     (offset, self.agent_id_pyany_serde_option) = append_python(
                         shm_slice,
                         offset,
-                        agent_id.into_bound(py),
+                        &agent_id.into_bound(py),
                         &agent_id_type_serde_option,
                         self.agent_id_pyany_serde_option.take(),
                     )?;
                     (offset, self.action_pyany_serde_option) = append_python(
                         shm_slice,
                         offset,
-                        action.into_bound(py),
+                        &action.into_bound(py),
                         &action_type_serde_option,
                         self.action_pyany_serde_option.take(),
                     )?;
@@ -593,7 +611,7 @@ impl EnvProcessInterface {
                     .set(EventState::Signaled)
                     .map_err(|err| InvalidStateError::new_err(err.to_string()))?;
             }
-            // println!("Exiting send_actions");
+            // println!("EPI: Exiting send_actions");
             Ok(())
         })
     }

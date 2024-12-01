@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, mem::align_of};
 
 use pyo3::{
     intern,
@@ -6,7 +6,7 @@ use pyo3::{
     Bound, PyAny, PyResult,
 };
 
-use crate::{communication::append_python, serdes::PyAnySerde};
+use crate::{communication::append_python, serdes::pyany_serde::PyAnySerde};
 
 pub fn py_hash(v: &Bound<'_, PyAny>) -> PyResult<i64> {
     v.call_method0(intern!(v.py(), "__hash__"))?
@@ -25,8 +25,14 @@ pub fn append_bytes_dict_full<'py>(
     append_python(
         shm_slice,
         offset,
-        py_dict.get_item(agent_id_map.get(agent_id_hash).unwrap())?,
+        &py_dict.get_item(agent_id_map.get(agent_id_hash).unwrap())?,
         &type_serde_option,
         pyany_pyany_serde_option,
     )
+}
+
+pub fn get_bytes_to_alignment<T>(addr: usize) -> usize {
+    let alignment = align_of::<T>();
+    let aligned_addr = addr.wrapping_add(alignment - 1) & 0usize.wrapping_sub(alignment);
+    aligned_addr.wrapping_sub(addr)
 }

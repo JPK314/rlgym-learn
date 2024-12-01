@@ -28,13 +28,7 @@ from rlgym.api import (
 )
 
 from rlgym_learn.agent import AgentManager
-from rlgym_learn.api import (
-    AgentController,
-    RewardTypeWrapper,
-    RustSerde,
-    StateMetrics,
-    TypeSerde,
-)
+from rlgym_learn.api import AgentController, RustSerde, StateMetrics, TypeSerde
 from rlgym_learn.env_processing import EnvProcessInterface
 from rlgym_learn.util import KBHit
 from rlgym_learn.util.torch_functions import get_device
@@ -67,7 +61,7 @@ class LearningCoordinator(
                 ObsType,
                 ActionType,
                 EngineActionType,
-                RewardTypeWrapper[RewardType],
+                RewardType,
                 StateType,
                 ObsSpaceType,
                 ActionSpaceType,
@@ -98,9 +92,7 @@ class LearningCoordinator(
         state_metrics_serde: Optional[Union[TypeSerde[StateMetrics], RustSerde]] = None,
         # TODO: add List[Tuple[AgentID, RewardType]] to collect_state_metrics_fn? Or can this be done in trajectory processor impl?
         collect_state_metrics_fn: Optional[
-            Callable[
-                [StateType, Dict[AgentID, RewardTypeWrapper[RewardType]]], StateMetrics
-            ]
+            Callable[[StateType, Dict[AgentID, RewardType]], StateMetrics]
         ] = None,
         config_location: str = None,
     ):

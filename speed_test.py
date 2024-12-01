@@ -14,15 +14,13 @@ from rlgym_learn import (
     WandbConfigModel,
     generate_config,
 )
+from rlgym_learn.api import RustSerde, RustSerdeDtype, RustSerdeType
 from rlgym_learn.standard_impl import (
-    FloatRewardTypeWrapper,
     FloatSerde,
     HomogeneousTupleSerde,
     NumpyDynamicShapeSerde,
     NumpyObsStandardizer,
     NumpyStaticShapeSerde,
-    RewardFunctionWrapper,
-    RewardTypeWrapperSerde,
     StrIntTupleSerde,
     StrSerde,
 )
@@ -128,9 +126,7 @@ def metrics_logger_factory():
     return ExampleLogger()
 
 
-def collect_state_metrics_fn(
-    state: GameState, rew_dict: Dict[str, FloatRewardTypeWrapper]
-):
+def collect_state_metrics_fn(state: GameState, rew_dict: Dict[str, float]):
     tot_cars = 0
     lin_vel_sum = np.zeros(3)
     ang_vel_sum = np.zeros(3)
@@ -174,10 +170,7 @@ def env_create_function():
     termination_condition = GoalCondition()
     truncation_condition = NoTouchTimeoutCondition(timeout=timeout_seconds)
 
-    reward_fn = RewardFunctionWrapper(
-        CombinedReward((TouchReward(), 1), (VelocityPlayerToBallReward(), 0.1)),
-        FloatRewardTypeWrapper,
-    )
+    reward_fn = CombinedReward((TouchReward(), 1), (VelocityPlayerToBallReward(), 0.1))
 
     obs_builder = CustomObs(
         zero_padding=None,
@@ -212,7 +205,7 @@ def env_create_function():
 if __name__ == "__main__":
 
     # 32 processes
-    n_proc = 5
+    n_proc = 75
 
     learner_config = PPOLearnerConfigModel(
         n_epochs=1,
@@ -263,14 +256,29 @@ if __name__ == "__main__":
     coordinator = LearningCoordinator(
         env_create_function=env_create_function,
         agent_controllers=agent_controllers,
-        agent_id_serde=StrSerde(),
-        action_serde=NumpyDynamicShapeSerde(dtype=np.int64),
-        obs_serde=NumpyDynamicShapeSerde(dtype=np.float64),
-        reward_serde=RewardTypeWrapperSerde(FloatRewardTypeWrapper, FloatSerde()),
-        obs_space_serde=StrIntTupleSerde(),
-        action_space_serde=StrIntTupleSerde(),
-        state_metrics_serde=HomogeneousTupleSerde(
-            NumpyStaticShapeSerde(dtype=np.float64, shape=(3,))
+        agent_id_serde=RustSerde(type=RustSerdeType.STRING),
+        action_serde=RustSerde(type=RustSerdeType.NUMPY, dtype=RustSerdeDtype.INT64),
+        obs_serde=RustSerde(type=RustSerdeType.NUMPY, dtype=RustSerdeDtype.FLOAT64),
+        reward_serde=RustSerde(type=RustSerdeType.FLOAT),
+        obs_space_serde=RustSerde(
+            type=RustSerdeType.TUPLE,
+            entries_serdes=(
+                RustSerde(type=RustSerdeType.STRING),
+                RustSerde(type=RustSerdeType.INT),
+            ),
+        ),
+        action_space_serde=RustSerde(
+            type=RustSerdeType.TUPLE,
+            entries_serdes=(
+                RustSerde(type=RustSerdeType.STRING),
+                RustSerde(type=RustSerdeType.INT),
+            ),
+        ),
+        state_metrics_serde=RustSerde(
+            type=RustSerdeType.LIST,
+            entries_serde=RustSerde(
+                type=RustSerdeType.NUMPY, dtype=RustSerdeDtype.FLOAT64
+            ),
         ),
         collect_state_metrics_fn=None,
         # obs_standardizer=NumpyObsStandardizer(5),
