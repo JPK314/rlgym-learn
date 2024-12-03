@@ -188,7 +188,8 @@ class EnvProcessInterface(
         self.processes = [None for i in range(n_processes)]
 
         # Spawn child processes
-        for proc_idx in range(n_processes):
+        print("Spawning processes...")
+        for proc_idx in tqdm(range(n_processes)):
             proc_id = str(uuid4())
 
             render_this_proc = proc_idx == 0 and render
@@ -226,6 +227,7 @@ class EnvProcessInterface(
             self.selector.register(parent_end, selectors.EVENT_READ, proc_idx)
 
         # Initialize child processes
+        print("Initializing processes...")
         for pid_idx in tqdm(range(n_processes)):
             process, parent_end, _, proc_id = self.processes[pid_idx]
 

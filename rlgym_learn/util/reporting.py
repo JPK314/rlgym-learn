@@ -110,9 +110,17 @@ def dump_dict_to_debug_string(dictionary):
                 val = val.detach().cpu().tolist()
 
         # Format lists of numbers as [num_1, num_2, num_3] where num_n is clipped at 5 decimal places.
-        if type(val) in (tuple, list, np.ndarray, np.array):
+        if type(val) in (tuple, list, np.ndarray):
             arr_str = []
-            for arg in val:
+            if type(val) != np.ndarray or val.shape:
+                for arg in val:
+                    arr_str.append(
+                        locale.format_string("%7.5f", arg, grouping=True)
+                        if type(arg) == float
+                        else "{},".format(arg)
+                    )
+            else:
+                arg = val.item()
                 arr_str.append(
                     locale.format_string("%7.5f", arg, grouping=True)
                     if type(arg) == float

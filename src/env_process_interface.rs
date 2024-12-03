@@ -1,9 +1,8 @@
-use std::collections::HashMap;
-
 use pyo3::exceptions::asyncio::InvalidStateError;
 use pyo3::prelude::*;
 use pyo3::PyObject;
 use raw_sync::events::Event;
+use raw_sync::events::EventImpl;
 use raw_sync::events::EventInit;
 use raw_sync::events::EventState;
 use shared_memory::Shmem;
@@ -20,7 +19,7 @@ use crate::serdes::pyany_serde::PyAnySerde;
 use crate::serdes::pyany_serde_impl::get_pyany_serde;
 use crate::serdes::serde_enum::Serde;
 
-#[pyclass(unsendable)]
+#[pyclass(module = "rlgym_learn_backend", unsendable)]
 pub struct EnvProcessInterface {
     agent_id_type_serde_option: Option<PyObject>,
     agent_id_pyany_serde_option: Option<Box<dyn PyAnySerde + Send>>,
@@ -55,11 +54,11 @@ impl EnvProcessInterface {
         // println!("EPI: Getting initial obs for some proc");
         let (env_process_wait_fn, shmem) = proc_package;
         let shm_slice = unsafe { &shmem.as_slice()[Event::size_of(None)..] };
-        let mut obs_list = Vec::new();
         env_process_wait_fn.call0(py)?;
         let mut offset = 0;
         let n_agents;
         (n_agents, offset) = retrieve_usize(shm_slice, offset)?;
+        let mut obs_list: Vec<(Py<PyAny>, Py<PyAny>)> = Vec::with_capacity(n_agents);
         let mut agent_id;
         let mut obs;
         let mut agent_id_pyany_serde_option = None;
@@ -96,7 +95,7 @@ impl EnvProcessInterface {
         let agent_id_type_serde_option =
             self.agent_id_type_serde_option.as_ref().map(|v| v.bind(py));
         let obs_type_serde_option = self.obs_type_serde_option.as_ref().map(|v| v.bind(py));
-        let mut obs_list = Vec::new();
+        let mut obs_list = Vec::with_capacity(self.proc_packages.len());
         let mut obs_list_idx_pid_idx_map = Vec::new();
         for (pid_idx, proc_package) in self.proc_packages.iter().enumerate() {
             // println!("EPI: Getting initial obs for pid_idx {}", pid_idx);
@@ -183,11 +182,11 @@ impl EnvProcessInterface {
     fn add_proc_package<'py>(
         &mut self,
         py: Python<'py>,
-        proc_package_def: (PyObject, PyObject, &str),
+        proc_package_def: (PyObject, PyObject, String),
     ) -> PyResult<()> {
         let (env_process_wait_fn, sync_with_env_process_fn, proc_id) = proc_package_def;
         sync_with_env_process_fn.call0(py)?;
-        let flink = get_flink(&self.flinks_folder[..], proc_id);
+        let flink = get_flink(&self.flinks_folder[..], proc_id.as_str());
         let shmem = ShmemConf::new()
             .flink(flink.clone())
             .open()
@@ -202,6 +201,7 @@ impl EnvProcessInterface {
 #[pymethods]
 impl EnvProcessInterface {
     #[new]
+    #[pyo3(signature = (agent_id_type_serde_option=None, agent_id_serde_option=None, action_type_serde_option=None, action_serde_option=None, obs_type_serde_option=None, obs_serde_option=None, reward_type_serde_option=None, reward_serde_option=None, obs_space_type_serde_option=None, obs_space_serde_option=None, action_space_type_serde_option=None, action_space_serde_option=None, state_metrics_type_serde_option=None, state_metrics_serde_option=None, flinks_folder_option=None))]
     fn new(
         agent_id_type_serde_option: Option<PyObject>,
         agent_id_serde_option: Option<Serde>,
@@ -273,7 +273,7 @@ impl EnvProcessInterface {
     // Return ([pid_idx], [(AgentID, ObsType)], ObsSpaceType, ActionSpaceType)
     fn init_processes(
         &mut self,
-        proc_package_defs: Vec<(PyObject, PyObject, &str)>,
+        proc_package_defs: Vec<(PyObject, PyObject, String)>,
     ) -> PyResult<(Vec<usize>, Vec<(PyObject, PyObject)>, PyObject, PyObject)> {
         Python::with_gil::<_, PyResult<(Vec<usize>, Vec<(PyObject, PyObject)>, PyObject, PyObject)>>(
             |py| {
@@ -291,7 +291,7 @@ impl EnvProcessInterface {
 
     fn add_process(
         &mut self,
-        proc_package_def: (PyObject, PyObject, &str),
+        proc_package_def: (PyObject, PyObject, String),
     ) -> PyResult<Vec<(PyObject, PyObject)>> {
         Python::with_gil::<_, PyResult<Vec<(PyObject, PyObject)>>>(|py| {
             self.add_proc_package(py, proc_package_def)?;
@@ -387,12 +387,13 @@ impl EnvProcessInterface {
             let new_episode;
             (new_episode, offset) = retrieve_bool(shm_slice, offset)?;
             // println!("new_episode: {}", new_episode);
-            let mut current_episode_data = Vec::new();
-            let mut new_episode_data = Vec::new();
+            let mut current_episode_data;
+            let mut new_episode_data;
             let metrics_option;
             if new_episode {
                 let prev_n_agents;
                 (prev_n_agents, offset) = retrieve_usize(shm_slice, offset)?;
+                current_episode_data = Vec::with_capacity(prev_n_agents);
                 // println!("prev_n_agents: {}", prev_n_agents);
                 let mut agent_id;
                 let mut next_obs;
@@ -444,6 +445,7 @@ impl EnvProcessInterface {
                 }
                 let n_agents;
                 (n_agents, offset) = retrieve_usize(shm_slice, offset)?;
+                new_episode_data = Vec::with_capacity(n_agents);
                 // println!("n_agents: {}", n_agents);
                 for _ in 0..n_agents {
                     // println!("Retrieving info for agent {}", idx + 1);
@@ -472,6 +474,8 @@ impl EnvProcessInterface {
             } else {
                 let n_agents;
                 (n_agents, offset) = retrieve_usize(shm_slice, offset)?;
+                current_episode_data = Vec::with_capacity(n_agents);
+                new_episode_data = Vec::new();
                 // println!("n_agents: {}", n_agents);
                 let mut agent_id;
                 let mut next_obs;
@@ -549,6 +553,8 @@ impl EnvProcessInterface {
         })
     }
 
+    // As an optimization, we assume the obs_list_idx_pid_idx_map can only repeat a
+    // value at index i if that value is also at index i-1
     fn send_actions(
         &mut self,
         action_list: Vec<PyObject>,
@@ -556,17 +562,6 @@ impl EnvProcessInterface {
         obs_list_idx_pid_idx_map: Vec<usize>,
     ) -> PyResult<()> {
         // println!("EPI: Entering send_actions");
-        let mut pid_idx_agent_id_action_list_map = HashMap::new();
-        for ((action, (agent_id, _)), pid_idx) in action_list
-            .into_iter()
-            .zip(obs_list.into_iter())
-            .zip(obs_list_idx_pid_idx_map.into_iter())
-        {
-            pid_idx_agent_id_action_list_map
-                .entry(pid_idx)
-                .or_insert_with(|| Vec::new())
-                .push((agent_id, action));
-        }
         Python::with_gil::<_, PyResult<()>>(|py| {
             let agent_id_type_serde_option = self
                 .agent_id_type_serde_option
@@ -576,37 +571,54 @@ impl EnvProcessInterface {
                 .action_type_serde_option
                 .as_mut()
                 .map(|py_object| py_object.bind(py));
-            for (pid_idx, agent_id_action_list) in pid_idx_agent_id_action_list_map.into_iter() {
-                let (_, shmem) = self.proc_packages.get_mut(pid_idx).unwrap();
-                let (ep_evt, evt_used_bytes) = unsafe {
-                    Event::from_existing(shmem.as_ptr()).map_err(|err| {
-                        InvalidStateError::new_err(format!(
-                            "Failed to get event from epi to process with index {}: {}",
-                            pid_idx,
-                            err.to_string()
-                        ))
-                    })?
-                };
-                let shm_slice = unsafe { &mut shmem.as_slice_mut()[evt_used_bytes..] };
-                let mut offset = 0;
-                offset = append_header(shm_slice, offset, Header::PolicyActions);
-                for (agent_id, action) in agent_id_action_list.into_iter() {
-                    (offset, self.agent_id_pyany_serde_option) = append_python(
-                        shm_slice,
-                        offset,
-                        &agent_id.into_bound(py),
-                        &agent_id_type_serde_option,
-                        self.agent_id_pyany_serde_option.take(),
-                    )?;
-                    (offset, self.action_pyany_serde_option) = append_python(
-                        shm_slice,
-                        offset,
-                        &action.into_bound(py),
-                        &action_type_serde_option,
-                        self.action_pyany_serde_option.take(),
-                    )?;
+            let mut prev_pid_idx = usize::MAX;
+            let mut shm_slice = &mut Vec::new()[..];
+            let mut ep_evt_option: Option<Box<dyn EventImpl>> = None;
+            let mut offset = 0;
+            for ((action, (agent_id, _)), pid_idx) in action_list
+                .into_iter()
+                .zip(obs_list.into_iter())
+                .zip(obs_list_idx_pid_idx_map.into_iter())
+            {
+                if pid_idx != prev_pid_idx {
+                    if let Some(ep_evt) = ep_evt_option {
+                        // println!("EPI: Sending signal with header PolicyActions...");
+                        ep_evt
+                            .set(EventState::Signaled)
+                            .map_err(|err| InvalidStateError::new_err(err.to_string()))?;
+                    }
+                    let (_, shmem) = self.proc_packages.get_mut(pid_idx).unwrap();
+                    let (ep_evt, evt_used_bytes) = unsafe {
+                        Event::from_existing(shmem.as_ptr()).map_err(|err| {
+                            InvalidStateError::new_err(format!(
+                                "Failed to get event from epi to process with index {}: {}",
+                                pid_idx,
+                                err.to_string()
+                            ))
+                        })?
+                    };
+                    ep_evt_option = Some(ep_evt);
+                    shm_slice = unsafe { &mut shmem.as_slice_mut()[evt_used_bytes..] };
+                    offset = append_header(shm_slice, 0, Header::PolicyActions);
+                    prev_pid_idx = pid_idx;
                 }
-                // println!("EPI: Sending signal with header PolicyActions...");
+                (offset, self.agent_id_pyany_serde_option) = append_python(
+                    shm_slice,
+                    offset,
+                    &agent_id.into_bound(py),
+                    &agent_id_type_serde_option,
+                    self.agent_id_pyany_serde_option.take(),
+                )?;
+                (offset, self.action_pyany_serde_option) = append_python(
+                    shm_slice,
+                    offset,
+                    &action.into_bound(py),
+                    &action_type_serde_option,
+                    self.action_pyany_serde_option.take(),
+                )?;
+            }
+            // println!("EPI: Sending signal with header PolicyActions...");
+            if let Some(ep_evt) = ep_evt_option {
                 ep_evt
                     .set(EventState::Signaled)
                     .map_err(|err| InvalidStateError::new_err(err.to_string()))?;

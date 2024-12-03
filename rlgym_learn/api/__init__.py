@@ -5,5 +5,5 @@ from .agent_controller import (
 )
 from .metrics_logger import DerivedMetricsLoggerConfig, MetricsLogger
 from .obs_standardizer import ObsStandardizer
-from .serdes import RustSerde, RustSerdeDtype, RustSerdeType, TypeSerde
+from .serdes import RustDtype, RustSerde, RustSerdeType, TypeSerde
 from .typing import AgentControllerConfig, AgentControllerData, StateMetrics

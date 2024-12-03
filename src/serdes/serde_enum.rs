@@ -1,13 +1,14 @@
 use std::mem::size_of;
 
 use pyo3::exceptions::asyncio::InvalidStateError;
-use pyo3::exceptions::PyValueError;
+use pyo3::prelude::*;
 use pyo3::types::PyDict;
 use pyo3::Bound;
-use pyo3::{intern, prelude::*};
 
-use super::dtype_enum::Dtype;
+use super::serde_dtype_enum::SerdeDtype;
+use super::serde_type_enum::SerdeType;
 
+// This enum is used to store all of the information about a Python type required to choose a Serde
 #[derive(Debug, PartialEq, Clone)]
 pub enum Serde {
     PICKLE,
@@ -19,7 +20,7 @@ pub enum Serde {
     BYTES,
     DYNAMIC,
     NUMPY {
-        dtype: Dtype,
+        dtype: SerdeDtype,
     },
     LIST {
         items: Box<Serde>,
@@ -47,16 +48,16 @@ pub fn get_serde_bytes(serde: &Serde) -> Vec<u8> {
         Serde::BYTES => vec![6],
         Serde::DYNAMIC => vec![7],
         Serde::NUMPY { dtype } => match dtype {
-            Dtype::INT8 => vec![8, 0],
-            Dtype::INT16 => vec![8, 1],
-            Dtype::INT32 => vec![8, 2],
-            Dtype::INT64 => vec![8, 3],
-            Dtype::UINT8 => vec![8, 4],
-            Dtype::UINT16 => vec![8, 5],
-            Dtype::UINT32 => vec![8, 6],
-            Dtype::UINT64 => vec![8, 7],
-            Dtype::FLOAT32 => vec![8, 8],
-            Dtype::FLOAT64 => vec![8, 9],
+            SerdeDtype::INT8 => vec![8, 0],
+            SerdeDtype::INT16 => vec![8, 1],
+            SerdeDtype::INT32 => vec![8, 2],
+            SerdeDtype::INT64 => vec![8, 3],
+            SerdeDtype::UINT8 => vec![8, 4],
+            SerdeDtype::UINT16 => vec![8, 5],
+            SerdeDtype::UINT32 => vec![8, 6],
+            SerdeDtype::UINT64 => vec![8, 7],
+            SerdeDtype::FLOAT32 => vec![8, 8],
+            SerdeDtype::FLOAT64 => vec![8, 9],
         },
         Serde::LIST { items } => {
             let mut bytes: Vec<u8> = vec![9];
@@ -99,18 +100,18 @@ pub fn retrieve_serde(buf: &[u8], offset: usize) -> PyResult<(Serde, usize)> {
         8 => {
             cur_offset += 1;
             let dtype = match buf[cur_offset] {
-                0 => Ok(Dtype::INT8),
-                1 => Ok(Dtype::INT16),
-                2 => Ok(Dtype::INT32),
-                3 => Ok(Dtype::INT64),
-                4 => Ok(Dtype::UINT8),
-                5 => Ok(Dtype::UINT16),
-                6 => Ok(Dtype::UINT32),
-                7 => Ok(Dtype::UINT64),
-                8 => Ok(Dtype::FLOAT32),
-                9 => Ok(Dtype::FLOAT64),
+                0 => Ok(SerdeDtype::INT8),
+                1 => Ok(SerdeDtype::INT16),
+                2 => Ok(SerdeDtype::INT32),
+                3 => Ok(SerdeDtype::INT64),
+                4 => Ok(SerdeDtype::UINT8),
+                5 => Ok(SerdeDtype::UINT16),
+                6 => Ok(SerdeDtype::UINT32),
+                7 => Ok(SerdeDtype::UINT64),
+                8 => Ok(SerdeDtype::FLOAT32),
+                9 => Ok(SerdeDtype::FLOAT64),
                 v => Err(InvalidStateError::new_err(format!(
-                    "tried to deserialize Serde as NUMPY but got {} for Dtype",
+                    "tried to deserialize Serde as NUMPY but got {} for SerdeDtype",
                     v
                 ))),
             }?;
@@ -135,7 +136,7 @@ pub fn retrieve_serde(buf: &[u8], offset: usize) -> PyResult<(Serde, usize)> {
             let end = cur_offset + size_of::<usize>();
             let items_len = usize::from_ne_bytes(buf[cur_offset..end].try_into()?);
             cur_offset = end;
-            let mut items = Vec::new();
+            let mut items = Vec::with_capacity(items_len);
             for _ in 0..items_len {
                 let item;
                 (item, cur_offset) = retrieve_serde(buf, cur_offset)?;
@@ -162,59 +163,40 @@ pub fn retrieve_serde(buf: &[u8], offset: usize) -> PyResult<(Serde, usize)> {
 }
 
 impl<'py> FromPyObject<'py> for Serde {
-    fn extract(ob: &'py PyAny) -> PyResult<Self> {
-        let dict: Bound<'_, PyDict> = ob.extract()?;
-        let binding = dict.get_item("type")?.unwrap();
-        let typ = binding.getattr(intern!(dict.py(), "value"))?.extract()?;
-        match typ {
-            "dynamic" => Ok(Serde::DYNAMIC),
-            "pickle" => Ok(Serde::PICKLE),
-            "int" => Ok(Serde::INT),
-            "float" => Ok(Serde::FLOAT),
-            "complex" => Ok(Serde::COMPLEX),
-            "boolean" => Ok(Serde::BOOLEAN),
-            "string" => Ok(Serde::STRING),
-            "bytes" => Ok(Serde::BYTES),
-            "numpy" => {
-                let binding = dict.get_item("dtype")?.unwrap();
-                let dtype_str = binding.getattr(intern!(dict.py(), "value"))?.extract()?;
-                let dtype = match dtype_str {
-                    "int8" => Ok(Dtype::INT8),
-                    "int16" => Ok(Dtype::INT16),
-                    "int32" => Ok(Dtype::INT32),
-                    "int64" => Ok(Dtype::INT64),
-                    "uint8" => Ok(Dtype::UINT8),
-                    "uint16" => Ok(Dtype::UINT8),
-                    "uint32" => Ok(Dtype::UINT8),
-                    "uint64" => Ok(Dtype::UINT8),
-                    "float32" => Ok(Dtype::FLOAT32),
-                    "float64" => Ok(Dtype::FLOAT64),
-                    v => Err(PyValueError::new_err(format!(
-                        "Invalid Serde type: received dtype {}",
-                        v
-                    ))),
-                }?;
-                Ok(Serde::NUMPY { dtype })
-            }
-            "list" => {
+    fn extract_bound(obj: &Bound<'py, PyAny>) -> PyResult<Self> {
+        let dict = obj.downcast::<PyDict>()?;
+        let serde_type = dict.get_item("type")?.unwrap().extract()?;
+        match serde_type {
+            SerdeType::DYNAMIC => Ok(Serde::DYNAMIC),
+            SerdeType::PICKLE => Ok(Serde::PICKLE),
+            SerdeType::INT => Ok(Serde::INT),
+            SerdeType::FLOAT => Ok(Serde::FLOAT),
+            SerdeType::COMPLEX => Ok(Serde::COMPLEX),
+            SerdeType::BOOLEAN => Ok(Serde::BOOLEAN),
+            SerdeType::STRING => Ok(Serde::STRING),
+            SerdeType::BYTES => Ok(Serde::BYTES),
+            SerdeType::NUMPY => Ok(Serde::NUMPY {
+                dtype: dict.get_item("dtype")?.unwrap().extract()?,
+            }),
+            SerdeType::LIST => {
                 let entries_serde = dict.get_item("entries_serde")?.unwrap().extract()?;
                 Ok(Serde::LIST {
                     items: Box::new(entries_serde),
                 })
             }
-            "set" => {
+            SerdeType::SET => {
                 let entries_serde = dict.get_item("entries_serde")?.unwrap().extract()?;
                 Ok(Serde::SET {
                     items: Box::new(entries_serde),
                 })
             }
-            "tuple" => {
+            SerdeType::TUPLE => {
                 let entries_serdes = dict.get_item("entries_serdes")?.unwrap().extract()?;
                 Ok(Serde::TUPLE {
                     items: entries_serdes,
                 })
             }
-            "dict" => {
+            SerdeType::DICT => {
                 let keys_serde = dict.get_item("keys_serde")?.unwrap().extract()?;
                 let values_serde = dict.get_item("values_serde")?.unwrap().extract()?;
                 Ok(Serde::DICT {
@@ -222,10 +204,6 @@ impl<'py> FromPyObject<'py> for Serde {
                     values: Box::new(values_serde),
                 })
             }
-            v => Err(PyValueError::new_err(format!(
-                "Invalid Serde type: received type {}",
-                v
-            ))),
         }
     }
 }

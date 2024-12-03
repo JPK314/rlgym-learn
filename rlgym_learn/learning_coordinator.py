@@ -112,8 +112,6 @@ class LearningCoordinator(
         self.device = get_device(self.config.base_config.device)
         print(f"Using device {self.device}")
 
-        print("Initializing processes...")
-
         self.agent_manager = AgentManager(agent_controllers)
 
         self.cumulative_timesteps = 0
@@ -169,6 +167,7 @@ class LearningCoordinator(
                 self.save()
             except:
                 print("FAILED TO SAVE ON EXIT")
+                traceback.print_exc()
 
         finally:
             self.prof.disable()

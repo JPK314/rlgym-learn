@@ -26,37 +26,37 @@ class TypeSerde(Generic[T]):
 
 
 class RustSerdeType(Enum):
-    DYNAMIC = "dynamic"
-    PICKLE = "pickle"
-    INT = "int"
-    FLOAT = "float"
-    COMPLEX = "complex"
-    BOOLEAN = "boolean"
-    STRING = "string"
-    BYTES = "bytes"
-    NUMPY = "numpy"
-    LIST = "list"
-    SET = "set"
-    TUPLE = "tuple"
-    DICT = "dict"
+    DYNAMIC = 0
+    PICKLE = 1
+    INT = 2
+    FLOAT = 3
+    COMPLEX = 4
+    BOOLEAN = 5
+    STRING = 6
+    BYTES = 7
+    NUMPY = 8
+    LIST = 9
+    SET = 10
+    TUPLE = 11
+    DICT = 12
 
 
-class RustSerdeDtype(Enum):
-    INT8 = "int8"
-    INT16 = "int16"
-    INT32 = "int32"
-    INT64 = "int64"
-    UINT8 = "uint8"
-    UINT16 = "uint16"
-    UINT32 = "uint32"
-    UINT64 = "uint64"
-    FLOAT32 = "float32"
-    FLOAT64 = "float64"
+class RustDtype(Enum):
+    INT8 = 0
+    INT16 = 1
+    INT32 = 2
+    INT64 = 3
+    UINT8 = 4
+    UINT16 = 5
+    UINT32 = 6
+    UINT64 = 7
+    FLOAT32 = 8
+    FLOAT64 = 9
 
 
 class RustSerde(TypedDict):
     type: RustSerdeType  # Always needed
-    dtype: Optional[RustSerdeDtype]  # Necessary if type = RustSerdeType.NUMPY
+    dtype: Optional[RustDtype]  # Necessary if type = RustSerdeType.NUMPY
     entries_serde: Optional[
         RustSerde
     ]  # Necessary if type = RustSerdeType.LIST or RustSerdeType.SET

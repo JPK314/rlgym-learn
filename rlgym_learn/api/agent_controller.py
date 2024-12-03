@@ -42,16 +42,16 @@ class AgentController(
     def __init__(self, *args, **kwargs):
         pass
 
-    # TODO: raise notimplementederror
     def get_actions(
         self, obs_list: List[Tuple[AgentID, ObsType]]
     ) -> List[Optional[Tuple[ActionType, Tensor]]]:
         """
         Function to get an action and the log of its probability from the policy given an observation.
         :param obs_list: list of tuples of agent IDs and observations parallel with returned list. Agent IDs may not be unique here.
-        :return: List of tuples of ActionType and that action's log prob tensor, parallel with obs_list.
+        :return: List of optional tuples of ActionType and that action's log prob tensor, parallel with obs_list. A list value being None means this
+            agent controller does not want to control the action of this agent.
         """
-        pass
+        return [None for _ in obs_list]
 
     def process_timestep_data(
         self, timesteps: List[Timestep], state_metrics: List[StateMetrics]

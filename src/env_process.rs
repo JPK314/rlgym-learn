@@ -137,7 +137,7 @@ pub fn env_process(
         let mut game_speed_fn: Box<dyn Fn() -> PyResult<f64>> = Box::new(|| Ok(1.0));
         let mut game_paused_fn: Box<dyn Fn() -> PyResult<bool>> = Box::new(|| Ok(false));
         if render {
-            let rlviser = PyModule::import_bound(py, "rlviser_py")?;
+            let rlviser = PyModule::import(py, "rlviser_py")?;
             let get_game_speed = rlviser.getattr("get_game_speed")?;
             let get_game_paused = rlviser.getattr("get_game_paused")?;
             game_speed_fn = Box::new(move || Ok(get_game_speed.call0()?.extract::<f64>()?));
@@ -257,7 +257,7 @@ pub fn env_process(
         notify_epi_fn.call0(py)?;
 
         // Start main loop
-        let mut new_episode_obs_dict = PyDict::new_bound(py);
+        let mut new_episode_obs_dict = PyDict::new(py);
         let mut metrics_bytes = Vec::new();
         let mut new_agent_id_pyany_serde_option;
         let mut new_action_pyany_serde_option;
@@ -276,7 +276,7 @@ pub fn env_process(
             match header {
                 Header::PolicyActions => {
                     // Read actions message
-                    let actions_dict = PyDict::new_bound(py);
+                    let actions_dict = PyDict::new(py);
                     let mut agent_id;
                     let mut action;
                     for _ in 0..n_agents {

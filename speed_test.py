@@ -14,7 +14,7 @@ from rlgym_learn import (
     WandbConfigModel,
     generate_config,
 )
-from rlgym_learn.api import RustSerde, RustSerdeDtype, RustSerdeType
+from rlgym_learn.api import RustDtype, RustSerde, RustSerdeType
 from rlgym_learn.standard_impl import (
     FloatSerde,
     HomogeneousTupleSerde,
@@ -29,6 +29,7 @@ from rlgym_learn.standard_impl.ppo import (
     DiscreteFF,
     ExperienceBufferConfigModel,
     GAETrajectoryProcessor,
+    GAETrajectoryProcessorPurePython,
     PPOAgentController,
     PPOAgentControllerConfigModel,
     PPOLearnerConfigModel,
@@ -257,8 +258,8 @@ if __name__ == "__main__":
         env_create_function=env_create_function,
         agent_controllers=agent_controllers,
         agent_id_serde=RustSerde(type=RustSerdeType.STRING),
-        action_serde=RustSerde(type=RustSerdeType.NUMPY, dtype=RustSerdeDtype.INT64),
-        obs_serde=RustSerde(type=RustSerdeType.NUMPY, dtype=RustSerdeDtype.FLOAT64),
+        action_serde=RustSerde(type=RustSerdeType.NUMPY, dtype=RustDtype.INT64),
+        obs_serde=RustSerde(type=RustSerdeType.NUMPY, dtype=RustDtype.FLOAT64),
         reward_serde=RustSerde(type=RustSerdeType.FLOAT),
         obs_space_serde=RustSerde(
             type=RustSerdeType.TUPLE,
@@ -276,9 +277,7 @@ if __name__ == "__main__":
         ),
         state_metrics_serde=RustSerde(
             type=RustSerdeType.LIST,
-            entries_serde=RustSerde(
-                type=RustSerdeType.NUMPY, dtype=RustSerdeDtype.FLOAT64
-            ),
+            entries_serde=RustSerde(type=RustSerdeType.NUMPY, dtype=RustDtype.FLOAT64),
         ),
         collect_state_metrics_fn=None,
         # obs_standardizer=NumpyObsStandardizer(5),

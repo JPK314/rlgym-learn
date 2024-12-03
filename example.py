@@ -240,6 +240,7 @@ if __name__ == "__main__":
         checkpoint_load_folder=None,  # "agents_checkpoints/PPO1/rlgym-learn-run-1723394601682346400/1723394622757846600",
         n_checkpoints_to_keep=5,
         random_seed=123,
+        dtype="float32",
         device="auto",
         log_to_wandb=False,
         learner_config=learner_config,

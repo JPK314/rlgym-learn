@@ -173,10 +173,8 @@ pub fn retrieve_python<'py>(
         ))?;
         let obj_bytes;
         (obj_bytes, new_offset) = retrieve_bytes(buf, new_offset)?;
-        let obj = type_serde.call_method1(
-            intern!(py, "from_bytes"),
-            (PyBytes::new_bound(py, obj_bytes),),
-        )?;
+        let obj =
+            type_serde.call_method1(intern!(py, "from_bytes"), (PyBytes::new(py, obj_bytes),))?;
         // println!("Exiting retrieve via typeserde flow");
         return Ok((obj, new_offset, None));
     } else {

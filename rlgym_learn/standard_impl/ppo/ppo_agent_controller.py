@@ -61,6 +61,7 @@ class PPOAgentControllerConfigModel(BaseModel):
     checkpoint_load_folder: Optional[str] = None
     n_checkpoints_to_keep: int = 5
     random_seed: int = 123
+    dtype: str = "float32"
     device: str = "auto"
     run_name: str = "rlgym-learn-run"
     log_to_wandb: bool = False
@@ -233,6 +234,7 @@ class PPOAgentController(
             DerivedExperienceBufferConfig(
                 max_size=experience_buffer_config.max_size,
                 seed=agent_controller_config.random_seed,
+                dtype=agent_controller_config.dtype,
                 device=self.device,
                 trajectory_processor_args=experience_buffer_config.trajectory_processor_args,
                 checkpoint_load_folder=experience_buffer_checkpoint_load_folder,
@@ -419,7 +421,8 @@ class PPOAgentController(
     # TODO: allow specification of which agent ids to return actions for
     @torch.no_grad
     def get_actions(self, obs_list):
-        return self.learner.actor.get_action(obs_list)
+        (batched_action, batched_log_probs) = self.learner.actor.get_action(obs_list)
+        return list(zip(batched_action, batched_log_probs))
 
     def standardize_timestep_observations(
         self,

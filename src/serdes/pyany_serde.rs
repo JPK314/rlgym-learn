@@ -46,8 +46,9 @@ pub fn detect_serde<'py>(v: &Bound<'py, PyAny>) -> PyResult<Serde> {
             )?),
         },
         PythonType::TUPLE => {
-            let mut item_serdes = Vec::new();
-            for item in v.downcast::<PyTuple>()?.iter() {
+            let tuple = v.downcast::<PyTuple>()?;
+            let mut item_serdes = Vec::with_capacity(tuple.len());
+            for item in tuple.iter() {
                 item_serdes.push(detect_serde(&item)?);
             }
             Serde::TUPLE { items: item_serdes }

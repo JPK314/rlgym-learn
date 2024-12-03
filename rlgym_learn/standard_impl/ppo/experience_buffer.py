@@ -19,6 +19,7 @@ import torch
 from pydantic import BaseModel, Field
 from rlgym.api import ActionType, AgentID, ObsType, RewardType
 from torch import device as _device
+from torch import dtype as _dtype
 
 from .trajectory import Trajectory
 from .trajectory_processor import TrajectoryProcessor, TrajectoryProcessorData
@@ -36,6 +37,7 @@ class ExperienceBufferConfigModel(BaseModel):
 class DerivedExperienceBufferConfig:
     max_size: int
     seed: int
+    dtype: _dtype
     device: _device
     trajectory_processor_args: dict
     checkpoint_load_folder: Optional[str] = None
@@ -99,15 +101,17 @@ class ExperienceBuffer(
 
     def load(self, config: DerivedExperienceBufferConfig):
         self.config = config
-        self.rng = np.random.RandomState(self.config.seed)
+        self.rng = np.random.RandomState(config.seed)
         self.trajectory_processor = self.trajectory_processor_factory(
             **config.trajectory_processor_args
         )
+        self.trajectory_processor.set_dtype(config.dtype)
+        self.trajectory_processor.set_device(config.device)
         if self.config.checkpoint_load_folder is not None:
             self._load_from_checkpoint()
-        self.log_probs = self.log_probs.to(self.config.device)
-        self.values = self.values.to(self.config.device)
-        self.advantages = self.advantages.to(self.config.device)
+        self.log_probs = self.log_probs.to(config.device)
+        self.values = self.values.to(config.device)
+        self.advantages = self.advantages.to(config.device)
 
     def _load_from_checkpoint(self):
         # lazy way
@@ -115,19 +119,17 @@ class ExperienceBuffer(
             os.path.join(self.config.checkpoint_load_folder, EXPERIENCE_BUFFER_FILE),
             "rb",
         ) as f:
-            _exp_buffer: ExperienceBuffer[
-                AgentID, ObsType, ActionType, RewardType, TrajectoryProcessorData
-            ] = pickle.load(f)
+            state_dict = pickle.load(f)
         with open(
             os.path.join(self.config.checkpoint_load_folder, TRAJECTORY_PROCESSOR_FILE),
             "rt",
         ) as f:
             trajectory_processor_state_dict = json.load(f)
-        self.observations = _exp_buffer.observations
-        self.actions = _exp_buffer.actions
-        self.log_probs = _exp_buffer.log_probs
-        self.values = _exp_buffer.values
-        self.advantages = _exp_buffer.advantages
+        self.observations = state_dict["observations"]
+        self.actions = state_dict["actions"]
+        self.log_probs = state_dict["log_probs"]
+        self.values = state_dict["values"]
+        self.advantages = state_dict["advantages"]
         self.trajectory_processor.load_state_dict(trajectory_processor_state_dict)
 
     def save_checkpoint(self, folder_path):
@@ -136,7 +138,16 @@ class ExperienceBuffer(
             os.path.join(folder_path, EXPERIENCE_BUFFER_FILE),
             "wb",
         ) as f:
-            pickle.dump(self, f)
+            pickle.dump(
+                {
+                    "observations": self.observations,
+                    "actions": self.actions,
+                    "log_probs": self.log_probs,
+                    "values": self.values,
+                    "advantages": self.advantages,
+                },
+                f,
+            )
         with open(
             os.path.join(folder_path, TRAJECTORY_PROCESSOR_FILE),
             "wt",
@@ -165,9 +176,7 @@ class ExperienceBuffer(
         _cat = ExperienceBuffer._cat
         _cat_list = ExperienceBuffer._cat_list
         exp_buffer_data, trajectory_processor_data = (
-            self.trajectory_processor.process_trajectories(
-                trajectories, dtype=torch.float32, device=self.config.device
-            )
+            self.trajectory_processor.process_trajectories(trajectories)
         )
         (observations, actions, log_probs, values, advantages) = exp_buffer_data
 

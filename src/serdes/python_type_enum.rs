@@ -1,11 +1,12 @@
 use pyo3::{exceptions::asyncio::InvalidStateError, prelude::*};
 
-use super::dtype_enum::Dtype;
+use super::serde_dtype_enum::SerdeDtype;
 use numpy::PyArrayDyn;
 use pyo3::types::{
     PyBool, PyBytes, PyComplex, PyDict, PyFloat, PyInt, PyList, PySet, PyString, PyTuple,
 };
 
+// This enum is used to store first-level information about Python types such that DynamicSerde can work properly.
 #[derive(Debug, PartialEq)]
 pub enum PythonType {
     BOOL,
@@ -14,7 +15,7 @@ pub enum PythonType {
     COMPLEX,
     STRING,
     BYTES,
-    NUMPY { dtype: Dtype },
+    NUMPY { dtype: SerdeDtype },
     LIST,
     SET,
     TUPLE,
@@ -31,16 +32,16 @@ pub fn get_python_type_byte(python_type: &PythonType) -> u8 {
         PythonType::STRING => 4,
         PythonType::BYTES => 5,
         PythonType::NUMPY { dtype } => match dtype {
-            Dtype::INT8 => 6,
-            Dtype::INT16 => 7,
-            Dtype::INT32 => 8,
-            Dtype::INT64 => 9,
-            Dtype::UINT8 => 10,
-            Dtype::UINT16 => 11,
-            Dtype::UINT32 => 12,
-            Dtype::UINT64 => 13,
-            Dtype::FLOAT32 => 14,
-            Dtype::FLOAT64 => 15,
+            SerdeDtype::INT8 => 6,
+            SerdeDtype::INT16 => 7,
+            SerdeDtype::INT32 => 8,
+            SerdeDtype::INT64 => 9,
+            SerdeDtype::UINT8 => 10,
+            SerdeDtype::UINT16 => 11,
+            SerdeDtype::UINT32 => 12,
+            SerdeDtype::UINT64 => 13,
+            SerdeDtype::FLOAT32 => 14,
+            SerdeDtype::FLOAT64 => 15,
         },
         PythonType::LIST => 16,
         PythonType::SET => 17,
@@ -58,33 +59,35 @@ pub fn retrieve_python_type(bytes: &[u8], offset: usize) -> PyResult<(PythonType
         3 => Ok(PythonType::COMPLEX),
         4 => Ok(PythonType::STRING),
         5 => Ok(PythonType::BYTES),
-        6 => Ok(PythonType::NUMPY { dtype: Dtype::INT8 }),
+        6 => Ok(PythonType::NUMPY {
+            dtype: SerdeDtype::INT8,
+        }),
         7 => Ok(PythonType::NUMPY {
-            dtype: Dtype::INT16,
+            dtype: SerdeDtype::INT16,
         }),
         8 => Ok(PythonType::NUMPY {
-            dtype: Dtype::INT32,
+            dtype: SerdeDtype::INT32,
         }),
         9 => Ok(PythonType::NUMPY {
-            dtype: Dtype::INT64,
+            dtype: SerdeDtype::INT64,
         }),
         10 => Ok(PythonType::NUMPY {
-            dtype: Dtype::UINT8,
+            dtype: SerdeDtype::UINT8,
         }),
         11 => Ok(PythonType::NUMPY {
-            dtype: Dtype::UINT16,
+            dtype: SerdeDtype::UINT16,
         }),
         12 => Ok(PythonType::NUMPY {
-            dtype: Dtype::UINT32,
+            dtype: SerdeDtype::UINT32,
         }),
         13 => Ok(PythonType::NUMPY {
-            dtype: Dtype::UINT64,
+            dtype: SerdeDtype::UINT64,
         }),
         14 => Ok(PythonType::NUMPY {
-            dtype: Dtype::FLOAT32,
+            dtype: SerdeDtype::FLOAT32,
         }),
         15 => Ok(PythonType::NUMPY {
-            dtype: Dtype::FLOAT64,
+            dtype: SerdeDtype::FLOAT64,
         }),
         16 => Ok(PythonType::LIST),
         17 => Ok(PythonType::SET),
@@ -126,51 +129,53 @@ pub fn detect_python_type<'py>(v: &Bound<'py, PyAny>) -> PyResult<PythonType> {
     }
     // TODO: does any of this shit work?
     if check_numpy!(v, i8) {
-        return Ok(PythonType::NUMPY { dtype: Dtype::INT8 });
+        return Ok(PythonType::NUMPY {
+            dtype: SerdeDtype::INT8,
+        });
     }
     if check_numpy!(v, i16) {
         return Ok(PythonType::NUMPY {
-            dtype: Dtype::INT16,
+            dtype: SerdeDtype::INT16,
         });
     }
     if check_numpy!(v, i32) {
         return Ok(PythonType::NUMPY {
-            dtype: Dtype::INT32,
+            dtype: SerdeDtype::INT32,
         });
     }
     if check_numpy!(v, i64) {
         return Ok(PythonType::NUMPY {
-            dtype: Dtype::INT64,
+            dtype: SerdeDtype::INT64,
         });
     }
     if check_numpy!(v, u8) {
         return Ok(PythonType::NUMPY {
-            dtype: Dtype::UINT8,
+            dtype: SerdeDtype::UINT8,
         });
     }
     if check_numpy!(v, u16) {
         return Ok(PythonType::NUMPY {
-            dtype: Dtype::UINT16,
+            dtype: SerdeDtype::UINT16,
         });
     }
     if check_numpy!(v, u32) {
         return Ok(PythonType::NUMPY {
-            dtype: Dtype::UINT32,
+            dtype: SerdeDtype::UINT32,
         });
     }
     if check_numpy!(v, u64) {
         return Ok(PythonType::NUMPY {
-            dtype: Dtype::UINT64,
+            dtype: SerdeDtype::UINT64,
         });
     }
     if check_numpy!(v, f32) {
         return Ok(PythonType::NUMPY {
-            dtype: Dtype::FLOAT32,
+            dtype: SerdeDtype::FLOAT32,
         });
     }
     if check_numpy!(v, f64) {
         return Ok(PythonType::NUMPY {
-            dtype: Dtype::FLOAT64,
+            dtype: SerdeDtype::FLOAT64,
         });
     }
     if v.is_exact_instance_of::<PyList>() {
