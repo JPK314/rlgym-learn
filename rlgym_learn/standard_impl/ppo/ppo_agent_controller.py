@@ -421,7 +421,7 @@ class PPOAgentController(
     @torch.no_grad
     def get_actions(self, obs_list):
         (batched_action, batched_log_probs) = self.learner.actor.get_action(obs_list)
-        return list(zip(batched_action, batched_log_probs))
+        return list(zip(batched_action, batched_log_probs.unbind(0)))
 
     def standardize_timestep_observations(
         self,
