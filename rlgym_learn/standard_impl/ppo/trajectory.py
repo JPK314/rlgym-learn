@@ -29,7 +29,10 @@ class Trajectory(Generic[AgentID, ObsType, ActionType, RewardType]):
 
     def add_timestep(
         self, timestep: Timestep[AgentID, ActionType, ObsType, RewardType]
-    ):
+    ) -> bool:
+        """
+        returns whether or not a timestep was appended
+        """
         if not self.done:
             self.complete_timesteps.append(
                 (
@@ -44,6 +47,8 @@ class Trajectory(Generic[AgentID, ObsType, ActionType, RewardType]):
             self.done = timestep.terminated or timestep.truncated
             if self.done:
                 self.truncated = timestep.truncated
+            return True
+        return False
 
     def update_val_preds(
         self, val_preds: List[Tensor], final_val_pred: Optional[Tensor]

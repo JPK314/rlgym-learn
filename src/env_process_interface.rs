@@ -804,7 +804,7 @@ impl EnvProcessInterface {
     fn send_actions(
         &mut self,
         action_list: Vec<PyObject>,
-        log_prob_list: Vec<PyObject>,
+        log_prob_tensor: PyObject,
     ) -> PyResult<()> {
         // println!("EPI: Entering send_actions");
         Python::with_gil::<_, PyResult<()>>(|py| {
@@ -815,7 +815,7 @@ impl EnvProcessInterface {
 
             let mut action_pyany_serde_option = self.action_pyany_serde_option.take();
 
-            let mut action_log_prob_iter = action_list.iter().zip(log_prob_list.iter());
+            let mut action_iter = action_list.iter().enumerate();
             for pid_idx in self.pid_idx_requesting_action_list.drain(..) {
                 let n_agents = self.pid_idx_current_obs_list.get(pid_idx).unwrap().len();
                 let current_action_list =
@@ -840,9 +840,9 @@ impl EnvProcessInterface {
 
                 let mut offset = append_header(shm_slice, 0, Header::PolicyActions);
                 for _ in 0..n_agents {
-                    let (action, log_prob) = action_log_prob_iter.next().unwrap();
+                    let (idx, action) = action_iter.next().unwrap();
                     current_action_list.push(action.clone_ref(py));
-                    current_log_prob_list.push(log_prob.clone_ref(py));
+                    current_log_prob_list.push(log_prob_tensor.bind(py).get_item(idx)?.unbind());
 
                     append_python_update_serde!(
                         shm_slice,

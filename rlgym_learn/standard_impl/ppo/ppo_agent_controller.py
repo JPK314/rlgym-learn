@@ -418,7 +418,6 @@ class PPOAgentController(
             self.wandb_run.id,
         )
 
-    # TODO: allow specification of which agent ids to return actions for
     @torch.no_grad
     def get_actions(self, obs_list):
         (batched_action, batched_log_probs) = self.learner.actor.get_action(obs_list)
@@ -446,6 +445,8 @@ class PPOAgentController(
     ):
         if self.obs_standardizer is not None:
             self.standardize_timestep_observations(timesteps)
+
+        timesteps_added = 0
         for timestep in timesteps:
             if (
                 timestep.previous_timestep_id is not None
@@ -457,7 +458,7 @@ class PPOAgentController(
                 ] = self.current_trajectories_by_latest_timestep_id.pop(
                     timestep.previous_timestep_id
                 )
-                self.current_trajectories_by_latest_timestep_id[
+                timesteps_added += self.current_trajectories_by_latest_timestep_id[
                     timestep.timestep_id
                 ].add_timestep(timestep)
             else:
@@ -466,8 +467,8 @@ class PPOAgentController(
                 self.current_trajectories_by_latest_timestep_id[
                     timestep.timestep_id
                 ] = trajectory
-        self.iteration_timesteps += len(timesteps)
-        self.cumulative_timesteps += len(timesteps)
+        self.iteration_timesteps += timesteps_added
+        self.cumulative_timesteps += timesteps_added
         self.iteration_state_metrics += state_metrics
         if (
             self.iteration_timesteps

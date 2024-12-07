@@ -57,7 +57,7 @@ class AgentManager(
 
     def get_actions(
         self, obs_list: List[Tuple[AgentID, ObsType]]
-    ) -> Tuple[Iterable[ActionType], List[Tensor]]:
+    ) -> Tuple[Iterable[ActionType], Tensor]:
         """
         Function to get an action and the log of its probability from the policy given an observation.
         :param obs_list: list of tuples of agent IDs and observations parallel with returned list. Agent IDs may not be unique here.
@@ -65,7 +65,7 @@ class AgentManager(
         """
         (action_list, log_probs) = self.rust_agent_manager.get_actions(obs_list)
         # TODO: why am I returning one tensor with the first dimension being parallel to the action list? Why not just a list of tensors?
-        return action_list, list(as_tensor(log_probs).to(device="cpu"))
+        return action_list, as_tensor(log_probs).to(device="cpu")
 
     def process_timestep_data(
         self, timesteps: List[Timestep], state_metrics: List[StateMetrics]

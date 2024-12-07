@@ -15,7 +15,7 @@ class ProcessConfigModel(BaseModel):
     @model_validator(mode="after")
     def set_default_min_process_steps_per_inference(self):
         if self.min_process_steps_per_inference < 0:
-            self.min_process_steps_per_inference = max(1, int(0.5 * self.n_proc))
+            self.min_process_steps_per_inference = max(1, int(0.45 * self.n_proc))
         return self
 
 
