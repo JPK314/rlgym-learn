@@ -33,16 +33,11 @@ from rlgym.api import (
 from rlgym_learn_backend import EnvProcessInterface as RustEnvProcessInterface
 from torch import Tensor
 
-from rlgym_learn.api import ObsStandardizer, RustSerde, StateMetrics, TypeSerde
+from rlgym_learn.api import RustSerde, StateMetrics, TypeSerde
 from rlgym_learn.env_processing.env_process import env_process
 from rlgym_learn.experience import Timestep
 
 from .communication import EVENT_STRING
-
-
-def sync_with_env_process(parent_end, child_sockname):
-    parent_end.recvfrom(1)
-    parent_end.sendto(EVENT_STRING, child_sockname)
 
 
 class EnvProcessInterface(
@@ -83,14 +78,12 @@ class EnvProcessInterface(
         collect_state_metrics_fn: Optional[
             Callable[[StateType, Dict[AgentID, RewardType]], StateMetrics]
         ],
-        min_inference_size: int,
-        timestep_id_bits: int,
+        min_process_steps_per_inference: int,
         flinks_folder: str,
         shm_buffer_size: int,
         seed: int,
         recalculate_agent_id_every_step: bool,
     ):
-        self.selector = selectors.DefaultSelector()
         self.build_env_fn = build_env_fn
         self.agent_id_serde = agent_id_serde
         self.action_serde = action_serde
@@ -100,12 +93,11 @@ class EnvProcessInterface(
         self.action_space_serde = action_space_serde
         self.state_metrics_serde = state_metrics_serde
         self.collect_state_metrics_fn = collect_state_metrics_fn
-        self.min_inference_size = min_inference_size
-        self.timestep_id_bits = timestep_id_bits
         self.flinks_folder = flinks_folder
         self.shm_buffer_size = shm_buffer_size
         self.seed = seed
         self.recalculate_agent_id_every_step = recalculate_agent_id_every_step
+        self.n_procs = 0
 
         agent_id_type_serde = None
         action_type_serde = None
@@ -158,7 +150,9 @@ class EnvProcessInterface(
             action_space_serde,
             state_metrics_type_serde,
             state_metrics_serde,
+            self.recalculate_agent_id_every_step,
             flinks_folder,
+            min_process_steps_per_inference,
         )
 
     def init_processes(
@@ -183,9 +177,10 @@ class EnvProcessInterface(
         start_method = "forkserver" if can_fork else "spawn"
         context = mp.get_context(start_method)
         self.n_procs = n_processes
-        self.min_inference_size = min(self.min_inference_size, n_processes)
 
-        self.processes = [None for i in range(n_processes)]
+        self.processes = [
+            None for i in range(n_processes)
+        ]  # TODO: is there a reason to have this in self after migrating it to rust backend?
 
         # Spawn child processes
         print("Spawning processes...")
@@ -224,8 +219,6 @@ class EnvProcessInterface(
 
             self.processes[proc_idx] = (process, parent_end, None, proc_id)
 
-            self.selector.register(parent_end, selectors.EVENT_READ, proc_idx)
-
         # Initialize child processes
         print("Initializing processes...")
         for pid_idx in tqdm(range(n_processes)):
@@ -245,42 +238,17 @@ class EnvProcessInterface(
                 proc_id,
             )
 
-        response: Tuple[
-            List[int], List[Tuple[AgentID, ObsType]], ObsSpaceType, ActionSpaceType
-        ] = self.rust_env_process_interface.init_processes(
-            [
-                (
-                    lambda parent_end=parent_end: parent_end.recvfrom(1),
-                    lambda parent_end=parent_end, child_sockname=child_sockname: sync_with_env_process(
-                        parent_end, child_sockname
-                    ),
-                    proc_id,
-                )
-                for (
-                    _,
-                    parent_end,
-                    child_sockname,
-                    proc_id,
-                ) in self.processes
-            ]
+        return self.rust_env_process_interface.init_processes(self.processes)
+
+    def increase_min_process_steps_per_inference(self) -> int:
+        return (
+            self.rust_env_process_interface.increase_min_process_steps_per_inference()
         )
-        (obs_list_idx_pid_idx_map, obs_list, obs_space, action_space) = response
-        self.obs_list_idx_pid_idx_map = obs_list_idx_pid_idx_map
-        self.pid_idx_current_obs_dict_map = [{} for _ in range(n_processes)]
-        self.pid_idx_current_action_dict_map = [{} for _ in range(n_processes)]
-        self.pid_idx_current_log_prob_dict_map = [{} for _ in range(n_processes)]
-        self.pid_idx_prev_timestep_id_dict_map = [{} for _ in range(n_processes)]
-        for pid_idx, (agent_id, obs) in zip(obs_list_idx_pid_idx_map, obs_list):
-            self.pid_idx_current_obs_dict_map[pid_idx][agent_id] = obs
-            self.pid_idx_prev_timestep_id_dict_map[pid_idx][agent_id] = None
-        self.obs_list = obs_list
-        return (obs_list, obs_space, action_space)
 
-    def increase_min_inference_size(self):
-        self.min_inference_size = min(self.min_inference_size + 1, self.n_procs)
-
-    def decrease_min_inference_size(self):
-        self.min_inference_size = max(self.min_inference_size - 1, 1)
+    def decrease_min_process_steps_per_inference(self) -> int:
+        return (
+            self.rust_env_process_interface.decrease_min_process_steps_per_inference()
+        )
 
     def add_process(self):
         pid_idx = self.n_procs
@@ -317,40 +285,19 @@ class EnvProcessInterface(
                 self.recalculate_agent_id_every_step,
             ),
         )
-        self.selector.register(parent_end, selectors.EVENT_READ, proc_id)
 
         process.start()
         _, child_sockname = parent_end.recvfrom(1)
         parent_end.sendto(EVENT_STRING, child_sockname)
 
-        self.processes[pid_idx] = (
-            process,
-            parent_end,
-            child_sockname,
-            proc_id,
-        )
-
-        obs_list: List[Tuple[AgentID, ObsType]] = (
-            self.rust_env_process_interface.add_process(
-                (
-                    lambda parent_end=parent_end: parent_end.recvfrom(1),
-                    lambda parent_end=parent_end, child_sockname=child_sockname: sync_with_env_process(
-                        parent_end, child_sockname
-                    ),
-                    proc_id,
-                    proc_id,
-                )
+        self.rust_env_process_interface.add_process(
+            (
+                process,
+                parent_end,
+                child_sockname,
+                proc_id,
             )
         )
-        self.pid_idx_current_obs_dict_map.append({})
-        self.pid_idx_current_action_dict_map.append({})
-        self.pid_idx_current_log_prob_dict_map.append({})
-        self.pid_idx_prev_timestep_id_dict_map.append({})
-        for agent_id, obs in obs_list:
-            self.obs_list.append((agent_id, obs))
-            self.obs_list_idx_pid_idx_map.append(pid_idx)
-            self.pid_idx_current_obs_dict_map[pid_idx][agent_id] = obs
-            self.pid_idx_prev_timestep_id_dict_map[pid_idx][agent_id] = None
 
     def delete_process(self):
         """
@@ -363,13 +310,6 @@ class EnvProcessInterface(
             print("Failed to send stop signal to child process!")
             traceback.print_exc()
         (process, parent_end, _, _) = self.processes.pop()
-        self.pid_idx_current_obs_dict_map.pop()
-        self.pid_idx_current_action_dict_map.pop()
-        self.pid_idx_current_log_prob_dict_map.pop()
-        self.pid_idx_prev_timestep_id_dict_map.pop()
-
-        self.selector.unregister(parent_end)
-        self.min_inference_size = min(self.min_inference_size, self.n_procs)
 
         try:
             process.join()
@@ -383,101 +323,17 @@ class EnvProcessInterface(
             print("Unable to close parent connection")
             traceback.print_exc()
 
-    def send_actions(self, action_list: List[ActionType], log_probs: Tensor):
+    def send_actions(self, action_list: List[ActionType], log_probs: List[Tensor]):
         """
         Send actions to environment processes based on current observations.
         """
-        for pid_idx, action, log_prob, (agent_id, _) in zip(
-            self.obs_list_idx_pid_idx_map,
-            action_list,
-            log_probs,
-            self.obs_list,
-        ):
-            self.pid_idx_current_action_dict_map[pid_idx][agent_id] = action
-            self.pid_idx_current_log_prob_dict_map[pid_idx][agent_id] = log_prob
-        self.rust_env_process_interface.send_actions(
-            action_list, self.obs_list, self.obs_list_idx_pid_idx_map
-        )
-        self.obs_list = []
-        self.obs_list_idx_pid_idx_map = []
-
-    @staticmethod
-    def _construct_timesteps(
-        timestep_id_bits: int,
-        prev_timestep_id_dict: Dict[AgentID, int],
-        current_obs_dict: Dict[AgentID, ObsType],
-        current_action_dict: Dict[AgentID, ActionType],
-        current_log_prob_dict: Dict[AgentID, Tensor],
-        current_episode_data: List[Tuple[AgentID, ObsType, RewardType, bool, bool]],
-    ):
-        timesteps: List[Timestep] = []
-        for agent_id, next_obs, reward, terminated, truncated in current_episode_data:
-            timestep_id = random.getrandbits(timestep_id_bits)
-            timesteps.append(
-                Timestep(
-                    timestep_id,
-                    prev_timestep_id_dict[agent_id],
-                    agent_id,
-                    current_obs_dict[agent_id],
-                    next_obs,
-                    current_action_dict[agent_id],
-                    current_log_prob_dict[agent_id],
-                    reward,
-                    terminated,
-                    truncated,
-                )
-            )
-            prev_timestep_id_dict[agent_id] = timestep_id
-        return timesteps
+        self.rust_env_process_interface.send_actions(action_list, log_probs)
 
     def collect_step_data(self) -> Tuple[List[Timestep], List[StateMetrics]]:
         """
         Update internal obs list state and collect timesteps + metrics from processes that have sent data.
         """
-        n_collected = 0
-        collected_timesteps: List[Timestep] = []
-        collected_metrics: List[StateMetrics] = []
-        while n_collected < self.min_inference_size:
-            for key, event in self.selector.select():
-                if not (event & selectors.EVENT_READ):
-                    continue
-                (parent_end, _, _, pid_idx) = key
-                parent_end.recvfrom(1)
-
-                response: Tuple[
-                    List[Tuple[AgentID, ObsType, RewardType, bool, bool]],
-                    List[Tuple[AgentID, ObsType]],
-                    Optional[StateMetrics],
-                ] = self.rust_env_process_interface.collect_response(pid_idx)
-                current_episode_data, new_episode_data, metrics_from_process = response
-
-                timesteps = self._construct_timesteps(
-                    self.timestep_id_bits,
-                    self.pid_idx_prev_timestep_id_dict_map[pid_idx],
-                    self.pid_idx_current_obs_dict_map[pid_idx],
-                    self.pid_idx_current_action_dict_map[pid_idx],
-                    self.pid_idx_current_log_prob_dict_map[pid_idx],
-                    current_episode_data,
-                )
-                collected_timesteps += timesteps
-                n_collected += len(timesteps)
-
-                if new_episode_data:
-                    obs_list = new_episode_data
-                else:
-                    obs_list = [
-                        (agent_id, obs) for (agent_id, obs, *_) in current_episode_data
-                    ]
-                self.pid_idx_current_obs_dict_map[pid_idx] = {
-                    agent_id: obs for (agent_id, obs) in obs_list
-                }
-                self.obs_list += obs_list
-                self.obs_list_idx_pid_idx_map += [pid_idx] * len(obs_list)
-
-                if metrics_from_process is not None:
-                    collected_metrics.append(metrics_from_process)
-
-        return self.obs_list, collected_timesteps, collected_metrics
+        return self.rust_env_process_interface.collect_step_data()
 
     def cleanup(self):
         """
@@ -486,13 +342,6 @@ class EnvProcessInterface(
         self.rust_env_process_interface.cleanup()
         for _ in range(len(self.processes)):
             (process, parent_end, _, _) = self.processes.pop()
-            self.pid_idx_current_obs_dict_map.pop()
-            self.pid_idx_current_action_dict_map.pop()
-            self.pid_idx_current_log_prob_dict_map.pop()
-            self.pid_idx_prev_timestep_id_dict_map.pop()
-
-            self.selector.unregister(parent_end)
-            self.min_inference_size = min(self.min_inference_size, self.n_procs)
 
             try:
                 process.join()

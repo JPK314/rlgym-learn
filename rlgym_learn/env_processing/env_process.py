@@ -20,11 +20,6 @@ from rlgym_learn.api import RustSerde, StateMetrics, TypeSerde
 from .communication import EVENT_STRING
 
 
-def sync_with_epi(child_end, parent_sockname):
-    child_end.sendto(EVENT_STRING, parent_sockname)
-    child_end.recvfrom(1)
-
-
 def env_process(
     proc_id: str,
     parent_sockname,
@@ -61,7 +56,8 @@ def env_process(
     child_end = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     child_end.bind(("127.0.0.1", 0))
 
-    sync_with_epi(child_end, parent_sockname)
+    child_end.sendto(EVENT_STRING, parent_sockname)
+    child_end.recvfrom(1)
 
     agent_id_type_serde = None
     action_type_serde = None
@@ -95,11 +91,11 @@ def env_process(
 
     rust_env_process(
         proc_id,
+        child_end,
+        parent_sockname,
         build_env_fn,
         flinks_folder,
         shm_buffer_size,
-        lambda: child_end.sendto(EVENT_STRING, parent_sockname),
-        lambda: sync_with_epi(child_end, parent_sockname),
         agent_id_type_serde,
         agent_id_serde,
         action_type_serde,

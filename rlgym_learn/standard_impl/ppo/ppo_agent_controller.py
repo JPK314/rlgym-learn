@@ -390,7 +390,7 @@ class PPOAgentController(
         wandb_config = {
             **agent_wandb_config,
             "n_proc": self.config.process_config.n_proc,
-            "min_inference_size": self.config.process_config.min_inference_size,
+            "min_process_steps_per_inference": self.config.process_config.min_process_steps_per_inference,
             "timestep_limit": self.config.base_config.timestep_limit,
             **self.config.agent_controller_config.experience_buffer_config.trajectory_processor_args,
             **self.config.agent_controller_config.wandb_config.additional_wandb_config,

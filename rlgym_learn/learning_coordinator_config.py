@@ -6,23 +6,22 @@ from pydantic import BaseModel, Field, model_validator
 
 class ProcessConfigModel(BaseModel):
     n_proc: int = 8
-    min_inference_size: int = -1
+    min_process_steps_per_inference: int = -1
     render: bool = False
     render_delay: float = 0
     instance_launch_delay: Optional[float] = None
     recalculate_agent_id_every_step: bool = False
 
     @model_validator(mode="after")
-    def set_default_min_inference_size(self):
-        if self.min_inference_size < 0:
-            self.min_inference_size = max(1, int(0.9 * self.n_proc))
+    def set_default_min_process_steps_per_inference(self):
+        if self.min_process_steps_per_inference < 0:
+            self.min_process_steps_per_inference = max(1, int(0.5 * self.n_proc))
         return self
 
 
 class BaseConfigModel(BaseModel):
     device: str = "auto"
     random_seed: int = 123
-    timestep_id_bits: int = 64
     shm_buffer_size: int = 8192
     flinks_folder: str = "shmem_flinks"
     timestep_limit: int = 5_000_000_000

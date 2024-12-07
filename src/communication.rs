@@ -119,12 +119,29 @@ pub fn retrieve_bytes(slice: &[u8], offset: usize) -> PyResult<(&[u8], usize)> {
     Ok((&slice[start..end], end))
 }
 
+#[macro_export]
+macro_rules! append_python_update_serde {
+    ($buf: expr, $offset: ident, $obj: expr, $type_serde_option: expr, $pyany_serde_option: ident) => {
+        let new_pyany_serde_option;
+        ($offset, new_pyany_serde_option) = append_python(
+            $buf,
+            $offset,
+            $obj,
+            $type_serde_option,
+            &$pyany_serde_option,
+        )?;
+        if new_pyany_serde_option.is_some() {
+            $pyany_serde_option = new_pyany_serde_option;
+        }
+    };
+}
+
 pub fn append_python<'py>(
     buf: &mut [u8],
     offset: usize,
     obj: &Bound<'py, PyAny>,
     type_serde_option: &Option<&Bound<'py, PyAny>>,
-    pyany_serde_option: Option<Box<dyn PyAnySerde + Send>>,
+    pyany_serde_option: &Option<Box<dyn PyAnySerde + Send>>,
 ) -> PyResult<(usize, Option<Box<dyn PyAnySerde + Send>>)> {
     if let Some(type_serde) = type_serde_option {
         // println!("Entering append via typeserde flow");
@@ -142,20 +159,40 @@ pub fn append_python<'py>(
     } else {
         // println!("Appending python bytes via pyany serde");
         let mut new_offset = append_bool(buf, offset, false);
-        let pyany_serde = match pyany_serde_option {
-            Some(_pyany_serde) => _pyany_serde,
-            None => {
-                let _serde = detect_serde(&obj)?;
-                get_pyany_serde(obj.py(), _serde)?
-            }
-        };
-        let serde_enum_bytes = pyany_serde.get_enum_bytes();
-        let end = new_offset + serde_enum_bytes.len();
-        buf[new_offset..end].copy_from_slice(&serde_enum_bytes[..]);
-        new_offset = pyany_serde.append(buf, end, &obj)?;
+        let serde_enum_bytes;
+        let new_pyany_serde_option;
+        if let Some(pyany_serde) = pyany_serde_option {
+            serde_enum_bytes = pyany_serde.get_enum_bytes();
+            new_pyany_serde_option = None;
+            let end = new_offset + serde_enum_bytes.len();
+            buf[new_offset..end].copy_from_slice(&serde_enum_bytes[..]);
+            new_offset = pyany_serde.append(buf, end, &obj)?;
+        } else {
+            let serde = detect_serde(&obj)?;
+            let new_pyany_serde = get_pyany_serde(obj.py(), serde)?;
+            serde_enum_bytes = new_pyany_serde.get_enum_bytes();
+            let end = new_offset + serde_enum_bytes.len();
+            buf[new_offset..end].copy_from_slice(&serde_enum_bytes[..]);
+            new_offset = new_pyany_serde.append(buf, end, &obj)?;
+            new_pyany_serde_option = Some(new_pyany_serde);
+        }
         // println!("Exiting append via pyany serde flow");
-        return Ok((new_offset, Some(pyany_serde)));
+        return Ok((new_offset, new_pyany_serde_option));
     }
+}
+
+#[macro_export]
+macro_rules! retrieve_python_update_serde {
+    ($py: expr, $buf: expr, $offset: ident, $type_serde_option: expr, $pyany_serde_option: ident) => {{
+        let new_pyany_serde_option;
+        let obj;
+        (obj, $offset, new_pyany_serde_option) =
+            retrieve_python($py, $buf, $offset, $type_serde_option, &$pyany_serde_option)?;
+        if new_pyany_serde_option.is_some() {
+            $pyany_serde_option = new_pyany_serde_option;
+        }
+        obj
+    }};
 }
 
 pub fn retrieve_python<'py>(

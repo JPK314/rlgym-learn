@@ -125,8 +125,7 @@ class LearningCoordinator(
             action_space_serde,
             state_metrics_serde,
             collect_state_metrics_fn,
-            self.config.process_config.min_inference_size,
-            self.config.base_config.timestep_id_bits,
+            self.config.process_config.min_process_steps_per_inference,
             self.config.base_config.flinks_folder,
             self.config.base_config.shm_buffer_size,
             self.config.base_config.random_seed,
@@ -235,14 +234,18 @@ class LearningCoordinator(
                 self.env_process_interface.delete_process()
                 print(f"Process deleted. ({self.env_process_interface.n_procs} total)")
             if c == "j":
-                self.env_process_interface.increase_min_inference_size()
+                min_process_steps_per_inference = (
+                    self.env_process_interface.increase_min_process_steps_per_inference()
+                )
                 print(
-                    f"Min inference size increased to {self.env_process_interface.min_inference_size} ({(100 * self.env_process_interface.min_inference_size / self.env_process_interface.n_procs):.2f}% of processes)"
+                    f"Min process steps per inference increased to {min_process_steps_per_inference} ({(100 * min_process_steps_per_inference / self.env_process_interface.n_procs):.2f}% of processes)"
                 )
             if c == "l":
-                self.env_process_interface.decrease_min_inference_size()
+                min_process_steps_per_inference = (
+                    self.env_process_interface.decrease_min_process_steps_per_inference()
+                )
                 print(
-                    f"Min inference size decreased to {self.env_process_interface.min_inference_size} ({(100 * self.env_process_interface.min_inference_size / self.env_process_interface.n_procs):.2f}% of processes)"
+                    f"Min process steps per inference decreased to {min_process_steps_per_inference} ({(100 * min_process_steps_per_inference / self.env_process_interface.n_procs):.2f}% of processes)"
                 )
 
     def save(self):

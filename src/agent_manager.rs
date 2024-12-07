@@ -33,6 +33,10 @@ impl AgentManager {
         })
     }
 
+    // Returns: PyTuple of (
+    //     List[Optional[ActionType]],
+    //     List[Optional[Tensor]]
+    // )
     fn get_actions(&self, obs_list: Vec<(PyObject, PyObject)>) -> PyResult<PyObject> {
         Python::with_gil(|py| {
             let mut obs_idx_has_action_map = vec![false; obs_list.len()];
