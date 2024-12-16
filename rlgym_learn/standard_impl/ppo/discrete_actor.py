@@ -37,15 +37,16 @@ class DiscreteFF(Actor[AgentID, np.ndarray, np.ndarray]):
 
         self.n_actions = n_actions
 
-    def get_output(self, obs_list: List[Tuple[AgentID, np.ndarray]]) -> torch.Tensor:
-        obs_batch = np.array([o[1] for o in obs_list])
-        obs = torch.as_tensor(obs_batch, dtype=torch.float32, device=self.device)
+    def get_output(self, obs_list: List[np.ndarray]) -> torch.Tensor:
+        obs = torch.as_tensor(
+            np.array(obs_list), dtype=torch.float32, device=self.device
+        )
         probs = self.model(obs)
         probs = torch.clamp(probs, min=1e-11, max=1)
         return probs
 
     def get_action(
-        self, obs_list, **kwargs
+        self, agent_id_list, obs_list, **kwargs
     ) -> Tuple[Iterable[np.ndarray], torch.Tensor]:
         # TODO: treat output as logits instead of probs. Softmax needed in layers?
         probs = self.get_output(obs_list)
@@ -56,9 +57,9 @@ class DiscreteFF(Actor[AgentID, np.ndarray, np.ndarray]):
         action = torch.multinomial(probs, 1, True)
         log_prob: torch.Tensor = torch.log(probs).gather(-1, action)
 
-        return action.cpu().numpy(), log_prob.cpu()
+        return action.cpu().numpy(), log_prob.cpu().squeeze()
 
-    def get_backprop_data(self, obs_list, acts, **kwargs):
+    def get_backprop_data(self, agent_id_list, obs_list, acts, **kwargs):
         probs = self.get_output(obs_list)
         acts_tensor = torch.as_tensor(np.array(acts)).to(self.device)
         log_probs = torch.log(probs)

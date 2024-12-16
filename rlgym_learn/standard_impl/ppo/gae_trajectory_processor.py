@@ -64,7 +64,8 @@ class GAETrajectoryProcessor(
         return_std = self.return_stats.std[0] if self.standardize_returns else 1
 
         result: Tuple[
-            List[Tuple[AgentID, ObsType]],
+            List[AgentID],
+            List[ObsType],
             List[ActionType],
             List[torch.Tensor],
             List[torch.Tensor],
@@ -75,6 +76,7 @@ class GAETrajectoryProcessor(
             trajectories, return_std
         )
         (
+            agent_id_list,
             observation_list,
             action_list,
             log_prob_list,
@@ -104,6 +106,7 @@ class GAETrajectoryProcessor(
         )
         return (
             (
+                agent_id_list,
                 observation_list,
                 action_list,
                 torch.stack(log_prob_list).to(device=self.device),

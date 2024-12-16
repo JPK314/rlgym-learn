@@ -23,7 +23,8 @@ macro_rules! define_process_trajectories {
                 gamma: PyObject,
                 lambda: PyObject,
             ) -> PyResult<(
-                Vec<(PyObject, PyObject)>,
+                Vec<PyObject>,
+                Vec<PyObject>,
                 Vec<PyObject>,
                 Vec<PyObject>,
                 Vec<PyObject>,
@@ -37,8 +38,9 @@ macro_rules! define_process_trajectories {
                 let batch_reward_type_numpy_converter = batch_reward_type_numpy_converter.into_pyobject(py)?;
                 let total_experience = trajectories
                     .iter()
-                    .map(|trajectory| trajectory.complete_timesteps.len())
+                    .map(|trajectory| trajectory.complete_steps.len())
                     .sum::<usize>();
+                let mut agent_id_list = Vec::with_capacity(total_experience);
                 let mut observation_list = Vec::with_capacity(total_experience);
                 let mut action_list = Vec::with_capacity(total_experience);
                 let mut log_prob_list = Vec::with_capacity(total_experience);
@@ -55,18 +57,18 @@ macro_rules! define_process_trajectories {
                     let mut cur_advantage = 0 as $dtype;
                     let timesteps_rewards = batch_reward_type_numpy_converter
                         .call_method1(intern!(py, "as_numpy"), (trajectory
-                            .complete_timesteps
+                            .complete_steps
                             .iter()
-                            .map(|(_, _, _, reward, _)| reward.bind(py))
+                            .map(|trajectory_step| trajectory_step.reward.bind(py))
                             .collect::<Vec<&Bound<'_, PyAny>>>(),))?
                         .extract::<Vec<$dtype>>()?;
-                    for ((obs, action, log_prob, _, val_pred_option), reward) in trajectory
-                        .complete_timesteps
+                    for (trajectory_step, reward) in trajectory
+                        .complete_steps
                         .into_iter()
                         .zip(timesteps_rewards.iter().map(|&v| v))
                         .rev()
                     {
-                        let val_pred = val_pred_option.unwrap();
+                        let val_pred = trajectory_step.value_pred.unwrap();
                         let val_pred_float = val_pred.extract::<$dtype>(py)?;
                         reward_sum += reward;
                         let norm_reward;
@@ -79,15 +81,17 @@ macro_rules! define_process_trajectories {
                         next_val_pred = val_pred_float;
                         cur_advantage = delta + gamma * lambda * cur_advantage;
                         cur_return = reward + gamma * cur_return;
-                        observation_list.push((trajectory.agent_id.clone_ref(py), obs));
-                        action_list.push(action);
-                        log_prob_list.push(log_prob);
+                        agent_id_list.push(trajectory.agent_id.clone_ref(py));
+                        observation_list.push(trajectory_step.obs);
+                        action_list.push(trajectory_step.action);
+                        log_prob_list.push(trajectory_step.log_prob);
                         value_list.push(val_pred);
                         advantage_list.push(cur_advantage);
                         return_list.push(cur_return);
                     }
                 }
                 Ok((
+                    agent_id_list,
                     observation_list,
                     action_list,
                     log_prob_list,
@@ -151,7 +155,8 @@ impl GAETrajectoryProcessor {
         trajectories: Vec<Trajectory>,
         return_std: PyObject,
     ) -> PyResult<(
-        Vec<(PyObject, PyObject)>,
+        Vec<PyObject>,
+        Vec<PyObject>,
         Vec<PyObject>,
         Vec<PyObject>,
         Vec<PyObject>,

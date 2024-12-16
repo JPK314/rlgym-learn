@@ -93,7 +93,8 @@ class ExperienceBuffer(
         ],
     ):
         self.trajectory_processor_factory = trajectory_processor_factory
-        self.observations: List[Tuple[AgentID, ObsType]] = []
+        self.agent_ids: List[AgentID] = []
+        self.observations: List[ObsType] = []
         self.actions: List[ActionType] = []
         self.log_probs = torch.FloatTensor()
         self.values = torch.FloatTensor()
@@ -178,8 +179,11 @@ class ExperienceBuffer(
         exp_buffer_data, trajectory_processor_data = (
             self.trajectory_processor.process_trajectories(trajectories)
         )
-        (observations, actions, log_probs, values, advantages) = exp_buffer_data
+        (agent_ids, observations, actions, log_probs, values, advantages) = (
+            exp_buffer_data
+        )
 
+        self.agent_ids = _cat_list(self.agent_ids, agent_ids, self.config.max_size)
         self.observations = _cat_list(
             self.observations, observations, self.config.max_size
         )
@@ -203,13 +207,15 @@ class ExperienceBuffer(
         return trajectory_processor_data
 
     def _get_samples(self, indices) -> Tuple[
+        List[AgentID],
+        List[ObsType],
         List[ActionType],
         torch.Tensor,
-        List[Tuple[AgentID, ObsType]],
         torch.Tensor,
         torch.Tensor,
     ]:
         return (
+            [self.agent_ids[index] for index in indices],
             [self.observations[index] for index in indices],
             [self.actions[index] for index in indices],
             self.log_probs[indices],

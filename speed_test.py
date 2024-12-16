@@ -206,7 +206,7 @@ def env_create_function():
 if __name__ == "__main__":
 
     # 32 processes
-    n_proc = 75
+    n_proc = 100
 
     learner_config = PPOLearnerConfigModel(
         n_epochs=1,

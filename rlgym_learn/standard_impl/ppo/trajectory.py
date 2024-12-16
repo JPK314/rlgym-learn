@@ -6,6 +6,8 @@ from torch import Tensor
 
 from rlgym_learn.experience import Timestep
 
+from .trajectory_step import TrajectoryStep
+
 
 class Trajectory(Generic[AgentID, ObsType, ActionType, RewardType]):
     def __init__(self, agent_id: AgentID):
@@ -14,15 +16,7 @@ class Trajectory(Generic[AgentID, ObsType, ActionType, RewardType]):
         """
         self.agent_id = agent_id
         self.done = False
-        self.complete_timesteps: List[
-            Tuple[
-                ObsType,
-                ActionType,
-                Tensor,
-                RewardType,
-                Optional[Tensor],
-            ]
-        ] = []
+        self.complete_steps: List[TrajectoryStep[ObsType, ActionType, RewardType]] = []
         self.final_obs: Optional[ObsType] = None
         self.final_val_pred: Tensor = torch.tensor(0, dtype=torch.float32)
         self.truncated: Optional[bool] = None
@@ -34,8 +28,8 @@ class Trajectory(Generic[AgentID, ObsType, ActionType, RewardType]):
         returns whether or not a timestep was appended
         """
         if not self.done:
-            self.complete_timesteps.append(
-                (
+            self.complete_steps.append(
+                TrajectoryStep(
                     timestep.obs,
                     timestep.action,
                     timestep.log_prob,
@@ -54,16 +48,9 @@ class Trajectory(Generic[AgentID, ObsType, ActionType, RewardType]):
         self, val_preds: List[Tensor], final_val_pred: Optional[Tensor]
     ):
         """
-        :val_preds: list of torch tensors for value prediction, parallel with self.complete_timesteps
+        :val_preds: list of torch tensors for value prediction, parallel with self.complete_steps
         :final_val_pred: value prediction for self.final_obs
         """
-        for idx, timestep in enumerate(self.complete_timesteps):
-            (obs, action, log_prob, reward, _) = timestep
-            self.complete_timesteps[idx] = (
-                obs,
-                action,
-                log_prob,
-                reward,
-                val_preds[idx],
-            )
+        for idx, trajectory_step in enumerate(self.complete_steps):
+            trajectory_step.value_pred = val_preds[idx]
         self.final_val_pred = final_val_pred

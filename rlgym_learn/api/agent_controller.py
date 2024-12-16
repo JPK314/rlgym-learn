@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Any, Generic, List, Optional, Tuple
+from typing import Any, Generic, Iterable, List, Tuple
 
 from rlgym.api import (
     ActionSpaceType,
@@ -9,7 +9,7 @@ from rlgym.api import (
     ObsType,
     RewardType,
 )
-from torch import Tensor, device
+from torch import Tensor, as_tensor, device
 
 from rlgym_learn.experience import Timestep
 
@@ -42,16 +42,27 @@ class AgentController(
     def __init__(self, *args, **kwargs):
         pass
 
+    def choose_agents(self, agent_id_list: List[AgentID]) -> List[int]:
+        """
+        Function to determine which agent ids (and their associated observations) this agent controller
+        will return the actions (and their associated log probs) for.
+        :param agent_id_list: List of AgentIDs available to decide actions for
+        :return: list of indices from the agent_id_list which will be used to call get_actions.
+        """
+        return []
+
     def get_actions(
-        self, obs_list: List[Tuple[AgentID, ObsType]]
-    ) -> List[Optional[Tuple[ActionType, Tensor]]]:
+        self,
+        agent_id_list: List[AgentID],
+        obs_list: List[ObsType],
+    ) -> Tuple[Iterable[ActionType], Tensor]:
         """
         Function to get an action and the log of its probability from the policy given an observation.
-        :param obs_list: list of tuples of agent IDs and observations parallel with returned list. Agent IDs may not be unique here.
-        :return: List of optional tuples of ActionType and that action's log prob tensor, parallel with obs_list. A list value being None means this
-            agent controller does not want to control the action of this agent.
+        :param agent_id_list: List of AgentIDs for which to produce actions. AgentIDs may not be unique here. Parallel with obs_list.
+        :param obs_list: List of ObsTypes for which to produce actions. Parallel with agent_id_list.
+        :return: Tuple of a list of chosen actions and Tensor of shape (n,), with the action list and the first (only) dimension of the tensor parallel with obs_list.
         """
-        return [None for _ in obs_list]
+        return ([], as_tensor([]))
 
     def process_timestep_data(
         self, timesteps: List[Timestep], state_metrics: List[StateMetrics]

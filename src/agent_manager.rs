@@ -1,16 +1,31 @@
+use itertools::izip;
 use pyo3::types::PyDict;
 use pyo3::{intern, prelude::*};
 use pyo3::{IntoPyObjectExt, PyObject};
 
 fn get_actions<'py>(
-    py: Python<'py>,
-    agent_controller: PyObject,
-    obs_list: &Vec<(PyObject, PyObject)>,
-) -> PyResult<Vec<Option<(PyObject, PyObject)>>> {
+    agent_controller: &Bound<'py, PyAny>,
+    agent_id_list: &Vec<PyObject>,
+    obs_list: &Vec<PyObject>,
+) -> PyResult<(Vec<PyObject>, PyObject)> {
     Ok(agent_controller
-        .into_bound(py)
-        .call_method1(intern!(py, "get_actions"), (obs_list,))?
-        .extract::<_>()?)
+        .call_method1(
+            intern!(agent_controller.py(), "get_actions"),
+            (agent_id_list, obs_list),
+        )?
+        .extract()?)
+}
+
+fn choose_agents<'py>(
+    agent_controller: &Bound<'py, PyAny>,
+    agent_id_list: &Vec<PyObject>,
+) -> PyResult<Vec<usize>> {
+    Ok(agent_controller
+        .call_method1(
+            intern!(agent_controller.py(), "choose_agents"),
+            (agent_id_list,),
+        )?
+        .extract()?)
 }
 
 #[pyclass(module = "rlgym_learn_backend")]
@@ -34,66 +49,100 @@ impl AgentManager {
     }
 
     // Returns: PyTuple of (
-    //     List[Optional[ActionType]],
-    //     List[Optional[Tensor]]
+    //     List[ActionType],
+    //     List[Tensor]
     // )
-    fn get_actions(&self, obs_list: Vec<(PyObject, PyObject)>) -> PyResult<PyObject> {
+    fn get_actions(
+        &self,
+        agent_id_list: Vec<PyObject>,
+        obs_list: Vec<PyObject>,
+    ) -> PyResult<(PyObject, PyObject)> {
         Python::with_gil(|py| {
             let mut obs_idx_has_action_map = vec![false; obs_list.len()];
             let mut action_list = vec![None; obs_list.len()];
             let mut log_prob_list = vec![None; obs_list.len()];
-            // Agent controllers have priority based on their position in the list
-            let first_agent_controllers_actions = get_actions(
-                py,
-                self.agent_controllers.get(0).unwrap().clone_ref(py),
-                &obs_list,
-            )?;
-            for (idx, action_option) in first_agent_controllers_actions.into_iter().enumerate() {
-                if let Some((action, log_prob)) = action_option {
-                    obs_idx_has_action_map[idx] = true;
-                    action_list[idx] = Some(action.into_bound(py));
-                    log_prob_list[idx] = Some(log_prob.into_bound(py));
-                }
-            }
+
+            let mut new_agent_id_list = agent_id_list;
             let mut new_obs_list = obs_list;
             let mut new_obs_list_idx_has_action_map = obs_idx_has_action_map.clone();
-            if !obs_idx_has_action_map.iter().all(|&v| v) {
-                let relevant_action_map_indices: Vec<usize> = obs_idx_has_action_map
-                    .iter()
-                    .enumerate()
-                    .filter(|(_, &v)| !v)
-                    .map(|(idx, _)| idx)
-                    .collect();
-                new_obs_list = new_obs_list
-                    .drain(..)
-                    .enumerate()
-                    .filter(|(idx, _)| !new_obs_list_idx_has_action_map[*idx])
-                    .map(|(_, v)| v)
-                    .collect();
-                new_obs_list_idx_has_action_map.resize(new_obs_list.len(), false);
-                for v in &mut new_obs_list_idx_has_action_map {
-                    *v = false;
+            let mut first_agent_controller = true;
+            let mut may_early_return = false;
+            // Agent controllers have priority based on their position in the list
+            for py_agent_controller in self.agent_controllers.iter() {
+                let relevant_action_map_indices: Vec<usize>;
+                if first_agent_controller {
+                    relevant_action_map_indices = (0..obs_idx_has_action_map.len()).collect();
+                    first_agent_controller = false;
+                    may_early_return = true;
+                } else {
+                    relevant_action_map_indices = obs_idx_has_action_map
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, &v)| !v)
+                        .map(|(idx, _)| idx)
+                        .collect();
+                    new_agent_id_list = new_agent_id_list
+                        .drain(..)
+                        .enumerate()
+                        .filter(|(idx, _)| !new_obs_list_idx_has_action_map[*idx])
+                        .map(|(_, v)| v)
+                        .collect();
+                    new_obs_list = new_obs_list
+                        .drain(..)
+                        .enumerate()
+                        .filter(|(idx, _)| !new_obs_list_idx_has_action_map[*idx])
+                        .map(|(_, v)| v)
+                        .collect();
+                    new_obs_list_idx_has_action_map.resize(new_obs_list.len(), false);
+                    for v in &mut new_obs_list_idx_has_action_map {
+                        *v = false;
+                    }
                 }
-                for py_agent_controller in self.agent_controllers.iter().skip(1) {
-                    let agent_controllers_actions =
-                        get_actions(py, py_agent_controller.clone_ref(py), &new_obs_list)?;
-                    for (idx, action_option) in agent_controllers_actions.into_iter().enumerate() {
-                        if let Some((action, log_prob)) = action_option {
-                            obs_idx_has_action_map[relevant_action_map_indices[idx]] = true;
-                            new_obs_list_idx_has_action_map[idx] = true;
-                            action_list[relevant_action_map_indices[idx]] =
-                                Some(action.into_bound(py));
-                            log_prob_list[relevant_action_map_indices[idx]] =
-                                Some(log_prob.into_bound(py));
-                        }
+
+                let agent_controller = py_agent_controller.bind(py);
+                let agent_controller_indices = choose_agents(agent_controller, &new_agent_id_list)?;
+                let agent_controller_agent_id_list: Vec<Py<PyAny>> = agent_controller_indices
+                    .iter()
+                    .map(|&idx| new_agent_id_list.get(idx).unwrap().clone_ref(py))
+                    .collect();
+                let agent_controller_obs_list: Vec<Py<PyAny>> = agent_controller_indices
+                    .iter()
+                    .map(|&idx| new_obs_list.get(idx).unwrap().clone_ref(py))
+                    .collect();
+                let (agent_controller_action_list, agent_controller_log_probs) = get_actions(
+                    &agent_controller,
+                    &agent_controller_agent_id_list,
+                    &agent_controller_obs_list,
+                )?;
+                if may_early_return {
+                    if agent_controller_indices.len() == new_obs_list.len() {
+                        return Ok((
+                            agent_controller_action_list.into_py_any(py)?,
+                            agent_controller_log_probs,
+                        ));
                     }
-                    if obs_idx_has_action_map.iter().all(|&x| x) {
-                        break;
-                    }
+                    may_early_return = false;
+                }
+
+                let agent_controller_log_prob_list = agent_controller_log_probs
+                    .call_method1(py, intern!(py, "unbind"), (0,))?
+                    .extract::<Vec<PyObject>>(py)?;
+                for (&idx, action, log_prob) in izip!(
+                    &agent_controller_indices,
+                    agent_controller_action_list,
+                    agent_controller_log_prob_list
+                ) {
+                    obs_idx_has_action_map[relevant_action_map_indices[idx]] = true;
+                    new_obs_list_idx_has_action_map[idx] = true;
+                    action_list[relevant_action_map_indices[idx]] = Some(action.into_bound(py));
+                    log_prob_list[relevant_action_map_indices[idx]] = Some(log_prob.into_bound(py));
+                }
+                if obs_idx_has_action_map.iter().all(|&x| x) {
+                    break;
                 }
             }
 
-            Ok((action_list, log_prob_list).into_py_any(py)?)
+            Ok((action_list.into_py_any(py)?, log_prob_list.into_py_any(py)?))
         })
     }
 }

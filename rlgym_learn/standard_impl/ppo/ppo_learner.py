@@ -217,6 +217,7 @@ class PPOLearner(
             batches = exp.get_all_batches_shuffled(self.config.batch_size)
             for batch in batches:
                 (
+                    batch_agent_ids,
                     batch_obs,
                     batch_acts,
                     batch_old_probs,
@@ -234,8 +235,9 @@ class PPOLearner(
                     start = minibatch_slice
                     stop = start + self.config.minibatch_size
 
-                    acts = batch_acts[start:stop]
+                    agent_ids = batch_agent_ids[start:stop]
                     obs = batch_obs[start:stop]
+                    acts = batch_acts[start:stop]
                     advantages = batch_advantages[start:stop].to(self.config.device)
                     old_probs = batch_old_probs[start:stop].to(self.config.device)
                     target_values = batch_target_values[start:stop].to(
@@ -243,10 +245,12 @@ class PPOLearner(
                     )
 
                     # Compute value estimates.
-                    vals = self.critic(obs).view_as(target_values)
+                    vals = self.critic(agent_ids, obs).view_as(target_values)
 
                     # Get actor log probs & entropy.
-                    log_probs, entropy = self.actor.get_backprop_data(obs, acts)
+                    log_probs, entropy = self.actor.get_backprop_data(
+                        agent_ids, obs, acts
+                    )
                     log_probs = log_probs.view_as(old_probs)
 
                     # Compute PPO loss.

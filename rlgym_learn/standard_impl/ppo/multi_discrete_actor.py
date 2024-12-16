@@ -41,14 +41,15 @@ class MultiDiscreteFF(Actor[AgentID, np.ndarray, np.ndarray]):
         self.splits = bins
         self.multi_discrete = torch_functions.MultiDiscreteRolv(bins)
 
-    def get_output(self, obs_list: List[Tuple[AgentID, np.ndarray]]):
-        obs_batch = np.array([o[1] for o in obs_list])
-        obs = torch.as_tensor(obs_batch, dtype=torch.float32, device=self.device)
+    def get_output(self, obs_list: List[np.ndarray]):
+        obs = torch.as_tensor(
+            np.array(obs_list), dtype=torch.float32, device=self.device
+        )
         policy_output = self.model(obs)
         return policy_output
 
     def get_action(
-        self, obs_list, **kwargs
+        self, agent_id_list, obs_list, **kwargs
     ) -> Tuple[Iterable[np.ndarray], torch.Tensor]:
         logits = self.get_output(obs_list)
 
@@ -73,7 +74,7 @@ class MultiDiscreteFF(Actor[AgentID, np.ndarray, np.ndarray]):
         return action.cpu().numpy(), log_prob.cpu()
 
     def get_backprop_data(
-        self, obs_list, acts, **kwargs
+        self, agent_id_list, obs_list, acts, **kwargs
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         logits = self.get_output(obs_list)
         acts_tensor = torch.as_tensor(np.array(acts)).to(self.device)

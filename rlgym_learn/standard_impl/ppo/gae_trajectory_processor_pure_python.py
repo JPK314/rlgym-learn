@@ -48,7 +48,6 @@ class GAETrajectoryProcessorPurePython(
         self.norm_reward_max = np.array(10, dtype=dtype)
         self.batch_reward_type_numpy_converter.set_dtype(dtype)
 
-    # TODO: why are dtype and device getting passed here?
     def process_trajectories(self, trajectories):
         return_std = (
             self.return_stats.std.squeeze() if self.standardize_returns else None
@@ -56,7 +55,8 @@ class GAETrajectoryProcessorPurePython(
         gamma = np.array(self.gamma, dtype=self.numpy_dtype)
         lmbda = np.array(self.lmbda, dtype=self.numpy_dtype)
         exp_len = 0
-        observations: List[Tuple[AgentID, ObsType]] = []
+        agent_ids: List[AgentID] = []
+        observations: List[ObsType] = []
         actions: List[ActionType] = []
         # For some reason, appending to lists is faster than preallocating the tensor and then indexing into it to assign
         log_probs_list: List[torch.Tensor] = []
@@ -74,13 +74,15 @@ class GAETrajectoryProcessorPurePython(
 
             cur_advantages = np.array(0, dtype=self.numpy_dtype)
             reward_array = self.batch_reward_type_numpy_converter.as_numpy(
-                [reward for (_, _, _, reward, _) in trajectory.complete_timesteps]
+                [
+                    trajectory_step.reward
+                    for trajectory_step in trajectory.complete_steps
+                ]
             )
-            for timestep, reward in reversed(
-                list(zip(trajectory.complete_timesteps, np.nditer(reward_array)))
+            for trajectory_step, reward in reversed(
+                list(zip(trajectory.complete_steps, np.nditer(reward_array)))
             ):
-                (obs, action, log_prob_tensor, _, val_pred_tensor) = timestep
-                val_pred = val_pred_tensor.squeeze().cpu().numpy()
+                val_pred = trajectory_step.value_pred.squeeze().cpu().numpy()
                 reward_sum += reward
                 if return_std is not None:
                     norm_reward = np.clip(
@@ -95,10 +97,11 @@ class GAETrajectoryProcessorPurePython(
                 cur_advantages = delta + gamma * lmbda * cur_advantages
                 cur_return = reward + gamma * cur_return
                 returns_list.append(cur_return)
-                observations.append((trajectory.agent_id, obs))
-                actions.append(action)
-                log_probs_list.append(log_prob_tensor)
-                values_list.append(val_pred_tensor)
+                agent_ids.append(trajectory.agent_id)
+                observations.append(timestep.obs)
+                actions.append(timestep.action)
+                log_probs_list.append(timestep.log_prob)
+                values_list.append(timestep.value_pred)
                 advantages_list.append(cur_advantages)
                 exp_len += 1
 

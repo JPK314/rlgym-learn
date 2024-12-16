@@ -418,20 +418,26 @@ class PPOAgentController(
             self.wandb_run.id,
         )
 
+    def choose_agents(self, agent_id_list):
+        return list(range(len(agent_id_list)))
+
     @torch.no_grad
-    def get_actions(self, obs_list):
-        (batched_action, batched_log_probs) = self.learner.actor.get_action(obs_list)
-        return list(zip(batched_action, batched_log_probs.unbind(0)))
+    def get_actions(self, agent_id_list, obs_list):
+        action_list, log_probs = self.learner.actor.get_action(agent_id_list, obs_list)
+        return (action_list, log_probs)
 
     def standardize_timestep_observations(
         self,
         timesteps: List[Timestep[AgentID, ObsType, ActionType, RewardType]],
     ):
-        obs_list = [None] * (2 * len(timesteps))
+        agent_id_list = [None] * (2 * len(timesteps))
+        obs_list = [None] * len(agent_id_list)
         for timestep_idx, timestep in enumerate(timesteps):
-            obs_list[2 * timestep_idx] = (timestep.agent_id, timestep.obs)
-            obs_list[2 * timestep_idx + 1] = (timestep.agent_id, timestep.next_obs)
-        standardized_obs = self.obs_standardizer.standardize(obs_list)
+            agent_id_list[2 * timestep_idx] = timestep.agent_id
+            agent_id_list[2 * timestep_idx + 1] = timestep.agent_id
+            obs_list[2 * timestep_idx] = timestep.obs
+            obs_list[2 * timestep_idx + 1] = timestep.next_obs
+        standardized_obs = self.obs_standardizer.standardize(agent_id_list, obs_list)
         for obs_idx, obs in enumerate(standardized_obs):
             if obs_idx % 2 == 0:
                 timesteps[obs_idx // 2].obs = obs
@@ -535,22 +541,28 @@ class PPOAgentController(
         traj_timestep_idx_ranges: List[Tuple[int, int]] = []
         start = 0
         stop = 0
-        val_net_input: List[Tuple[AgentID, ObsType]] = []
+        val_net_agent_id_input: List[AgentID] = []
+        val_net_obs_input: List[ObsType] = []
         for trajectory in trajectories:
-            traj_input = [
-                (trajectory.agent_id, obs)
-                for (obs, *_) in trajectory.complete_timesteps
+            traj_agent_id_input = [trajectory.agent_id] * (
+                len(trajectory.complete_steps) + 1
+            )
+            traj_obs_input = [
+                trajectory_step.obs for trajectory_step in trajectory.complete_steps
             ]
-            traj_input.append((trajectory.agent_id, trajectory.final_obs))
-            stop = start + len(traj_input)
+            traj_obs_input.append(trajectory.final_obs)
+            stop = start + len(traj_obs_input)
             traj_timestep_idx_ranges.append((start, stop))
             start = stop
-            val_net_input += traj_input
+            val_net_agent_id_input += traj_agent_id_input
+            val_net_obs_input += traj_obs_input
 
         critic = self.learner.critic
 
         # Update the trajectories with the value predictions.
-        val_preds: torch.Tensor = critic(val_net_input).cpu().flatten()
+        val_preds: torch.Tensor = (
+            critic(val_net_agent_id_input, val_net_obs_input).cpu().flatten()
+        )
         torch.cuda.empty_cache()
         for idx, (start, stop) in enumerate(traj_timestep_idx_ranges):
             val_preds_traj = val_preds[start : stop - 1]

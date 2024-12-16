@@ -22,7 +22,7 @@ class TrajectoryProcessor(
         self,
         trajectories: List[Trajectory[AgentID, ActionType, ObsType, RewardType]],
     ) -> Tuple[
-        Tuple[List[Tuple[AgentID, ObsType]], List[ActionType], Tensor, Tensor, Tensor],
+        Tuple[List[AgentID], List[ObsType], List[ActionType], Tensor, Tensor, Tensor],
         TrajectoryProcessorData,
     ]:
         """

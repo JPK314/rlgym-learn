@@ -70,23 +70,30 @@ pub struct EnvProcessInterface {
 }
 
 impl EnvProcessInterface {
-    fn get_python_obs_list<'py>(&self, py: Python<'py>) -> Vec<(PyObject, PyObject)> {
+    fn get_python_agent_id_obs_lists<'py>(
+        &self,
+        py: Python<'py>,
+    ) -> (Vec<PyObject>, Vec<PyObject>) {
         let total_observations = self
             .pid_idx_current_agent_id_list
             .iter()
             .map(|v| v.as_ref().unwrap().len())
             .sum();
+        let mut python_agent_id_list = Vec::with_capacity(total_observations);
         let mut python_obs_list = Vec::with_capacity(total_observations);
         for (agent_id_list, obs_list) in self
             .pid_idx_current_agent_id_list
             .iter()
             .zip(self.pid_idx_current_obs_list.iter())
         {
-            for (agent_id, obs) in agent_id_list.as_ref().unwrap().iter().zip(obs_list.iter()) {
-                python_obs_list.push((agent_id.clone_ref(py), obs.clone_ref(py)));
+            for agent_id in agent_id_list.as_ref().unwrap().iter() {
+                python_agent_id_list.push(agent_id.clone_ref(py));
+            }
+            for obs in obs_list.iter() {
+                python_obs_list.push(obs.clone_ref(py));
             }
         }
-        python_obs_list
+        (python_agent_id_list, python_obs_list)
     }
 
     fn get_initial_obs_data_proc<'py>(
@@ -343,7 +350,7 @@ impl EnvProcessInterface {
     fn init_processes(
         &mut self,
         proc_package_defs: Vec<(PyObject, PyObject, PyObject, String)>,
-    ) -> PyResult<(Vec<(PyObject, PyObject)>, PyObject, PyObject)> {
+    ) -> PyResult<(Vec<PyObject>, Vec<PyObject>, PyObject, PyObject)> {
         Python::with_gil(|py| {
             proc_package_defs
                 .into_iter()
@@ -359,8 +366,13 @@ impl EnvProcessInterface {
                 self.pid_idx_current_log_prob_list.push(Vec::new());
             }
             let (obs_space, action_space) = self.get_space_types(py)?;
-
-            Ok((self.get_python_obs_list(py), obs_space, action_space))
+            let (python_agent_id_list, python_obs_list) = self.get_python_agent_id_obs_lists(py);
+            Ok((
+                python_agent_id_list,
+                python_obs_list,
+                obs_space,
+                action_space,
+            ))
         })
     }
 
@@ -471,7 +483,7 @@ impl EnvProcessInterface {
     // )
     fn collect_step_data(
         &mut self,
-    ) -> PyResult<(Vec<(PyObject, PyObject)>, Vec<PyObject>, Vec<PyObject>)> {
+    ) -> PyResult<(Vec<PyObject>, Vec<PyObject>, Vec<PyObject>, Vec<PyObject>)> {
         let mut n_process_steps_collected = 0;
         let mut collected_timesteps = Vec::with_capacity(self.min_process_steps_per_inference);
         let mut collected_metrics = Vec::with_capacity(self.min_process_steps_per_inference);
@@ -499,8 +511,10 @@ impl EnvProcessInterface {
                 }
             }
 
+            let (python_agent_id_list, python_obs_list) = self.get_python_agent_id_obs_lists(py);
             Ok((
-                self.get_python_obs_list(py),
+                python_agent_id_list,
+                python_obs_list,
                 collected_timesteps,
                 collected_metrics,
             ))

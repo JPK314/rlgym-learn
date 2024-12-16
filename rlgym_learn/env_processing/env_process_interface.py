@@ -161,7 +161,7 @@ class EnvProcessInterface(
         spawn_delay=None,
         render=False,
         render_delay: Optional[float] = None,
-    ) -> Tuple[List[Tuple[AgentID, ObsType]], ObsSpaceType, ActionSpaceType]:
+    ) -> Tuple[List[AgentID], List[ObsType], ObsSpaceType, ActionSpaceType]:
         """
         Initialize and spawn environment processes.
         :param n_processes: Number of processes to spawn.
@@ -329,9 +329,11 @@ class EnvProcessInterface(
         """
         self.rust_env_process_interface.send_actions(action_list, log_probs)
 
-    def collect_step_data(self) -> Tuple[List[Timestep], List[StateMetrics]]:
+    def collect_step_data(
+        self,
+    ) -> Tuple[List[AgentID], List[ObsType], List[Timestep], List[StateMetrics]]:
         """
-        Update internal obs list state and collect timesteps + metrics from processes that have sent data.
+        Collect timesteps + metrics from processes that have sent data, and get parallel AgentID and ObsType lists for inference.
         """
         return self.rust_env_process_interface.collect_step_data()
 

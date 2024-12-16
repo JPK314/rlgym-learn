@@ -131,7 +131,7 @@ class LearningCoordinator(
             self.config.base_config.random_seed,
             self.config.process_config.recalculate_agent_id_every_step,
         )
-        self.initial_obs_list, obs_space, action_space = (
+        self.initial_agent_id_list, self.initial_obs_list, obs_space, action_space = (
             self.env_process_interface.init_processes(
                 n_processes=self.config.process_config.n_proc,
                 spawn_delay=self.config.process_config.instance_launch_delay,
@@ -188,18 +188,22 @@ class LearningCoordinator(
         )
 
         # Handle actions for observations created on process init
-        actions, log_probs = self.agent_manager.get_actions(self.initial_obs_list)
+        actions, log_probs = self.agent_manager.get_actions(
+            self.initial_agent_id_list, self.initial_obs_list
+        )
         self.env_process_interface.send_actions(actions, log_probs)
 
         # Collect the desired number of timesteps from our environments.
         loop_iterations = 0
         while self.cumulative_timesteps < self.config.base_config.timestep_limit:
-            obs_list, timesteps, state_metrics = (
+            agent_id_list, obs_list, timesteps, state_metrics = (
                 self.env_process_interface.collect_step_data()
             )
             self.cumulative_timesteps += len(timesteps)
             self.agent_manager.process_timestep_data(timesteps, state_metrics)
-            action_list, log_probs = self.agent_manager.get_actions(obs_list)
+            action_list, log_probs = self.agent_manager.get_actions(
+                agent_id_list, obs_list
+            )
 
             self.env_process_interface.send_actions(action_list, log_probs)
             loop_iterations += 1
