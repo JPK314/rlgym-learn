@@ -1,6 +1,5 @@
 from dataclasses import dataclass
 from typing import Generic, Optional
-from uuid import UUID
 
 from rlgym.api import ActionType, AgentID, ObsType, RewardType
 from torch import Tensor
@@ -8,8 +7,20 @@ from torch import Tensor
 
 @dataclass
 class Timestep(Generic[AgentID, ObsType, ActionType, RewardType]):
-    timestep_id: UUID
-    previous_timestep_id: Optional[UUID]
+    __slots__ = (
+        "timestep_id",
+        "previous_timestep_id",
+        "agent_id",
+        "obs",
+        "next_obs",
+        "action",
+        "log_prob",
+        "reward",
+        "terminated",
+        "truncated",
+    )
+    timestep_id: int
+    previous_timestep_id: Optional[int]
     agent_id: AgentID
     obs: ObsType
     next_obs: ObsType

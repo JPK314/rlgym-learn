@@ -1,7 +1,7 @@
-from .learner import Learner
-from .learner_config import (
+from .learning_coordinator import LearningCoordinator
+from .learning_coordinator_config import (
     BaseConfigModel,
-    LearnerConfigModel,
+    LearningCoordinatorConfigModel,
     ProcessConfigModel,
     WandbConfigModel,
     generate_config,

@@ -9,8 +9,13 @@ from .experience_buffer import (
     ExperienceBufferConfigModel,
 )
 from .gae_trajectory_processor import GAETrajectoryProcessor, GAETrajectoryProcessorData
+from .gae_trajectory_processor_pure_python import GAETrajectoryProcessorPurePython
 from .multi_discrete_actor import MultiDiscreteFF
-from .ppo_agent import PPOAgent, PPOAgentConfigModel, PPOAgentData
+from .ppo_agent_controller import (
+    PPOAgentController,
+    PPOAgentControllerConfigModel,
+    PPOAgentControllerData,
+)
 from .ppo_learner import (
     DerivedPPOLearnerConfig,
     PPOData,

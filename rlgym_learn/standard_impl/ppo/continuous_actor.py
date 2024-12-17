@@ -74,16 +74,17 @@ class ContinuousActor(Actor[AgentID, np.ndarray, np.ndarray]):
         return term1 + term2 + term3 + term4
 
     def get_output(
-        self, obs_list: List[Tuple[AgentID, np.ndarray]]
+        self, obs_list: List[np.ndarray]
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        obs_batch = np.array([o[1] for o in obs_list])
-        obs = torch.as_tensor(obs_batch, dtype=torch.float32, device=self.device)
+        obs = torch.as_tensor(
+            np.array(obs_list), dtype=torch.float32, device=self.device
+        )
 
         policy_output = self.model(obs)
         return self.affine_map(policy_output)
 
     def get_action(
-        self, obs_list, **kwargs
+        self, agent_id_list, obs_list, **kwargs
     ) -> Tuple[Iterable[np.ndarray], torch.Tensor]:
         mean, std = self.get_output(obs_list)
         if "deterministic" in kwargs and kwargs["deterministic"]:
@@ -101,9 +102,9 @@ class ContinuousActor(Actor[AgentID, np.ndarray, np.ndarray]):
             else:
                 log_prob = log_prob.sum()
 
-        return action.cpu().numpy(), log_prob.cpu()
+        return action.cpu().numpy(), log_prob.cpu().squeeze()
 
-    def get_backprop_data(self, obs_list, acts, **kwargs):
+    def get_backprop_data(self, agent_id_list, obs_list, acts, **kwargs):
         mean, std = self.get_output(obs_list)
         distribution = Normal(loc=mean, scale=std)
 

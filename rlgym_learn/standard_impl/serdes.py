@@ -4,7 +4,7 @@ from typing import Generic, Iterable, List, Tuple, Type, TypeVar, Union
 import numpy as np
 from rlgym.api import RewardType
 
-from rlgym_learn.api import RewardTypeWrapper, TypeSerde
+from rlgym_learn.api import TypeSerde
 
 FLOAT_SIZE = struct.calcsize("f")
 INTEGER_SIZE = struct.calcsize("I")
@@ -93,22 +93,6 @@ class StrSerde(TypeSerde[str]):
 
     def from_bytes(self, byts):
         return byts.decode()
-
-
-class RewardTypeWrapperSerde(TypeSerde[RewardTypeWrapper[RewardType]]):
-    def __init__(
-        self,
-        reward_type_wrapper_class: Type[RewardTypeWrapper[RewardType]],
-        reward_type_serde: TypeSerde[RewardType],
-    ):
-        self.reward_type_wrapper_class = reward_type_wrapper_class
-        self.reward_type_serde = reward_type_serde
-
-    def to_bytes(self, obj):
-        return self.reward_type_serde.to_bytes(obj.reward)
-
-    def from_bytes(self, byts):
-        return self.reward_type_wrapper_class(self.reward_type_serde.from_bytes(byts))
 
 
 INT_TYPE_CODE = 0

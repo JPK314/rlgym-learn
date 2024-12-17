@@ -25,7 +25,8 @@ class BasicCritic(Critic[AgentID, np.ndarray]):
         layers.append(nn.Linear(layer_sizes[-1], 1))
         self.model = nn.Sequential(*layers).to(self.device)
 
-    def forward(self, obs_list) -> torch.Tensor:
-        obs_batch = np.array([o[1] for o in obs_list])
-        obs = torch.as_tensor(obs_batch, dtype=torch.float32, device=self.device)
+    def forward(self, agent_id_list, obs_list) -> torch.Tensor:
+        obs = torch.as_tensor(
+            np.array(obs_list), dtype=torch.float32, device=self.device
+        )
         return self.model(obs)

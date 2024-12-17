@@ -7,10 +7,11 @@ from rlgym.api import AgentID, ObsType
 class ObsStandardizer(Generic[AgentID, ObsType]):
     @abstractmethod
     def standardize(
-        self, obs_list: List[Tuple[AgentID, ObsType]]
-    ) -> List[Tuple[AgentID, ObsType]]:
+        self, agent_id_list: List[AgentID], obs_list: List[ObsType]
+    ) -> List[ObsType]:
         """
-        :param obs_list: list of tuples of agent IDs and observations parallel with returned list. Agent IDs may not be unique here.
-        :return: List of tuples of agent IDs and observations, with observations standardized.
+        :param agent_id_list: List of AgentIDs, parallel with obs_list. AgentIDs may not be unique here.
+        :param obs_list: List of ObsTypes to standardize.
+        :return: List of standardized observations, parallel with input lists.
         """
         raise NotImplementedError

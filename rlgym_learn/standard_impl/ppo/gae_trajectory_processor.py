@@ -1,12 +1,19 @@
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import List, Tuple
 
 import numpy as np
 import torch
+from numpy import ndarray
 from rlgym.api import ActionType, AgentID, ObsType, RewardType
+from rlgym_learn_backend import GAETrajectoryProcessor as RustGAETrajectoryProcessor
 
 from rlgym_learn.util import WelfordRunningStat
 
+from ..batch_reward_type_numpy_converter import (
+    BatchRewardTypeNumpyConverter,
+    BatchRewardTypeSimpleNumpyConverter,
+)
 from .trajectory_processor import TrajectoryProcessor
 
 
@@ -28,73 +35,70 @@ class GAETrajectoryProcessor(
         lmbda=0.95,
         standardize_returns=True,
         max_returns_per_stats_increment=150,
+        batch_reward_type_numpy_converter: BatchRewardTypeNumpyConverter = BatchRewardTypeSimpleNumpyConverter(),
     ):
         """
         :param gamma: Gamma hyper-parameter.
         :param lmbda: Lambda hyper-parameter.
-        :param return_std: Standard deviation of the returns (used for reward normalization).
+        :param standardize_returns: True if returns should be standardized to have stddev 1, False otherwise.
+        :max_returns_per_stats_increment: Optimization to limit the number of returns used to calculate the running stat each call to process_trajectories.
+        :param reward_type_list_as_numpy_array: Function to convert list of n RewardTypes to a parallel numpy array of shape (n,) with dtype
         """
         self.gamma = gamma
         self.lmbda = lmbda
         self.return_stats = WelfordRunningStat(1)
         self.standardize_returns = standardize_returns
         self.max_returns_per_stats_increment = max_returns_per_stats_increment
+        self.batch_reward_type_numpy_converter = batch_reward_type_numpy_converter
+        self.rust_gae_trajectory_processor = RustGAETrajectoryProcessor(
+            gamma,
+            lmbda,
+            batch_reward_type_numpy_converter,
+        )
 
-    # TODO: why are dtype and device getting passed here?
-    def process_trajectories(self, trajectories, dtype, device):
-        return_std = self.return_stats.std[0] if self.standardize_returns else None
-        gamma = self.gamma
-        lmbda = self.lmbda
-        exp_len = 0
-        observations: List[Tuple[AgentID, ObsType]] = []
-        actions: List[ActionType] = []
-        # For some reason, appending to lists is faster than preallocating the tensor and then indexing into it to assign
-        log_probs_list: List[torch.Tensor] = []
-        values_list: List[torch.Tensor] = []
-        advantages_list: List[torch.Tensor] = []
-        returns_list: List[torch.Tensor] = []
-        reward_sum = torch.as_tensor(0, dtype=dtype, device=device)
-        for trajectory in trajectories:
-            cur_return = torch.as_tensor(0, dtype=dtype, device=device)
-            next_val_pred = (
-                trajectory.final_val_pred
-                if trajectory.truncated
-                else torch.as_tensor(0, dtype=dtype, device=device)
-            )
-            cur_advantages = torch.as_tensor(0, dtype=dtype, device=device)
-            for timestep in reversed(trajectory.complete_timesteps):
-                (obs, action, log_prob, reward, val_pred) = timestep
-                reward_tensor = reward.as_tensor(dtype=dtype, device=device)
-                reward_sum += reward_tensor
-                if return_std is not None:
-                    norm_reward_tensor = torch.clamp(
-                        reward_tensor / return_std, min=-10, max=10
-                    )
-                else:
-                    norm_reward_tensor = reward_tensor
-                delta = norm_reward_tensor + gamma * next_val_pred - val_pred
-                next_val_pred = val_pred
-                cur_advantages = delta + gamma * lmbda * cur_advantages
-                cur_return = reward_tensor + gamma * cur_return
-                returns_list.append(cur_return)
-                observations.append((trajectory.agent_id, obs))
-                actions.append(action)
-                log_probs_list.append(log_prob)
-                values_list.append(val_pred)
-                advantages_list.append(cur_advantages)
+    def set_dtype(self, dtype):
+        super().set_dtype(dtype)
+        self.rust_gae_trajectory_processor.set_dtype(dtype)
+
+    def process_trajectories(self, trajectories):
+        return_std = self.return_stats.std[0] if self.standardize_returns else 1
+
+        result: Tuple[
+            List[AgentID],
+            List[ObsType],
+            List[ActionType],
+            List[torch.Tensor],
+            List[torch.Tensor],
+            ndarray,
+            ndarray,
+            ndarray,
+        ] = self.rust_gae_trajectory_processor.process_trajectories(
+            trajectories, return_std
+        )
+        (
+            agent_id_list,
+            observation_list,
+            action_list,
+            log_prob_list,
+            value_list,
+            advantage_array,
+            return_array,
+            avg_reward,
+        ) = result
 
         if self.standardize_returns:
             # Update the running statistics about the returns.
-            n_to_increment = min(self.max_returns_per_stats_increment, exp_len)
+            n_to_increment = min(
+                self.max_returns_per_stats_increment, len(return_array)
+            )
 
-            for sample in returns_list[:n_to_increment]:
-                self.return_stats.update(sample.cpu().item())
+            for sample in return_array[:n_to_increment]:
+                self.return_stats.update(sample)
             avg_return = self.return_stats.mean
             return_std = self.return_stats.std
         else:
             avg_return = np.nan
             return_std = np.nan
-        avg_reward = (reward_sum / len(observations)).cpu().item()
         trajectory_processor_data = GAETrajectoryProcessorData(
             average_undiscounted_episodic_return=avg_reward,
             average_return=avg_return,
@@ -102,11 +106,12 @@ class GAETrajectoryProcessor(
         )
         return (
             (
-                observations,
-                actions,
-                torch.cat(log_probs_list).to(device=device),
-                torch.stack(values_list).to(device=device),
-                torch.stack(advantages_list),
+                agent_id_list,
+                observation_list,
+                action_list,
+                torch.stack(log_prob_list).to(device=self.device),
+                torch.stack(value_list).to(device=self.device),
+                torch.from_numpy(advantage_array).to(device=self.device),
             ),
             trajectory_processor_data,
         )
@@ -126,3 +131,8 @@ class GAETrajectoryProcessor(
         self.standardize_returns = state["standardize_returns"]
         self.max_returns_per_stats_increment = state["max_returns_per_stats_increment"]
         self.return_stats.load_state_dict(state["return_running_stats"])
+        self.rust_gae_trajectory_processor = RustGAETrajectoryProcessor(
+            self.gamma,
+            self.lmbda,
+            self.batch_reward_type_numpy_converter,
+        )

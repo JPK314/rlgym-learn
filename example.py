@@ -8,21 +8,18 @@ from rlgym.rocket_league.obs_builders import DefaultObs
 
 from rlgym_learn import (
     BaseConfigModel,
-    Learner,
-    LearnerConfigModel,
+    LearningCoordinator,
+    LearningCoordinatorConfigModel,
     ProcessConfigModel,
     WandbConfigModel,
     generate_config,
 )
 from rlgym_learn.standard_impl import (
-    FloatRewardTypeWrapper,
     FloatSerde,
     HomogeneousTupleSerde,
     NumpyDynamicShapeSerde,
     NumpyObsStandardizer,
     NumpyStaticShapeSerde,
-    RewardFunctionWrapper,
-    RewardTypeWrapperSerde,
     StrIntTupleSerde,
     StrSerde,
 )
@@ -31,8 +28,8 @@ from rlgym_learn.standard_impl.ppo import (
     DiscreteFF,
     ExperienceBufferConfigModel,
     GAETrajectoryProcessor,
-    PPOAgent,
-    PPOAgentConfigModel,
+    PPOAgentController,
+    PPOAgentControllerConfigModel,
     PPOLearnerConfigModel,
     PPOMetricsLogger,
 )
@@ -60,7 +57,7 @@ class ExampleLogger(PPOMetricsLogger[Tuple[np.ndarray]]):
 
     def report_metrics(
         self,
-        agent_name,
+        agent_controller_name,
         state_metrics,
         agent_metrics,
         wandb_run,
@@ -69,7 +66,9 @@ class ExampleLogger(PPOMetricsLogger[Tuple[np.ndarray]]):
             **agent_metrics,
             **state_metrics,
         }
-        reporting.report_metrics(agent_name, report, None, wandb_run=wandb_run)
+        reporting.report_metrics(
+            agent_controller_name, report, None, wandb_run=wandb_run
+        )
 
 
 class CustomObs(DefaultObs):
@@ -140,9 +139,7 @@ def metrics_logger_factory():
     return ExampleLogger()
 
 
-def collect_state_metrics_fn(
-    state: GameState, rew_dict: Dict[str, FloatRewardTypeWrapper]
-):
+def collect_state_metrics_fn(state: GameState, rew_dict: Dict[str, float]):
     tot_cars = 0
     lin_vel_sum = np.zeros(3)
     ang_vel_sum = np.zeros(3)
@@ -186,10 +183,7 @@ def env_create_function():
     termination_condition = GoalCondition()
     truncation_condition = NoTouchTimeoutCondition(timeout=timeout_seconds)
 
-    reward_fn = RewardFunctionWrapper(
-        CombinedReward((TouchReward(), 1), (VelocityPlayerToBallReward(), 0.1)),
-        FloatRewardTypeWrapper,
-    )
+    reward_fn = CombinedReward((TouchReward(), 1), (VelocityPlayerToBallReward(), 0.1))
 
     obs_builder = CustomObs(
         zero_padding=None,
@@ -239,13 +233,14 @@ if __name__ == "__main__":
         max_size=100_000, trajectory_processor_args={"standardize_returns": True}
     )
     wandb_config = WandbConfigModel(group="rlgym-learn-testing", resume=True)
-    ppo_agent_config = PPOAgentConfigModel(
+    ppo_agent_controller_config = PPOAgentControllerConfigModel(
         timesteps_per_iteration=10_000,
         save_every_ts=100_000,
         add_unix_timestamp=True,
         checkpoint_load_folder=None,  # "agents_checkpoints/PPO1/rlgym-learn-run-1723394601682346400/1723394622757846600",
         n_checkpoints_to_keep=5,
         random_seed=123,
+        dtype="float32",
         device="auto",
         log_to_wandb=False,
         learner_config=learner_config,
@@ -254,17 +249,17 @@ if __name__ == "__main__":
     )
 
     generate_config(
-        learner_config=LearnerConfigModel(
+        learner_config=LearningCoordinatorConfigModel(
             process_config=ProcessConfigModel(n_proc=n_proc, render=False),
             base_config=BaseConfigModel(timestep_limit=500_000),
-            agents_config={"PPO1": ppo_agent_config},
+            agent_controllers_config={"PPO1": ppo_agent_controller_config},
         ),
         config_location="config.json",
         force_overwrite=True,
     )
 
-    agents = {
-        "PPO1": PPOAgent(
+    agent_controllers = {
+        "PPO1": PPOAgentController(
             actor_factory,
             critic_factory,
             trajectory_processor_factory,
@@ -272,13 +267,18 @@ if __name__ == "__main__":
         )
     }
 
-    learner = Learner(
+    import marshal
+
+    with open("test_env_size", "wb") as f:
+        marshal.dump(env_create_function.__code__, f)
+
+    coordinator = LearningCoordinator(
         env_create_function=env_create_function,
-        agents=agents,
+        agent_controllers=agent_controllers,
         agent_id_serde=StrSerde(),
         action_type_serde=NumpyDynamicShapeSerde(dtype=np.int64),
         obs_type_serde=NumpyDynamicShapeSerde(dtype=np.float64),
-        reward_type_serde=RewardTypeWrapperSerde(FloatRewardTypeWrapper, FloatSerde()),
+        reward_type_serde=FloatSerde(),
         obs_space_type_serde=StrIntTupleSerde(),
         action_space_type_serde=StrIntTupleSerde(),
         state_metrics_type_serde=HomogeneousTupleSerde(
@@ -288,4 +288,4 @@ if __name__ == "__main__":
         # obs_standardizer=NumpyObsStandardizer(5),
         config_location="config.json",
     )
-    learner.learn()
+    coordinator.start()

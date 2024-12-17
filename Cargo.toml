@@ -1,0 +1,26 @@
+[package]
+name = "rlgym-learn-backend"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[lib]
+name = "rlgym_learn_backend"
+crate-type = ["cdylib"]
+
+[dependencies]
+anyhow = "1.0.89"
+bytemuck = "1.17.0"
+byteorder = "1.5.0"
+fastrand = "2.2.0"
+itertools = "0.13.0"
+num-derive = "0.4.2"
+num-traits = "0.2.19"
+numpy = "0.23.0"
+paste = "1.0.15"
+pyo3 = { version = "0.23.0", features = ["extension-module"] }
+raw_sync = "0.1.5"
+shared_memory = "0.12.4"
+
+[dev-dependencies]
+which = "6.0.3"

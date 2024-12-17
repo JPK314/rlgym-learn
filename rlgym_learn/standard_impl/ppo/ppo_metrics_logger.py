@@ -3,7 +3,7 @@ from typing import Any, Dict, List
 from wandb.wandb_run import Run
 
 from rlgym_learn.api import MetricsLogger, StateMetrics
-from rlgym_learn.standard_impl.ppo import PPOAgentData
+from rlgym_learn.standard_impl.ppo import PPOAgentControllerData
 from rlgym_learn.util import reporting
 
 from .gae_trajectory_processor import GAETrajectoryProcessorData
@@ -12,14 +12,14 @@ from .gae_trajectory_processor import GAETrajectoryProcessorData
 class PPOMetricsLogger(
     MetricsLogger[
         StateMetrics,
-        PPOAgentData[GAETrajectoryProcessorData],
+        PPOAgentControllerData[GAETrajectoryProcessorData],
     ],
 ):
     def collect_state_metrics(self, data: List[StateMetrics]) -> Dict[str, Any]:
         return {}
 
     def collect_agent_metrics(
-        self, data: PPOAgentData[GAETrajectoryProcessorData]
+        self, data: PPOAgentControllerData[GAETrajectoryProcessorData]
     ) -> Dict[str, Any]:
         return {
             "Average Undiscounted Episodic Return": data.trajectory_processor_data.average_undiscounted_episodic_return,
@@ -44,10 +44,12 @@ class PPOMetricsLogger(
 
     def report_metrics(
         self,
-        agent_name: str,
+        agent_controller_name: str,
         state_metrics: Dict[str, Any],
         agent_metrics: Dict[str, Any],
         wandb_run: Run,
     ):
         report = {**agent_metrics, **state_metrics}
-        reporting.report_metrics(agent_name, report, None, wandb_run=wandb_run)
+        reporting.report_metrics(
+            agent_controller_name, report, None, wandb_run=wandb_run
+        )

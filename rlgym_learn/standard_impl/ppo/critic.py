@@ -11,9 +11,10 @@ class Critic(nn.Module, Generic[AgentID, ObsType]):
         super().__init__()
 
     @abstractmethod
-    def forward(self, obs_list: List[Tuple[AgentID, ObsType]]) -> Tensor:
+    def forward(self, agent_id_list: List[AgentID], obs_list: List[ObsType]) -> Tensor:
         """
-        :obs_list: list of agent_id and obs pairs to potentially compute values for.
+        :param agent_id_list: List of AgentIDs, parallel with obs_list. AgentIDs may not be unique here.
+        :param obs_list: List of ObsTypes to compute values for.
         :return: Tensor. Must be 0-dimensional for PPO, with dtype float32.
         """
         raise NotImplementedError
