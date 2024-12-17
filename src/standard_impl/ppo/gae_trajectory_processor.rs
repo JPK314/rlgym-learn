@@ -62,13 +62,15 @@ macro_rules! define_process_trajectories {
                             .map(|trajectory_step| trajectory_step.reward.bind(py))
                             .collect::<Vec<&Bound<'_, PyAny>>>(),))?
                         .extract::<Vec<$dtype>>()?;
-                    for (trajectory_step, reward) in trajectory
+                    let value_preds = trajectory.complete_steps_val_preds.unwrap().call_method1(py, intern!(py, "unbind"), (0,))?
+                    .extract::<Vec<PyObject>>(py)?;
+                    for ((trajectory_step, reward), val_pred) in trajectory
                         .complete_steps
                         .into_iter()
                         .zip(timesteps_rewards.iter().map(|&v| v))
+                        .zip(value_preds)
                         .rev()
                     {
-                        let val_pred = trajectory_step.value_pred.unwrap();
                         let val_pred_float = val_pred.extract::<$dtype>(py)?;
                         reward_sum += reward;
                         let norm_reward;

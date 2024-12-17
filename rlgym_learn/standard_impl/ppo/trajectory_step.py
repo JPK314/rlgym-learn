@@ -12,4 +12,3 @@ class TrajectoryStep(Generic[ObsType, ActionType, RewardType]):
     action: ActionType
     log_prob: Tensor
     reward: RewardType
-    value_pred: Optional[Tensor]

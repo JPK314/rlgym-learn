@@ -79,10 +79,13 @@ class GAETrajectoryProcessorPurePython(
                     for trajectory_step in trajectory.complete_steps
                 ]
             )
-            for trajectory_step, reward in reversed(
-                list(zip(trajectory.complete_steps, np.nditer(reward_array)))
+            value_preds = trajectory.complete_steps_val_preds.unbind(0)
+            for trajectory_step, reward, value_pred in reversed(
+                list(
+                    zip(trajectory.complete_steps, np.nditer(reward_array), value_preds)
+                )
             ):
-                val_pred = trajectory_step.value_pred.squeeze().cpu().numpy()
+                val_pred = value_pred.cpu().numpy()
                 reward_sum += reward
                 if return_std is not None:
                     norm_reward = np.clip(
@@ -98,10 +101,10 @@ class GAETrajectoryProcessorPurePython(
                 cur_return = reward + gamma * cur_return
                 returns_list.append(cur_return)
                 agent_ids.append(trajectory.agent_id)
-                observations.append(timestep.obs)
-                actions.append(timestep.action)
-                log_probs_list.append(timestep.log_prob)
-                values_list.append(timestep.value_pred)
+                observations.append(trajectory_step.obs)
+                actions.append(trajectory_step.action)
+                log_probs_list.append(trajectory_step.log_prob)
+                values_list.append(value_pred)
                 advantages_list.append(cur_advantages)
                 exp_len += 1
 

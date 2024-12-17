@@ -9,6 +9,7 @@ pub struct Trajectory {
     pub agent_id: PyObject,
     pub done: bool,
     pub complete_steps: Vec<TrajectoryStep>,
+    pub complete_steps_val_preds: Option<PyObject>,
     pub final_obs: Option<PyObject>,
     pub final_val_pred: Option<PyObject>,
     pub truncated: Option<bool>,

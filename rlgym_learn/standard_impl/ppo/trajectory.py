@@ -17,6 +17,7 @@ class Trajectory(Generic[AgentID, ObsType, ActionType, RewardType]):
         self.agent_id = agent_id
         self.done = False
         self.complete_steps: List[TrajectoryStep[ObsType, ActionType, RewardType]] = []
+        self.complete_steps_val_preds: Optional[Tensor]
         self.final_obs: Optional[ObsType] = None
         self.final_val_pred: Tensor = torch.tensor(0, dtype=torch.float32)
         self.truncated: Optional[bool] = None
@@ -30,11 +31,7 @@ class Trajectory(Generic[AgentID, ObsType, ActionType, RewardType]):
         if not self.done:
             self.complete_steps.append(
                 TrajectoryStep(
-                    timestep.obs,
-                    timestep.action,
-                    timestep.log_prob,
-                    timestep.reward,
-                    None,
+                    timestep.obs, timestep.action, timestep.log_prob, timestep.reward
                 )
             )
             self.final_obs = timestep.next_obs
@@ -44,13 +41,11 @@ class Trajectory(Generic[AgentID, ObsType, ActionType, RewardType]):
             return True
         return False
 
-    def update_val_preds(
-        self, val_preds: List[Tensor], final_val_pred: Optional[Tensor]
-    ):
+    def update_val_preds(self, val_preds: Tensor, final_val_pred: Optional[Tensor]):
         """
-        :val_preds: list of torch tensors for value prediction, parallel with self.complete_steps
+        :val_preds: Tensor of value predictions with shape (n,), with first (only)
+        dimension parallel with self.complete_steps
         :final_val_pred: value prediction for self.final_obs
         """
-        for idx, trajectory_step in enumerate(self.complete_steps):
-            trajectory_step.value_pred = val_preds[idx]
+        self.complete_steps_val_preds = val_preds
         self.final_val_pred = final_val_pred

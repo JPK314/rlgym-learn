@@ -8,5 +8,4 @@ pub struct TrajectoryStep {
     pub action: PyObject,
     pub log_prob: PyObject,
     pub reward: PyObject,
-    pub value_pred: Option<PyObject>,
 }
