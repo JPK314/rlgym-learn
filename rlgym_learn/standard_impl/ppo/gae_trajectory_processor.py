@@ -58,7 +58,7 @@ class GAETrajectoryProcessor(
 
     def set_dtype(self, dtype):
         super().set_dtype(dtype)
-        self.rust_gae_trajectory_processor.set_dtype(dtype)
+        self.rust_gae_trajectory_processor.set_dtype(np.dtype(dtype))
 
     def process_trajectories(self, trajectories):
         return_std = self.return_stats.std[0] if self.standardize_returns else 1

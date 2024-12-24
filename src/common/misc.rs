@@ -6,6 +6,7 @@ use pyo3::{
     types::{PyAnyMethods, PyBytes},
     Bound, IntoPyObjectExt, PyAny, PyObject, PyResult, Python,
 };
+use which;
 
 pub fn py_hash(v: &Bound<'_, PyAny>) -> PyResult<i64> {
     v.call_method0(intern!(v.py(), "__hash__"))?
@@ -41,4 +42,30 @@ pub fn get_bytes_to_alignment<T>(addr: usize) -> usize {
     let alignment = align_of::<T>();
     let aligned_addr = addr.wrapping_add(alignment - 1) & 0usize.wrapping_sub(alignment);
     aligned_addr.wrapping_sub(addr)
+}
+
+#[allow(dead_code)]
+pub fn initialize_python() -> pyo3::PyResult<()> {
+    // Due to https://github.com/ContinuumIO/anaconda-issues/issues/11439,
+    // we first need to set PYTHONHOME. To do so, we will look for whatever
+    // directory on PATH currently has python.exe.
+    let python_exe = which::which("python").unwrap();
+    let python_home = python_exe.parent().unwrap();
+    // The Python C API uses null-terminated UTF-16 strings, so we need to
+    // encode the path into that format here.
+    // We could use the Windows FFI modules provided in the standard library,
+    // but we want this to work cross-platform, so we do things more manually.
+    let mut python_home = python_home
+        .to_str()
+        .unwrap()
+        .encode_utf16()
+        .collect::<Vec<u16>>();
+    python_home.push(0);
+    unsafe {
+        pyo3::ffi::Py_SetPythonHome(python_home.as_ptr());
+    }
+    // Once we've set the configuration we need, we can go on and manually
+    // initialize PyO3.
+    pyo3::prepare_freethreaded_python();
+    Ok(())
 }

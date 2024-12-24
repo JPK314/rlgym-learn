@@ -14,8 +14,8 @@ use shared_memory::Shmem;
 use shared_memory::ShmemConf;
 
 use crate::append_python_update_serde;
-use crate::common::recvfrom_byte;
-use crate::common::sendto_byte;
+use crate::common::misc::recvfrom_byte;
+use crate::common::misc::sendto_byte;
 use crate::communication::append_header;
 use crate::communication::append_python;
 use crate::communication::get_flink;
@@ -24,9 +24,8 @@ use crate::communication::retrieve_python;
 use crate::communication::retrieve_usize;
 use crate::communication::Header;
 use crate::retrieve_python_update_serde;
+use crate::serdes::pyany_serde::DynPyAnySerde;
 use crate::serdes::pyany_serde::PyAnySerde;
-use crate::serdes::pyany_serde_impl::get_pyany_serde;
-use crate::serdes::serde_enum::Serde;
 
 fn sync_with_env_process<'py>(
     py: Python<'py>,
@@ -42,19 +41,19 @@ static SELECTORS_EVENT_READ: GILOnceCell<u8> = GILOnceCell::new();
 #[pyclass(module = "rlgym_learn_backend", unsendable)]
 pub struct EnvProcessInterface {
     agent_id_type_serde_option: Option<PyObject>,
-    agent_id_pyany_serde_option: Option<Box<dyn PyAnySerde + Send>>,
+    agent_id_pyany_serde_option: Option<Box<dyn PyAnySerde>>,
     action_type_serde_option: Option<PyObject>,
-    action_pyany_serde_option: Option<Box<dyn PyAnySerde + Send>>,
+    action_pyany_serde_option: Option<Box<dyn PyAnySerde>>,
     obs_type_serde_option: Option<PyObject>,
-    obs_pyany_serde_option: Option<Box<dyn PyAnySerde + Send>>,
+    obs_pyany_serde_option: Option<Box<dyn PyAnySerde>>,
     reward_type_serde_option: Option<PyObject>,
-    reward_pyany_serde_option: Option<Box<dyn PyAnySerde + Send>>,
+    reward_pyany_serde_option: Option<Box<dyn PyAnySerde>>,
     obs_space_type_serde_option: Option<PyObject>,
-    obs_space_pyany_serde_option: Option<Box<dyn PyAnySerde + Send>>,
+    obs_space_pyany_serde_option: Option<Box<dyn PyAnySerde>>,
     action_space_type_serde_option: Option<PyObject>,
-    action_space_pyany_serde_option: Option<Box<dyn PyAnySerde + Send>>,
+    action_space_pyany_serde_option: Option<Box<dyn PyAnySerde>>,
     state_metrics_type_serde_option: Option<PyObject>,
-    state_metrics_pyany_serde_option: Option<Box<dyn PyAnySerde + Send>>,
+    state_metrics_pyany_serde_option: Option<Box<dyn PyAnySerde>>,
     recalculate_agent_id_every_step: bool,
     flinks_folder: String,
     proc_packages: Vec<(PyObject, Shmem)>,
@@ -120,7 +119,7 @@ impl EnvProcessInterface {
         let mut agent_id;
         let mut obs;
         for _ in 0..n_agents {
-            agent_id = retrieve_python_update_serde!(
+            (agent_id, offset) = retrieve_python_update_serde!(
                 py,
                 shm_slice,
                 offset,
@@ -128,7 +127,7 @@ impl EnvProcessInterface {
                 agent_id_pyany_serde_option
             );
             agent_id_list.push(agent_id.unbind());
-            obs = retrieve_python_update_serde!(
+            (obs, offset) = retrieve_python_update_serde!(
                 py,
                 shm_slice,
                 offset,
@@ -189,14 +188,16 @@ impl EnvProcessInterface {
         recvfrom_byte(py, parent_end)?;
         // println!("EPI: Received signal from EP that shm is updated with env shapes data");
         let mut offset = 0;
-        let obs_space = retrieve_python_update_serde!(
+        let obs_space;
+        (obs_space, offset) = retrieve_python_update_serde!(
             py,
             shm_slice,
             offset,
             &obs_space_type_serde_option,
             obs_space_pyany_serde_option
         );
-        let action_space = retrieve_python_update_serde!(
+        let action_space;
+        (action_space, _) = retrieve_python_update_serde!(
             py,
             shm_slice,
             offset,
@@ -269,45 +270,37 @@ impl EnvProcessInterface {
         ))]
     fn new(
         agent_id_type_serde_option: Option<PyObject>,
-        agent_id_serde_option: Option<Serde>,
+        agent_id_serde_option: Option<DynPyAnySerde>,
         action_type_serde_option: Option<PyObject>,
-        action_serde_option: Option<Serde>,
+        action_serde_option: Option<DynPyAnySerde>,
         obs_type_serde_option: Option<PyObject>,
-        obs_serde_option: Option<Serde>,
+        obs_serde_option: Option<DynPyAnySerde>,
         reward_type_serde_option: Option<PyObject>,
-        reward_serde_option: Option<Serde>,
+        reward_serde_option: Option<DynPyAnySerde>,
         obs_space_type_serde_option: Option<PyObject>,
-        obs_space_serde_option: Option<Serde>,
+        obs_space_serde_option: Option<DynPyAnySerde>,
         action_space_type_serde_option: Option<PyObject>,
-        action_space_serde_option: Option<Serde>,
+        action_space_serde_option: Option<DynPyAnySerde>,
         state_metrics_type_serde_option: Option<PyObject>,
-        state_metrics_serde_option: Option<Serde>,
+        state_metrics_serde_option: Option<DynPyAnySerde>,
         recalculate_agent_id_every_step: bool,
         flinks_folder_option: Option<String>,
         min_process_steps_per_inference: usize,
     ) -> PyResult<Self> {
         Python::with_gil::<_, PyResult<Self>>(|py| {
-            let agent_id_pyany_serde_option = agent_id_serde_option
-                .map(|serde| get_pyany_serde(py, serde))
-                .transpose()?;
-            let action_pyany_serde_option = action_serde_option
-                .map(|serde| get_pyany_serde(py, serde))
-                .transpose()?;
-            let obs_pyany_serde_option = obs_serde_option
-                .map(|serde| get_pyany_serde(py, serde))
-                .transpose()?;
-            let reward_pyany_serde_option = reward_serde_option
-                .map(|serde| get_pyany_serde(py, serde))
-                .transpose()?;
-            let obs_space_pyany_serde_option = obs_space_serde_option
-                .map(|serde| get_pyany_serde(py, serde))
-                .transpose()?;
-            let action_space_pyany_serde_option = action_space_serde_option
-                .map(|serde| get_pyany_serde(py, serde))
-                .transpose()?;
-            let state_metrics_pyany_serde_option = state_metrics_serde_option
-                .map(|serde| get_pyany_serde(py, serde))
-                .transpose()?;
+            let agent_id_pyany_serde_option =
+                agent_id_serde_option.map(|dyn_serde| dyn_serde.0.unwrap());
+            let action_pyany_serde_option =
+                action_serde_option.map(|dyn_serde| dyn_serde.0.unwrap());
+            let obs_pyany_serde_option = obs_serde_option.map(|dyn_serde| dyn_serde.0.unwrap());
+            let reward_pyany_serde_option =
+                reward_serde_option.map(|dyn_serde| dyn_serde.0.unwrap());
+            let obs_space_pyany_serde_option =
+                obs_space_serde_option.map(|dyn_serde| dyn_serde.0.unwrap());
+            let action_space_pyany_serde_option =
+                action_space_serde_option.map(|dyn_serde| dyn_serde.0.unwrap());
+            let state_metrics_pyany_serde_option =
+                state_metrics_serde_option.map(|dyn_serde| dyn_serde.0.unwrap());
             let timestep_class = PyModule::import(py, "rlgym_learn.experience")?
                 .getattr("Timestep")?
                 .unbind();
@@ -580,37 +573,34 @@ impl EnvProcessInterface {
                 for _ in 0..next_n_agents {
                     // println!("Retrieving prev info for agent {}", idx + 1);
                     if self.recalculate_agent_id_every_step {
-                        next_agent_id_list.push(
-                            retrieve_python_update_serde!(
-                                py,
-                                shm_slice,
-                                offset,
-                                &agent_id_type_serde_option,
-                                agent_id_pyany_serde_option
-                            )
-                            .unbind(),
+                        let agent_id;
+                        (agent_id, offset) = retrieve_python_update_serde!(
+                            py,
+                            shm_slice,
+                            offset,
+                            &agent_id_type_serde_option,
+                            agent_id_pyany_serde_option
                         );
+                        next_agent_id_list.push(agent_id.unbind());
                     }
-                    next_obs_list.push(
-                        retrieve_python_update_serde!(
-                            py,
-                            shm_slice,
-                            offset,
-                            &obs_type_serde_option,
-                            obs_pyany_serde_option
-                        )
-                        .unbind(),
+                    let obs;
+                    (obs, offset) = retrieve_python_update_serde!(
+                        py,
+                        shm_slice,
+                        offset,
+                        &obs_type_serde_option,
+                        obs_pyany_serde_option
                     );
-                    next_reward_list.push(
-                        retrieve_python_update_serde!(
-                            py,
-                            shm_slice,
-                            offset,
-                            &reward_type_serde_option,
-                            reward_pyany_serde_option
-                        )
-                        .unbind(),
+                    next_obs_list.push(obs.unbind());
+                    let reward;
+                    (reward, offset) = retrieve_python_update_serde!(
+                        py,
+                        shm_slice,
+                        offset,
+                        &reward_type_serde_option,
+                        reward_pyany_serde_option
                     );
+                    next_reward_list.push(reward.unbind());
                     (terminated, offset) = retrieve_bool(shm_slice, offset)?;
                     next_terminated_list.push(terminated);
                     (truncated, offset) = retrieve_bool(shm_slice, offset)?;
@@ -622,26 +612,24 @@ impl EnvProcessInterface {
                 new_obs_list = Vec::with_capacity(new_n_agents);
                 for _ in 0..new_n_agents {
                     // println!("Retrieving info for agent {}", idx + 1);
-                    new_agent_id_list.push(
-                        retrieve_python_update_serde!(
-                            py,
-                            shm_slice,
-                            offset,
-                            &agent_id_type_serde_option,
-                            agent_id_pyany_serde_option
-                        )
-                        .unbind(),
+                    let agent_id;
+                    (agent_id, offset) = retrieve_python_update_serde!(
+                        py,
+                        shm_slice,
+                        offset,
+                        &agent_id_type_serde_option,
+                        agent_id_pyany_serde_option
                     );
-                    new_obs_list.push(
-                        retrieve_python_update_serde!(
-                            py,
-                            shm_slice,
-                            offset,
-                            &obs_type_serde_option,
-                            obs_pyany_serde_option
-                        )
-                        .unbind(),
+                    new_agent_id_list.push(agent_id.unbind());
+                    let obs;
+                    (obs, offset) = retrieve_python_update_serde!(
+                        py,
+                        shm_slice,
+                        offset,
+                        &obs_type_serde_option,
+                        obs_pyany_serde_option
                     );
+                    new_obs_list.push(obs.unbind());
                 }
             } else {
                 next_n_agents = current_agent_id_list.len();
@@ -662,37 +650,34 @@ impl EnvProcessInterface {
                 for _ in 0..next_n_agents {
                     // println!("Retrieving info for agent {}", idx + 1);
                     if self.recalculate_agent_id_every_step {
-                        next_agent_id_list.push(
-                            retrieve_python_update_serde!(
-                                py,
-                                shm_slice,
-                                offset,
-                                &agent_id_type_serde_option,
-                                agent_id_pyany_serde_option
-                            )
-                            .unbind(),
+                        let agent_id;
+                        (agent_id, offset) = retrieve_python_update_serde!(
+                            py,
+                            shm_slice,
+                            offset,
+                            &agent_id_type_serde_option,
+                            agent_id_pyany_serde_option
                         );
+                        next_agent_id_list.push(agent_id.unbind());
                     }
-                    next_obs_list.push(
-                        retrieve_python_update_serde!(
-                            py,
-                            shm_slice,
-                            offset,
-                            &obs_type_serde_option,
-                            obs_pyany_serde_option
-                        )
-                        .unbind(),
+                    let obs;
+                    (obs, offset) = retrieve_python_update_serde!(
+                        py,
+                        shm_slice,
+                        offset,
+                        &obs_type_serde_option,
+                        obs_pyany_serde_option
                     );
-                    next_reward_list.push(
-                        retrieve_python_update_serde!(
-                            py,
-                            shm_slice,
-                            offset,
-                            &reward_type_serde_option,
-                            reward_pyany_serde_option
-                        )
-                        .unbind(),
+                    next_obs_list.push(obs.unbind());
+                    let reward;
+                    (reward, offset) = retrieve_python_update_serde!(
+                        py,
+                        shm_slice,
+                        offset,
+                        &reward_type_serde_option,
+                        reward_pyany_serde_option
                     );
+                    next_reward_list.push(reward.unbind());
                     (terminated, offset) = retrieve_bool(shm_slice, offset)?;
                     next_terminated_list.push(terminated);
                     (truncated, offset) = retrieve_bool(shm_slice, offset)?;
@@ -710,16 +695,15 @@ impl EnvProcessInterface {
                     .map(|v| v.bind(py));
                 let mut state_metrics_pyany_serde_option =
                     self.state_metrics_pyany_serde_option.take();
-                metrics_option = Some(
-                    retrieve_python_update_serde!(
-                        py,
-                        shm_slice,
-                        offset,
-                        &state_metrics_type_serde_option,
-                        state_metrics_pyany_serde_option
-                    )
-                    .unbind(),
+                let state_metrics;
+                (state_metrics, offset) = retrieve_python_update_serde!(
+                    py,
+                    shm_slice,
+                    offset,
+                    &state_metrics_type_serde_option,
+                    state_metrics_pyany_serde_option
                 );
+                metrics_option = Some(state_metrics.unbind());
                 self.state_metrics_pyany_serde_option = state_metrics_pyany_serde_option;
             } else {
                 metrics_option = None;
@@ -858,7 +842,7 @@ impl EnvProcessInterface {
                     current_action_list.push(action.clone_ref(py));
                     current_log_prob_list.push(log_prob_tensor.bind(py).get_item(idx)?.unbind());
 
-                    append_python_update_serde!(
+                    offset = append_python_update_serde!(
                         shm_slice,
                         offset,
                         action.bind(py),

@@ -1,6 +1,5 @@
-use crate::common::{py_hash, recvfrom_byte, sendto_byte};
-use crate::serdes::pyany_serde_impl::get_pyany_serde;
-use crate::serdes::serde_enum::Serde;
+use crate::common::misc::{py_hash, recvfrom_byte, sendto_byte};
+use crate::serdes::pyany_serde::DynPyAnySerde;
 use crate::{append_python_update_serde, communication::*, retrieve_python_update_serde};
 use pyo3::exceptions::asyncio::InvalidStateError;
 use pyo3::prelude::*;
@@ -96,19 +95,19 @@ pub fn env_process(
     flinks_folder: &str,
     shm_buffer_size: usize,
     agent_id_type_serde_option: Option<PyObject>,
-    agent_id_serde_option: Option<Serde>,
+    agent_id_serde_option: Option<DynPyAnySerde>,
     action_type_serde_option: Option<PyObject>,
-    action_serde_option: Option<Serde>,
+    action_serde_option: Option<DynPyAnySerde>,
     obs_type_serde_option: Option<PyObject>,
-    obs_serde_option: Option<Serde>,
+    obs_serde_option: Option<DynPyAnySerde>,
     reward_type_serde_option: Option<PyObject>,
-    reward_serde_option: Option<Serde>,
+    reward_serde_option: Option<DynPyAnySerde>,
     obs_space_type_serde_option: Option<PyObject>,
-    obs_space_serde_option: Option<Serde>,
+    obs_space_serde_option: Option<DynPyAnySerde>,
     action_space_type_serde_option: Option<PyObject>,
-    action_space_serde_option: Option<Serde>,
+    action_space_serde_option: Option<DynPyAnySerde>,
     state_metrics_type_serde_option: Option<PyObject>,
-    state_metrics_serde_option: Option<Serde>,
+    state_metrics_serde_option: Option<DynPyAnySerde>,
     collect_state_metrics_fn_option: Option<PyObject>,
     render: bool,
     render_delay_option: Option<Duration>,
@@ -146,27 +145,19 @@ pub fn env_process(
             game_speed_fn = Box::new(move || Ok(get_game_speed.call0()?.extract::<f64>()?));
             game_paused_fn = Box::new(move || Ok(get_game_paused.call0()?.extract::<bool>()?));
         }
-        let mut agent_id_pyany_serde_option = agent_id_serde_option
-            .map(|serde| get_pyany_serde(py, serde))
-            .transpose()?;
-        let mut action_pyany_serde_option = action_serde_option
-            .map(|serde| get_pyany_serde(py, serde))
-            .transpose()?;
-        let mut obs_pyany_serde_option = obs_serde_option
-            .map(|serde| get_pyany_serde(py, serde))
-            .transpose()?;
-        let mut reward_pyany_serde_option = reward_serde_option
-            .map(|serde| get_pyany_serde(py, serde))
-            .transpose()?;
-        let mut obs_space_pyany_serde_option = obs_space_serde_option
-            .map(|serde| get_pyany_serde(py, serde))
-            .transpose()?;
-        let mut action_space_pyany_serde_option = action_space_serde_option
-            .map(|serde| get_pyany_serde(py, serde))
-            .transpose()?;
-        let mut state_metrics_pyany_serde_option = state_metrics_serde_option
-            .map(|serde| get_pyany_serde(py, serde))
-            .transpose()?;
+        let mut agent_id_pyany_serde_option =
+            agent_id_serde_option.map(|dyn_serde| dyn_serde.0.unwrap());
+        let mut action_pyany_serde_option =
+            action_serde_option.map(|dyn_serde| dyn_serde.0.unwrap());
+        let mut obs_pyany_serde_option = obs_serde_option.map(|dyn_serde| dyn_serde.0.unwrap());
+        let mut reward_pyany_serde_option =
+            reward_serde_option.map(|dyn_serde| dyn_serde.0.unwrap());
+        let mut obs_space_pyany_serde_option =
+            obs_space_serde_option.map(|dyn_serde| dyn_serde.0.unwrap());
+        let mut action_space_pyany_serde_option =
+            action_space_serde_option.map(|dyn_serde| dyn_serde.0.unwrap());
+        let mut state_metrics_pyany_serde_option =
+            state_metrics_serde_option.map(|dyn_serde| dyn_serde.0.unwrap());
         let agent_id_type_serde_option = agent_id_type_serde_option
             .as_ref()
             .map(|py_object| py_object.bind(py));
@@ -206,10 +197,9 @@ pub fn env_process(
         let mut persistent_terminated_dict = HashMap::new();
         for agent_id in reset_obs.keys().iter() {
             let agent_id_hash = py_hash(&agent_id)?;
-            swap_offset = 0;
-            append_python_update_serde!(
+            swap_offset = append_python_update_serde!(
                 swap_space,
-                swap_offset,
+                0,
                 &agent_id,
                 &agent_id_type_serde_option,
                 agent_id_pyany_serde_option
@@ -226,7 +216,7 @@ pub fn env_process(
         offset = append_usize(shm_slice, offset, n_agents);
         for (agent_id, _, serialized_agent_id) in agent_id_data_list.iter() {
             offset = insert_bytes(shm_slice, offset, &serialized_agent_id[..])?;
-            append_python_update_serde!(
+            offset = append_python_update_serde!(
                 shm_slice,
                 offset,
                 &reset_obs
@@ -264,16 +254,15 @@ pub fn env_process(
                     // Read actions message
                     let actions_dict = PyDict::new(py);
                     for (agent_id, _, _) in agent_id_data_list.iter() {
-                        actions_dict.set_item(
-                            agent_id,
-                            retrieve_python_update_serde!(
-                                py,
-                                shm_slice,
-                                offset,
-                                &action_type_serde_option,
-                                action_pyany_serde_option
-                            ),
-                        )?;
+                        let action;
+                        (action, offset) = retrieve_python_update_serde!(
+                            py,
+                            shm_slice,
+                            offset,
+                            &action_type_serde_option,
+                            action_pyany_serde_option
+                        );
+                        actions_dict.set_item(agent_id, action)?;
                     }
 
                     // Step the env with actions
@@ -289,10 +278,9 @@ pub fn env_process(
                             .unwrap()
                             .call1(py, (env_state(&env)?, &rew_dict))?
                             .into_bound(py);
-                        swap_offset = 0;
-                        append_python_update_serde!(
+                        swap_offset = append_python_update_serde!(
                             swap_space,
-                            swap_offset,
+                            0,
                             &result,
                             &state_metrics_type_serde_option,
                             state_metrics_pyany_serde_option
@@ -308,10 +296,9 @@ pub fn env_process(
                         done_agents.clear();
                         for agent_id in obs_dict.keys().iter() {
                             let agent_id_hash = py_hash(&agent_id)?;
-                            swap_offset = 0;
-                            append_python_update_serde!(
+                            swap_offset = append_python_update_serde!(
                                 swap_space,
-                                swap_offset,
+                                0,
                                 &agent_id,
                                 &agent_id_type_serde_option,
                                 agent_id_pyany_serde_option
@@ -365,10 +352,9 @@ pub fn env_process(
                         done_agents.clear();
                         for agent_id in new_episode_obs_dict.keys().iter() {
                             let agent_id_hash = py_hash(&agent_id)?;
-                            let mut swap_offset = 0;
-                            append_python_update_serde!(
+                            swap_offset = append_python_update_serde!(
                                 swap_space,
-                                swap_offset,
+                                0,
                                 &agent_id,
                                 &agent_id_type_serde_option,
                                 agent_id_pyany_serde_option
@@ -395,14 +381,14 @@ pub fn env_process(
                             if recalculate_agent_id_every_step {
                                 offset = insert_bytes(shm_slice, offset, &serialized_agent_id[..])?;
                             }
-                            append_python_update_serde!(
+                            offset = append_python_update_serde!(
                                 shm_slice,
                                 offset,
                                 &obs_dict.get_item(agent_id)?.unwrap(),
                                 &obs_type_serde_option,
                                 obs_pyany_serde_option
                             );
-                            append_python_update_serde!(
+                            offset = append_python_update_serde!(
                                 shm_slice,
                                 offset,
                                 &rew_dict.get_item(agent_id)?.unwrap(),
@@ -424,7 +410,7 @@ pub fn env_process(
                         offset = append_usize(shm_slice, offset, n_agents);
                         for (agent_id, _, serialized_agent_id) in agent_id_data_list.iter() {
                             offset = insert_bytes(shm_slice, offset, &serialized_agent_id[..])?;
-                            append_python_update_serde!(
+                            offset = append_python_update_serde!(
                                 shm_slice,
                                 offset,
                                 &new_episode_obs_dict.get_item(agent_id)?.unwrap(),
@@ -439,14 +425,14 @@ pub fn env_process(
                             if recalculate_agent_id_every_step {
                                 offset = insert_bytes(shm_slice, offset, &serialized_agent_id[..])?;
                             }
-                            append_python_update_serde!(
+                            offset = append_python_update_serde!(
                                 shm_slice,
                                 offset,
                                 &obs_dict.get_item(agent_id)?.unwrap(),
                                 &obs_type_serde_option,
                                 obs_pyany_serde_option
                             );
-                            append_python_update_serde!(
+                            offset = append_python_update_serde!(
                                 shm_slice,
                                 offset,
                                 &rew_dict.get_item(agent_id)?.unwrap(),
@@ -502,7 +488,7 @@ pub fn env_process(
                     println!("--------------------");
 
                     offset = 0;
-                    append_python_update_serde!(
+                    offset = append_python_update_serde!(
                         shm_slice,
                         offset,
                         &obs_space,

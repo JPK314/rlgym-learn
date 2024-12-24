@@ -14,15 +14,13 @@ from rlgym_learn import (
     WandbConfigModel,
     generate_config,
 )
-from rlgym_learn.api import RustDtype, RustSerde, RustSerdeType
-from rlgym_learn.standard_impl import (
-    FloatSerde,
-    HomogeneousTupleSerde,
-    NumpyDynamicShapeSerde,
-    NumpyObsStandardizer,
-    NumpyStaticShapeSerde,
-    StrIntTupleSerde,
-    StrSerde,
+from rlgym_learn.api import (
+    float_serde,
+    int_serde,
+    list_serde,
+    numpy_serde,
+    string_serde,
+    tuple_serde,
 )
 from rlgym_learn.standard_impl.ppo import (
     BasicCritic,
@@ -206,7 +204,7 @@ def env_create_function():
 if __name__ == "__main__":
 
     # 32 processes
-    n_proc = 100
+    n_proc = 1
 
     learner_config = PPOLearnerConfigModel(
         n_epochs=1,
@@ -257,28 +255,13 @@ if __name__ == "__main__":
     coordinator = LearningCoordinator(
         env_create_function=env_create_function,
         agent_controllers=agent_controllers,
-        agent_id_serde=RustSerde(type=RustSerdeType.STRING),
-        action_serde=RustSerde(type=RustSerdeType.NUMPY, dtype=RustDtype.INT64),
-        obs_serde=RustSerde(type=RustSerdeType.NUMPY, dtype=RustDtype.FLOAT64),
-        reward_serde=RustSerde(type=RustSerdeType.FLOAT),
-        obs_space_serde=RustSerde(
-            type=RustSerdeType.TUPLE,
-            entries_serdes=(
-                RustSerde(type=RustSerdeType.STRING),
-                RustSerde(type=RustSerdeType.INT),
-            ),
-        ),
-        action_space_serde=RustSerde(
-            type=RustSerdeType.TUPLE,
-            entries_serdes=(
-                RustSerde(type=RustSerdeType.STRING),
-                RustSerde(type=RustSerdeType.INT),
-            ),
-        ),
-        state_metrics_serde=RustSerde(
-            type=RustSerdeType.LIST,
-            entries_serde=RustSerde(type=RustSerdeType.NUMPY, dtype=RustDtype.FLOAT64),
-        ),
+        agent_id_serde=string_serde(),
+        action_serde=numpy_serde(np.int64),
+        obs_serde=numpy_serde(np.float64),
+        reward_serde=float_serde(),
+        obs_space_serde=tuple_serde(string_serde(), int_serde()),
+        action_space_serde=tuple_serde(string_serde(), int_serde()),
+        state_metrics_serde=list_serde(numpy_serde(np.float64)),
         collect_state_metrics_fn=None,
         # obs_standardizer=NumpyObsStandardizer(5),
         config_location="config.json",

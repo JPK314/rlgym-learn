@@ -1,5 +1,6 @@
 use numpy::ndarray::Array0;
 use numpy::ndarray::Array1;
+use numpy::PyArrayDescr;
 use numpy::ToPyArray;
 use paste::paste;
 use pyo3::exceptions::PyNotImplementedError;
@@ -7,14 +8,14 @@ use pyo3::intern;
 use pyo3::prelude::*;
 use pyo3::PyObject;
 
-use crate::standard_impl::numpy_dtype_enum::NumpyDtype;
+use crate::common::numpy_dtype_enum::get_numpy_dtype;
+use crate::common::numpy_dtype_enum::NumpyDtype;
 
 use super::trajectory::Trajectory;
 
 macro_rules! define_process_trajectories {
     ($dtype: ty) => {
         paste! {
-
             fn [<process_trajectories_ $dtype>]<'py>(
                 py: Python<'py>,
                 trajectories: Vec<Trajectory>,
@@ -140,13 +141,13 @@ impl GAETrajectoryProcessor {
         })
     }
 
-    fn set_dtype(&mut self, dtype: PyObject) -> PyResult<()> {
+    fn set_dtype(&mut self, py_dtype: Py<PyArrayDescr>) -> PyResult<()> {
         Python::with_gil(|py| {
-            self.dtype = dtype.extract::<NumpyDtype>(py)?;
+            self.dtype = get_numpy_dtype(py_dtype.clone_ref(py))?;
             self.batch_reward_type_numpy_converter.call_method1(
                 py,
                 intern!(py, "set_dtype"),
-                (dtype,),
+                (py_dtype,),
             )?;
             Ok(())
         })

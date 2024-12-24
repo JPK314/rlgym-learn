@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from abc import abstractmethod
 from enum import Enum
-from typing import Generic, Optional, Tuple, TypedDict, TypeVar
+from typing import Generic, List, TypeVar
+
+import numpy as np
+from rlgym_learn_backend import PyAnySerdeFactory
 
 T = TypeVar("T")
 
@@ -25,43 +28,57 @@ class TypeSerde(Generic[T]):
         raise NotImplementedError
 
 
-class RustSerdeType(Enum):
-    DYNAMIC = 0
-    PICKLE = 1
-    INT = 2
-    FLOAT = 3
-    COMPLEX = 4
-    BOOLEAN = 5
-    STRING = 6
-    BYTES = 7
-    NUMPY = 8
-    LIST = 9
-    SET = 10
-    TUPLE = 11
-    DICT = 12
+# If you can, you should use these Rust-native serdes. They will be faster than the Python TypeSerde abstraction.
+RustSerde = TypeVar("RustSerde")
 
 
-class RustDtype(Enum):
-    INT8 = 0
-    INT16 = 1
-    INT32 = 2
-    INT64 = 3
-    UINT8 = 4
-    UINT16 = 5
-    UINT32 = 6
-    UINT64 = 7
-    FLOAT32 = 8
-    FLOAT64 = 9
+def bool_serde() -> RustSerde:
+    return PyAnySerdeFactory.bool_serde()
 
 
-class RustSerde(TypedDict):
-    type: RustSerdeType  # Always needed
-    dtype: Optional[RustDtype]  # Necessary if type = RustSerdeType.NUMPY
-    entries_serde: Optional[
-        RustSerde
-    ]  # Necessary if type = RustSerdeType.LIST or RustSerdeType.SET
-    entries_serdes: Optional[
-        Tuple[RustSerde]
-    ]  # Necessary if type = RustSerdeType.TUPLE
-    keys_serde: Optional[RustSerde]  # Necessary if type = RustSerdeType.DICT
-    values_serde: Optional[RustSerde]  # Necessary if type = RustSerdeType.DICT
+def bytes_serde() -> RustSerde:
+    return PyAnySerdeFactory.bytes_serde()
+
+
+def complex_serde() -> RustSerde:
+    return PyAnySerdeFactory.complex_serde()
+
+
+def dict_serde(key_serde: RustSerde, value_serde: RustSerde) -> RustSerde:
+    return PyAnySerdeFactory.dict_serde(key_serde, value_serde)
+
+
+def dynamic_serde() -> RustSerde:
+    return PyAnySerdeFactory.dynamic_serde()
+
+
+def float_serde() -> RustSerde:
+    return PyAnySerdeFactory.float_serde()
+
+
+def int_serde() -> RustSerde:
+    return PyAnySerdeFactory.int_serde()
+
+
+def list_serde(items_serde: RustSerde) -> RustSerde:
+    return PyAnySerdeFactory.list_serde(items_serde)
+
+
+def numpy_serde(dtype: np.dtype):
+    return PyAnySerdeFactory.numpy_dynamic_shape_serde(np.dtype(dtype))
+
+
+def pickle_serde() -> RustSerde:
+    return PyAnySerdeFactory.pickle_serde()
+
+
+def set_serde(items_serde: RustSerde) -> RustSerde:
+    return PyAnySerdeFactory.set_serde(items_serde)
+
+
+def string_serde() -> RustSerde:
+    return PyAnySerdeFactory.string_serde()
+
+
+def tuple_serde(*item_serdes: List[RustSerde]):
+    return PyAnySerdeFactory.tuple_serde(item_serdes)

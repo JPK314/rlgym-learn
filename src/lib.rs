@@ -15,5 +15,7 @@ fn rlgym_learn_backend(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<env_process_interface::EnvProcessInterface>()?;
     m.add_class::<agent_manager::AgentManager>()?;
     m.add_class::<standard_impl::ppo::gae_trajectory_processor::GAETrajectoryProcessor>()?;
+    m.add_class::<serdes::pyany_serde::PyAnySerdeFactory>()?;
+    m.add_class::<serdes::pyany_serde::DynPyAnySerde>()?;
     Ok(())
 }
