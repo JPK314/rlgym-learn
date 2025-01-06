@@ -9,14 +9,14 @@ use super::serde_enum::{get_serde_bytes, Serde};
 
 #[derive(Clone)]
 pub struct ListSerde {
-    item_serde: Box<dyn PyAnySerde >,
+    item_serde: Box<dyn PyAnySerde>,
     align: usize,
     serde_enum: Serde,
     serde_enum_bytes: Vec<u8>,
 }
 
 impl ListSerde {
-    pub fn new(item_serde: Box<dyn PyAnySerde >) -> Self {
+    pub fn new(item_serde: Box<dyn PyAnySerde>) -> Self {
         let item_serde_enum = item_serde.get_enum().clone();
         let serde_enum = Serde::LIST {
             items: Box::new(item_serde_enum),
@@ -32,7 +32,7 @@ impl ListSerde {
 
 impl PyAnySerde for ListSerde {
     fn append<'py>(
-        &self,
+        &mut self,
         buf: &mut [u8],
         offset: usize,
         obj: &Bound<'py, PyAny>,
@@ -46,7 +46,7 @@ impl PyAnySerde for ListSerde {
     }
 
     fn retrieve<'py>(
-        &self,
+        &mut self,
         py: Python<'py>,
         buf: &[u8],
         offset: usize,
@@ -69,7 +69,7 @@ impl PyAnySerde for ListSerde {
         &self.serde_enum
     }
 
-    fn get_enum_bytes(&self) -> &Vec<u8> {
+    fn get_enum_bytes(&self) -> &[u8] {
         &self.serde_enum_bytes
     }
 }

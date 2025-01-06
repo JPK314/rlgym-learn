@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from abc import abstractmethod
 from enum import Enum
-from typing import Generic, List, TypeVar
+from typing import Generic, List, TypeVar, Union
 
 import numpy as np
 from rlgym_learn_backend import PyAnySerdeFactory
@@ -44,8 +44,20 @@ def complex_serde() -> RustSerde:
     return PyAnySerdeFactory.complex_serde()
 
 
-def dict_serde(key_serde: RustSerde, value_serde: RustSerde) -> RustSerde:
-    return PyAnySerdeFactory.dict_serde(key_serde, value_serde)
+def dict_serde(
+    key_serde: Union[TypeSerde, RustSerde], value_serde: Union[TypeSerde, RustSerde]
+) -> RustSerde:
+    key_type_serde = None
+    value_type_serde = None
+    if isinstance(key_serde, TypeSerde):
+        key_type_serde = key_serde
+        key_serde = None
+    if isinstance(value_serde, TypeSerde):
+        value_type_serde = value_serde
+        value_serde = None
+    return PyAnySerdeFactory.dict_serde(
+        key_type_serde, key_serde, value_type_serde, value_serde
+    )
 
 
 def dynamic_serde() -> RustSerde:
@@ -60,6 +72,7 @@ def int_serde() -> RustSerde:
     return PyAnySerdeFactory.int_serde()
 
 
+# TODO: add option for TypeSerde
 def list_serde(items_serde: RustSerde) -> RustSerde:
     return PyAnySerdeFactory.list_serde(items_serde)
 
@@ -72,6 +85,7 @@ def pickle_serde() -> RustSerde:
     return PyAnySerdeFactory.pickle_serde()
 
 
+# TODO: add option for TypeSerde
 def set_serde(items_serde: RustSerde) -> RustSerde:
     return PyAnySerdeFactory.set_serde(items_serde)
 
@@ -80,5 +94,6 @@ def string_serde() -> RustSerde:
     return PyAnySerdeFactory.string_serde()
 
 
+# TODO: add option for TypeSerde
 def tuple_serde(*item_serdes: List[RustSerde]):
     return PyAnySerdeFactory.tuple_serde(item_serdes)

@@ -42,10 +42,12 @@ def env_process(
     reward_serde: Optional[Union[TypeSerde[RewardType], RustSerde]],
     obs_space_serde: Optional[Union[TypeSerde[ObsSpaceType], RustSerde]],
     action_space_serde: Optional[Union[TypeSerde[ActionSpaceType], RustSerde]],
+    state_serde: Optional[Union[TypeSerde[StateType], RustSerde]],
     state_metrics_serde: Optional[Union[TypeSerde[StateMetrics], RustSerde]],
     collect_state_metrics_fn: Optional[
         Callable[[StateType, Dict[AgentID, RewardType]], StateMetrics]
     ],
+    send_state_to_agent_controllers: bool,
     flinks_folder: str,
     shm_buffer_size: int,
     seed: int,
@@ -65,6 +67,7 @@ def env_process(
     reward_type_serde = None
     obs_space_type_serde = None
     action_space_type_serde = None
+    state_type_serde = None
     state_metrics_type_serde = None
 
     if isinstance(agent_id_serde, TypeSerde):
@@ -85,6 +88,9 @@ def env_process(
     if isinstance(action_space_serde, TypeSerde):
         action_space_type_serde = action_space_serde
         action_space_serde = None
+    if isinstance(state_serde, TypeSerde):
+        state_type_serde = state_serde
+        state_serde = None
     if isinstance(state_metrics_serde, TypeSerde):
         state_metrics_type_serde = state_metrics_serde
         state_metrics_serde = None
@@ -108,9 +114,12 @@ def env_process(
         obs_space_serde,
         action_space_type_serde,
         action_space_serde,
+        state_type_serde,
+        state_serde,
         state_metrics_type_serde,
         state_metrics_serde,
         collect_state_metrics_fn,
+        send_state_to_agent_controllers,
         render_this_proc,
         timedelta(seconds=render_delay),
         recalculate_agent_id_every_step,

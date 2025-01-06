@@ -32,6 +32,7 @@ pub enum Serde {
         keys: Box<Serde>,
         values: Box<Serde>,
     },
+    OTHER,
 }
 
 pub fn get_serde_bytes(serde: &Serde) -> Vec<u8> {
@@ -80,6 +81,7 @@ pub fn get_serde_bytes(serde: &Serde) -> Vec<u8> {
             bytes.append(&mut get_serde_bytes(&*values));
             bytes
         }
+        Serde::OTHER => vec![13],
     }
 }
 
@@ -152,8 +154,9 @@ pub fn retrieve_serde(buf: &[u8], offset: usize) -> PyResult<(Serde, usize)> {
                 values: Box::new(values),
             })
         }
+        13 => Ok(Serde::OTHER),
         v => Err(InvalidStateError::new_err(format!(
-            "tried to deserialize Serde but got {}",
+            "Tried to deserialize Serde but got {}",
             v
         ))),
     }?;

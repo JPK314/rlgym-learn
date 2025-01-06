@@ -8,6 +8,7 @@ from torch import Tensor
 @dataclass
 class Timestep(Generic[AgentID, ObsType, ActionType, RewardType]):
     __slots__ = (
+        "env_id",
         "timestep_id",
         "previous_timestep_id",
         "agent_id",
@@ -19,6 +20,7 @@ class Timestep(Generic[AgentID, ObsType, ActionType, RewardType]):
         "terminated",
         "truncated",
     )
+    env_id: str
     timestep_id: int
     previous_timestep_id: Optional[int]
     agent_id: AgentID

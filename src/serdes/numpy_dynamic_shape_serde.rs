@@ -2,9 +2,8 @@ use std::marker::PhantomData;
 use std::mem::size_of;
 
 use bytemuck::{cast_slice, AnyBitPattern, NoUninit};
-use numpy::{
-    ndarray::ArrayD, Element, PyArrayDyn, PyArrayMethods, PyUntypedArrayMethods, ToPyArray,
-};
+use numpy::IntoPyArray;
+use numpy::{ndarray::ArrayD, Element, PyArrayDyn, PyArrayMethods, PyUntypedArrayMethods};
 use pyo3::exceptions::asyncio::InvalidStateError;
 use pyo3::prelude::*;
 use pyo3::Bound;
@@ -40,6 +39,51 @@ macro_rules! define_primitive_impls {
     }
 }
 
+impl<T: Element + AnyBitPattern + NoUninit> NumpyDynamicShapeSerde<T> {
+    pub fn append<'py>(
+        &mut self,
+        buf: &mut [u8],
+        offset: usize,
+        array: &Bound<'py, PyArrayDyn<T>>,
+    ) -> PyResult<usize> {
+        let shape = array.shape();
+        let mut new_offset = append_usize(buf, offset, shape.len());
+        for dim in shape.iter() {
+            new_offset = append_usize(buf, new_offset, *dim);
+        }
+        let obj_vec = array.to_vec()?;
+        new_offset = new_offset + get_bytes_to_alignment::<T>(buf.as_ptr() as usize + new_offset);
+        new_offset = append_bytes(buf, new_offset, cast_slice::<T, u8>(&obj_vec))?;
+        Ok(new_offset)
+    }
+
+    pub fn retrieve<'py>(
+        &mut self,
+        py: Python<'py>,
+        buf: &[u8],
+        offset: usize,
+    ) -> PyResult<(Bound<'py, PyArrayDyn<T>>, usize)> {
+        let (shape_len, mut new_offset) = retrieve_usize(buf, offset)?;
+        let mut shape = Vec::with_capacity(shape_len);
+        for _ in 0..shape_len {
+            let dim;
+            (dim, new_offset) = retrieve_usize(buf, new_offset)?;
+            shape.push(dim);
+        }
+        new_offset = new_offset + get_bytes_to_alignment::<T>(buf.as_ptr() as usize + new_offset);
+        let obj_bytes;
+        (obj_bytes, new_offset) = retrieve_bytes(buf, new_offset)?;
+        let array_vec = cast_slice::<u8, T>(obj_bytes).to_vec();
+        let array = ArrayD::from_shape_vec(shape, array_vec).map_err(|err| {
+            InvalidStateError::new_err(format!(
+                "Failed create Numpy array of T from shape and Vec<T>: {}",
+                err
+            ))
+        })?;
+        Ok((array.into_pyarray(py), new_offset))
+    }
+}
+
 define_primitive_impls! {
     i8 => NumpyDtype::INT8,
     i16 => NumpyDtype::INT16,
@@ -70,47 +114,22 @@ pub fn get_numpy_dynamic_shape_serde(dtype: NumpyDtype) -> Box<dyn PyAnySerde> {
 
 impl<T: Element + AnyBitPattern + NoUninit> PyAnySerde for NumpyDynamicShapeSerde<T> {
     fn append<'py>(
-        &self,
+        &mut self,
         buf: &mut [u8],
         offset: usize,
         obj: &Bound<'py, PyAny>,
     ) -> PyResult<usize> {
-        let array = obj.downcast::<PyArrayDyn<T>>()?;
-        let shape = array.shape();
-        let mut new_offset = append_usize(buf, offset, shape.len());
-        for dim in shape.iter() {
-            new_offset = append_usize(buf, new_offset, *dim);
-        }
-        let obj_vec = array.to_vec()?;
-        new_offset = new_offset + get_bytes_to_alignment::<T>(buf.as_ptr() as usize + new_offset);
-        new_offset = append_bytes(buf, new_offset, cast_slice::<T, u8>(&obj_vec))?;
-        Ok(new_offset)
+        self.append(buf, offset, obj.downcast::<PyArrayDyn<T>>()?)
     }
 
     fn retrieve<'py>(
-        &self,
+        &mut self,
         py: Python<'py>,
         buf: &[u8],
         offset: usize,
     ) -> PyResult<(Bound<'py, PyAny>, usize)> {
-        let (shape_len, mut new_offset) = retrieve_usize(buf, offset)?;
-        let mut shape = Vec::with_capacity(shape_len);
-        for _ in 0..shape_len {
-            let dim;
-            (dim, new_offset) = retrieve_usize(buf, new_offset)?;
-            shape.push(dim);
-        }
-        new_offset = new_offset + get_bytes_to_alignment::<T>(buf.as_ptr() as usize + new_offset);
-        let obj_bytes;
-        (obj_bytes, new_offset) = retrieve_bytes(buf, new_offset)?;
-        let array_vec = cast_slice::<u8, T>(obj_bytes).to_vec();
-        let array = ArrayD::from_shape_vec(shape, array_vec).map_err(|err| {
-            InvalidStateError::new_err(format!(
-                "Failed create Numpy array of T from shape and Vec<T>: {}",
-                err
-            ))
-        })?;
-        Ok((array.to_pyarray(py).into_any(), new_offset))
+        let (array, offset) = self.retrieve(py, buf, offset)?;
+        Ok((array.into_any(), offset))
     }
 
     fn align_of(&self) -> usize {
@@ -121,7 +140,7 @@ impl<T: Element + AnyBitPattern + NoUninit> PyAnySerde for NumpyDynamicShapeSerd
         &self.serde_enum
     }
 
-    fn get_enum_bytes(&self) -> &Vec<u8> {
+    fn get_enum_bytes(&self) -> &[u8] {
         &self.serde_enum_bytes
     }
 }

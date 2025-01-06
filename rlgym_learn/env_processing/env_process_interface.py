@@ -30,6 +30,7 @@ from rlgym.api import (
     RLGym,
     StateType,
 )
+from rlgym_learn_backend import EnvAction
 from rlgym_learn_backend import EnvProcessInterface as RustEnvProcessInterface
 from torch import Tensor
 
@@ -74,11 +75,13 @@ class EnvProcessInterface(
         reward_serde: Optional[Union[TypeSerde[RewardType], RustSerde]],
         obs_space_serde: Optional[Union[TypeSerde[ObsSpaceType], RustSerde]],
         action_space_serde: Optional[Union[TypeSerde[ActionSpaceType], RustSerde]],
+        state_serde: Optional[Union[TypeSerde[StateType], RustSerde]],
         state_metrics_serde: Optional[Union[TypeSerde[StateMetrics], RustSerde]],
         collect_state_metrics_fn: Optional[
             Callable[[StateType, Dict[AgentID, RewardType]], StateMetrics]
         ],
         min_process_steps_per_inference: int,
+        send_state_to_agent_controllers: bool,
         flinks_folder: str,
         shm_buffer_size: int,
         seed: int,
@@ -91,8 +94,10 @@ class EnvProcessInterface(
         self.reward_serde = reward_serde
         self.obs_space_serde = obs_space_serde
         self.action_space_serde = action_space_serde
+        self.state_serde = state_serde
         self.state_metrics_serde = state_metrics_serde
         self.collect_state_metrics_fn = collect_state_metrics_fn
+        self.send_state_to_agent_controllers = send_state_to_agent_controllers
         self.flinks_folder = flinks_folder
         self.shm_buffer_size = shm_buffer_size
         self.seed = seed
@@ -105,6 +110,7 @@ class EnvProcessInterface(
         reward_type_serde = None
         obs_space_type_serde = None
         action_space_type_serde = None
+        state_type_serde = None
         state_metrics_type_serde = None
 
         if isinstance(agent_id_serde, TypeSerde):
@@ -125,6 +131,13 @@ class EnvProcessInterface(
         if isinstance(action_space_serde, TypeSerde):
             action_space_type_serde = action_space_serde
             action_space_serde = None
+
+        # If we are not sending the state to the agent controllers, we don't care about the serde for the state
+        if not send_state_to_agent_controllers:
+            state_serde = None
+        elif isinstance(state_serde, TypeSerde):
+            state_type_serde = state_serde
+            state_serde = None
 
         # If there is no collect state metrics fn, we don't need to hold onto any serdes for state metrics
         if collect_state_metrics_fn is None:
@@ -148,11 +161,14 @@ class EnvProcessInterface(
             obs_space_serde,
             action_space_type_serde,
             action_space_serde,
+            state_type_serde,
+            state_serde,
             state_metrics_type_serde,
             state_metrics_serde,
             self.recalculate_agent_id_every_step,
             flinks_folder,
             min_process_steps_per_inference,
+            send_state_to_agent_controllers,
         )
 
     def init_processes(
@@ -161,7 +177,19 @@ class EnvProcessInterface(
         spawn_delay=None,
         render=False,
         render_delay: Optional[float] = None,
-    ) -> Tuple[List[AgentID], List[ObsType], ObsSpaceType, ActionSpaceType]:
+    ) -> Tuple[
+        Dict[str, Tuple[List[AgentID], List[ObsType]]],
+        Dict[
+            str,
+            Tuple[
+                Optional[StateType],
+                Optional[Dict[AgentID, bool]],
+                Optional[Dict[AgentID, bool]],
+            ],
+        ],
+        ObsSpaceType,
+        ActionSpaceType,
+    ]:
         """
         Initialize and spawn environment processes.
         :param n_processes: Number of processes to spawn.
@@ -170,7 +198,7 @@ class EnvProcessInterface(
         :param spawn_delay: Delay between spawning environment instances. Defaults to None.
         :param render: Whether an environment should be rendered while collecting timesteps.
         :param render_delay: A period in seconds to delay a process between frames while rendering.
-        :return: A tuple containing observation space type and action space type.
+        :return: A tuple containing parallel lists of agent ids and observations for inference (per environment), state info (per environment), observation space type, and action space type.
         """
 
         can_fork = "forkserver" in mp.get_all_start_methods()
@@ -205,8 +233,10 @@ class EnvProcessInterface(
                     self.reward_serde,
                     self.obs_space_serde,
                     self.action_space_serde,
+                    self.state_serde,
                     self.state_metrics_serde,
                     self.collect_state_metrics_fn,
+                    self.send_state_to_agent_controllers,
                     self.flinks_folder,
                     self.shm_buffer_size,
                     self.seed + proc_idx,
@@ -251,7 +281,6 @@ class EnvProcessInterface(
         )
 
     def add_process(self):
-        pid_idx = self.n_procs
         self.n_procs += 1
         can_fork = "forkserver" in mp.get_all_start_methods()
         start_method = "forkserver" if can_fork else "spawn"
@@ -275,8 +304,10 @@ class EnvProcessInterface(
                 self.reward_serde,
                 self.obs_space_serde,
                 self.action_space_serde,
+                self.state_serde,
                 self.state_metrics_serde,
                 self.collect_state_metrics_fn,
+                self.send_state_to_agent_controllers,
                 self.flinks_folder,
                 self.shm_buffer_size,
                 self.seed + proc_id,
@@ -323,17 +354,21 @@ class EnvProcessInterface(
             print("Unable to close parent connection")
             traceback.print_exc()
 
-    def send_actions(self, action_list: List[ActionType], log_probs: List[Tensor]):
+    def send_env_actions(self, env_actions: Dict[str, EnvAction]):
         """
-        Send actions to environment processes based on current observations.
+        Send env actions to environment processes.
         """
-        self.rust_env_process_interface.send_actions(action_list, log_probs)
+        self.rust_env_process_interface.send_env_actions(env_actions)
 
     def collect_step_data(
         self,
-    ) -> Tuple[List[AgentID], List[ObsType], List[Timestep], List[StateMetrics]]:
+    ) -> Tuple[
+        Dict[str, Tuple[List[AgentID], List[ObsType]]],
+        Dict[str, Tuple[List[Timestep], Optional[StateMetrics], Optional[StateType]]],
+        Dict[str, Tuple[StateType, Dict[AgentID, bool], Dict[AgentID, bool]]],
+    ]:
         """
-        Collect timesteps + metrics from processes that have sent data, and get parallel AgentID and ObsType lists for inference.
+        :return: Parallel lists of AgentID and ObsType for inference (per environment), a dict of timesteps and related data (per environment), and a dict of state info (per environment).
         """
         return self.rust_env_process_interface.collect_step_data()
 

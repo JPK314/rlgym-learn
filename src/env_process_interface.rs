@@ -1,11 +1,15 @@
 use std::cmp::max;
 use std::cmp::min;
+use std::collections::HashMap;
 
 use itertools::izip;
+use itertools::Itertools;
 use pyo3::exceptions::asyncio::InvalidStateError;
 use pyo3::intern;
 use pyo3::prelude::*;
 use pyo3::sync::GILOnceCell;
+use pyo3::types::PyDict;
+use pyo3::IntoPyObjectExt;
 use pyo3::PyObject;
 use raw_sync::events::Event;
 use raw_sync::events::EventInit;
@@ -13,16 +17,16 @@ use raw_sync::events::EventState;
 use shared_memory::Shmem;
 use shared_memory::ShmemConf;
 
-use crate::append_python_update_serde;
+use crate::append_env_action_update_serdes;
+use crate::common::misc::clone_list;
 use crate::common::misc::recvfrom_byte;
 use crate::common::misc::sendto_byte;
 use crate::communication::append_header;
-use crate::communication::append_python;
 use crate::communication::get_flink;
 use crate::communication::retrieve_bool;
-use crate::communication::retrieve_python;
 use crate::communication::retrieve_usize;
 use crate::communication::Header;
+use crate::env_action::EnvAction;
 use crate::retrieve_python_update_serde;
 use crate::serdes::pyany_serde::DynPyAnySerde;
 use crate::serdes::pyany_serde::PyAnySerde;
@@ -52,54 +56,43 @@ pub struct EnvProcessInterface {
     obs_space_pyany_serde_option: Option<Box<dyn PyAnySerde>>,
     action_space_type_serde_option: Option<PyObject>,
     action_space_pyany_serde_option: Option<Box<dyn PyAnySerde>>,
+    state_type_serde_option: Option<PyObject>,
+    state_pyany_serde_option: Option<Box<dyn PyAnySerde>>,
     state_metrics_type_serde_option: Option<PyObject>,
     state_metrics_pyany_serde_option: Option<Box<dyn PyAnySerde>>,
     recalculate_agent_id_every_step: bool,
     flinks_folder: String,
-    proc_packages: Vec<(PyObject, Shmem)>,
+    proc_packages: Vec<(PyObject, Shmem, String)>,
     min_process_steps_per_inference: usize,
+    send_state_to_agent_controllers: bool,
     selector: PyObject,
     timestep_class: PyObject,
+    proc_id_pid_idx_map: HashMap<String, usize>,
+    pid_idx_current_env_action_list: Vec<Option<EnvAction>>,
     pid_idx_current_agent_id_list: Vec<Option<Vec<PyObject>>>,
     pid_idx_prev_timestep_id_list: Vec<Vec<Option<u128>>>,
     pid_idx_current_obs_list: Vec<Vec<PyObject>>,
     pid_idx_current_action_list: Vec<Vec<PyObject>>,
-    pid_idx_current_log_prob_list: Vec<Vec<PyObject>>,
-    pid_idx_requesting_action_list: Vec<usize>,
+    pid_idx_current_log_probs_list: Vec<Option<PyObject>>,
+    added_process_obs_data_kv_list: Vec<(Py<PyAny>, (Vec<PyObject>, Vec<PyObject>))>,
+    added_process_state_info_kv_list: Vec<(
+        Py<PyAny>,
+        (Option<Py<PyAny>>, Option<Py<PyDict>>, Option<Py<PyDict>>),
+    )>,
 }
 
 impl EnvProcessInterface {
-    fn get_python_agent_id_obs_lists<'py>(
-        &self,
-        py: Python<'py>,
-    ) -> (Vec<PyObject>, Vec<PyObject>) {
-        let total_observations = self
-            .pid_idx_current_agent_id_list
-            .iter()
-            .map(|v| v.as_ref().unwrap().len())
-            .sum();
-        let mut python_agent_id_list = Vec::with_capacity(total_observations);
-        let mut python_obs_list = Vec::with_capacity(total_observations);
-        for (agent_id_list, obs_list) in self
-            .pid_idx_current_agent_id_list
-            .iter()
-            .zip(self.pid_idx_current_obs_list.iter())
-        {
-            for agent_id in agent_id_list.as_ref().unwrap().iter() {
-                python_agent_id_list.push(agent_id.clone_ref(py));
-            }
-            for obs in obs_list.iter() {
-                python_obs_list.push(obs.clone_ref(py));
-            }
-        }
-        (python_agent_id_list, python_obs_list)
-    }
-
     fn get_initial_obs_data_proc<'py>(
         &mut self,
         py: Python<'py>,
         pid_idx: usize,
-    ) -> PyResult<(Vec<PyObject>, Vec<PyObject>)> {
+    ) -> PyResult<(
+        (PyObject, (Vec<PyObject>, Vec<PyObject>)),
+        (
+            PyObject,
+            (Option<PyObject>, Option<Py<PyDict>>, Option<Py<PyDict>>),
+        ),
+    )> {
         // println!("EPI: Getting initial obs for some proc");
         let agent_id_type_serde_option =
             self.agent_id_type_serde_option.as_ref().map(|v| v.bind(py));
@@ -108,7 +101,7 @@ impl EnvProcessInterface {
         let mut agent_id_pyany_serde_option = self.agent_id_pyany_serde_option.take();
         let mut obs_pyany_serde_option = self.obs_pyany_serde_option.take();
 
-        let (parent_end, shmem) = self.proc_packages.get(pid_idx).unwrap();
+        let (parent_end, shmem, proc_id) = self.proc_packages.get(pid_idx).unwrap();
         let shm_slice = unsafe { &shmem.as_slice()[Event::size_of(None)..] };
         recvfrom_byte(py, parent_end)?;
         let mut offset = 0;
@@ -137,26 +130,62 @@ impl EnvProcessInterface {
             obs_list.push(obs.unbind());
         }
 
+        let state_option;
+        if self.send_state_to_agent_controllers {
+            let state_type_serde_option = self.state_type_serde_option.as_mut().map(|v| v.bind(py));
+            let mut state_pyany_serde_option = self.state_pyany_serde_option.take();
+            let state;
+            (state, _) = retrieve_python_update_serde!(
+                py,
+                shm_slice,
+                offset,
+                &state_type_serde_option,
+                state_pyany_serde_option
+            );
+            state_option = Some(state.unbind());
+            self.state_pyany_serde_option = state_pyany_serde_option;
+        } else {
+            state_option = None;
+        }
+
         self.agent_id_pyany_serde_option = agent_id_pyany_serde_option;
         self.obs_pyany_serde_option = obs_pyany_serde_option;
+
+        let py_proc_id = proc_id.into_py_any(py)?;
+
         // println!("EPI: Exiting get_initial_obs_proc");
-        Ok((agent_id_list, obs_list))
+        Ok((
+            (py_proc_id.clone_ref(py), (agent_id_list, obs_list)),
+            (py_proc_id, (state_option, None, None)),
+        ))
     }
 
-    fn update_with_initial_obs<'py>(&mut self, py: Python<'py>) -> PyResult<()> {
+    fn update_with_initial_obs<'py>(
+        &mut self,
+        py: Python<'py>,
+    ) -> PyResult<(Py<PyDict>, Py<PyDict>)> {
         let n_procs = self.proc_packages.len();
+        let mut obs_data_kv_list = Vec::with_capacity(n_procs);
+        let mut state_info_kv_list = Vec::with_capacity(n_procs);
         for pid_idx in 0..n_procs {
             // println!("EPI: Getting initial obs for pid_idx {}", pid_idx);
-            let (agent_id_list, obs_list) = self.get_initial_obs_data_proc(py, pid_idx)?;
+            let ((py_proc_id, (agent_id_list, obs_list)), state_info_kv) =
+                self.get_initial_obs_data_proc(py, pid_idx)?;
             let n_agents = agent_id_list.len();
-            self.pid_idx_current_agent_id_list.push(Some(agent_id_list));
-            self.pid_idx_current_obs_list.push(obs_list);
-            self.pid_idx_requesting_action_list.push(pid_idx);
+            self.pid_idx_current_agent_id_list
+                .push(Some(clone_list(py, &agent_id_list)));
+            self.pid_idx_current_obs_list
+                .push(clone_list(py, &obs_list));
             self.pid_idx_prev_timestep_id_list
                 .push(vec![None; n_agents]);
+            obs_data_kv_list.push((py_proc_id, (agent_id_list, obs_list)));
+            state_info_kv_list.push(state_info_kv);
         }
         // println!("EPI: Done getting initial obs list");
-        Ok(())
+        Ok((
+            PyDict::from_sequence(&obs_data_kv_list.into_pyobject(py)?)?.unbind(),
+            PyDict::from_sequence(&state_info_kv_list.into_pyobject(py)?)?.unbind(),
+        ))
     }
 
     fn get_space_types<'py>(&mut self, py: Python<'py>) -> PyResult<(PyObject, PyObject)> {
@@ -172,7 +201,7 @@ impl EnvProcessInterface {
         let mut obs_space_pyany_serde_option = self.obs_space_pyany_serde_option.take();
         let mut action_space_pyany_serde_option = self.action_space_pyany_serde_option.take();
 
-        let (parent_end, shmem) = self.proc_packages.get_mut(0).unwrap();
+        let (parent_end, shmem, _) = self.proc_packages.get_mut(0).unwrap();
         let (ep_evt, used_bytes) = unsafe {
             Event::from_existing(shmem.as_ptr()).map_err(|err| {
                 InvalidStateError::new_err(format!("Failed to get event: {}", err.to_string()))
@@ -241,7 +270,10 @@ impl EnvProcessInterface {
                 self.proc_packages.len(),
             ),
         )?;
-        self.proc_packages.push((parent_end, shmem));
+        self.proc_id_pid_idx_map
+            .insert(proc_id.clone(), self.proc_packages.len());
+        self.proc_packages.push((parent_end, shmem, proc_id));
+
         Ok(())
     }
 }
@@ -262,11 +294,14 @@ impl EnvProcessInterface {
         obs_space_serde_option,
         action_space_type_serde_option,
         action_space_serde_option,
+        state_type_serde_option,
+        state_serde_option,
         state_metrics_type_serde_option,
         state_metrics_serde_option,
         recalculate_agent_id_every_step,
         flinks_folder_option,
         min_process_steps_per_inference,
+        send_state_to_agent_controllers,
         ))]
     fn new(
         agent_id_type_serde_option: Option<PyObject>,
@@ -281,11 +316,14 @@ impl EnvProcessInterface {
         obs_space_serde_option: Option<DynPyAnySerde>,
         action_space_type_serde_option: Option<PyObject>,
         action_space_serde_option: Option<DynPyAnySerde>,
+        state_type_serde_option: Option<PyObject>,
+        state_serde_option: Option<DynPyAnySerde>,
         state_metrics_type_serde_option: Option<PyObject>,
         state_metrics_serde_option: Option<DynPyAnySerde>,
         recalculate_agent_id_every_step: bool,
         flinks_folder_option: Option<String>,
         min_process_steps_per_inference: usize,
+        send_state_to_agent_controllers: bool,
     ) -> PyResult<Self> {
         Python::with_gil::<_, PyResult<Self>>(|py| {
             let agent_id_pyany_serde_option =
@@ -299,6 +337,7 @@ impl EnvProcessInterface {
                 obs_space_serde_option.map(|dyn_serde| dyn_serde.0.unwrap());
             let action_space_pyany_serde_option =
                 action_space_serde_option.map(|dyn_serde| dyn_serde.0.unwrap());
+            let state_pyany_serde_option = state_serde_option.map(|dyn_serde| dyn_serde.0.unwrap());
             let state_metrics_pyany_serde_option =
                 state_metrics_serde_option.map(|dyn_serde| dyn_serde.0.unwrap());
             let timestep_class = PyModule::import(py, "rlgym_learn.experience")?
@@ -321,48 +360,78 @@ impl EnvProcessInterface {
                 obs_space_pyany_serde_option,
                 action_space_type_serde_option,
                 action_space_pyany_serde_option,
+                state_type_serde_option,
+                state_pyany_serde_option,
                 state_metrics_type_serde_option,
                 state_metrics_pyany_serde_option,
                 recalculate_agent_id_every_step,
                 flinks_folder: flinks_folder_option.unwrap_or("shmem_flinks".to_string()),
                 proc_packages: Vec::new(),
                 min_process_steps_per_inference,
+                send_state_to_agent_controllers,
                 selector,
                 timestep_class,
+                proc_id_pid_idx_map: HashMap::new(),
+                pid_idx_current_env_action_list: Vec::new(),
                 pid_idx_current_agent_id_list: Vec::new(),
                 pid_idx_prev_timestep_id_list: Vec::new(),
                 pid_idx_current_obs_list: Vec::new(),
                 pid_idx_current_action_list: Vec::new(),
-                pid_idx_current_log_prob_list: Vec::new(),
-                pid_idx_requesting_action_list: Vec::new(),
+                pid_idx_current_log_probs_list: Vec::new(),
+                added_process_obs_data_kv_list: Vec::new(),
+                added_process_state_info_kv_list: Vec::new(),
             })
         })
     }
 
-    // Return ([(AgentID, ObsType)], ObsSpaceType, ActionSpaceType)
+    // Return (
+    // Dict with key being proc_id, and value being (
+    // list of AgentID,
+    // list of ObsType
+    // ),
+    // ObsSpaceType,
+    // ActionSpaceType
+    // )
     fn init_processes(
         &mut self,
         proc_package_defs: Vec<(PyObject, PyObject, PyObject, String)>,
-    ) -> PyResult<(Vec<PyObject>, Vec<PyObject>, PyObject, PyObject)> {
+    ) -> PyResult<(Py<PyDict>, Py<PyDict>, PyObject, PyObject)> {
         Python::with_gil(|py| {
             proc_package_defs
                 .into_iter()
                 .try_for_each::<_, PyResult<()>>(|proc_package_def| {
                     self.add_proc_package(py, proc_package_def)
                 })?;
-            self.update_with_initial_obs(py)?;
+            let (initial_obs_data_dict, initial_state_info_dict) =
+                self.update_with_initial_obs(py)?;
             let n_procs = self.proc_packages.len();
             self.min_process_steps_per_inference =
                 min(self.min_process_steps_per_inference, n_procs);
             for _ in 0..n_procs {
+                self.pid_idx_current_env_action_list.push(None);
                 self.pid_idx_current_action_list.push(Vec::new());
-                self.pid_idx_current_log_prob_list.push(Vec::new());
+                self.pid_idx_current_log_probs_list.push(None);
             }
             let (obs_space, action_space) = self.get_space_types(py)?;
-            let (python_agent_id_list, python_obs_list) = self.get_python_agent_id_obs_lists(py);
+
+            // TODO: delete - was for creating observation dict, but no longer want to do this
+            // let mut initial_obs_kv_list = Vec::with_capacity(n_procs);
+            // for ((_, _, proc_id), agent_id_list, obs_list) in izip!(
+            //     &self.proc_packages,
+            //     &self.pid_idx_current_agent_id_list,
+            //     &self.pid_idx_current_obs_list
+            // ) {
+            //     initial_obs_kv_list.push((
+            //         proc_id,
+            //         (
+            //             clone_list(py, agent_id_list.as_ref().unwrap()),
+            //             clone_list(py, obs_list),
+            //         ),
+            //     ))
+            // }
             Ok((
-                python_agent_id_list,
-                python_obs_list,
+                initial_obs_data_dict,
+                initial_state_info_dict,
                 obs_space,
                 action_space,
             ))
@@ -376,23 +445,29 @@ impl EnvProcessInterface {
         Python::with_gil(|py| {
             let pid_idx = self.proc_packages.len();
             self.add_proc_package(py, proc_package_def)?;
-            let (agent_id_list, obs_list) = self.get_initial_obs_data_proc(py, pid_idx)?;
+            let ((py_proc_id, (agent_id_list, obs_list)), state_info_kv) =
+                self.get_initial_obs_data_proc(py, pid_idx)?;
             let n_agents = agent_id_list.len();
-            self.pid_idx_current_agent_id_list.push(Some(agent_id_list));
-            self.pid_idx_current_obs_list.push(obs_list);
+            self.pid_idx_current_agent_id_list
+                .push(Some(clone_list(py, &agent_id_list)));
+            self.pid_idx_current_obs_list
+                .push(clone_list(py, &obs_list));
             self.pid_idx_prev_timestep_id_list
                 .push(vec![None; n_agents]);
+            self.pid_idx_current_env_action_list.push(None);
             self.pid_idx_current_action_list
                 .push(Vec::with_capacity(n_agents));
-            self.pid_idx_current_log_prob_list
-                .push(Vec::with_capacity(n_agents));
-            self.pid_idx_requesting_action_list.push(pid_idx);
+            self.pid_idx_current_log_probs_list.push(None);
+            self.added_process_obs_data_kv_list
+                .push((py_proc_id, (agent_id_list, obs_list)));
+            self.added_process_state_info_kv_list.push(state_info_kv);
             Ok(())
         })
     }
 
     fn delete_process(&mut self) -> PyResult<()> {
-        let (parent_end, mut shmem) = self.proc_packages.pop().unwrap();
+        let (parent_end, mut shmem, proc_id) = self.proc_packages.pop().unwrap();
+        self.proc_id_pid_idx_map.remove(&proc_id);
         let (ep_evt, used_bytes) = unsafe {
             Event::from_existing(shmem.as_ptr()).map_err(|err| {
                 InvalidStateError::new_err(format!("Failed to get event: {}", err.to_string()))
@@ -407,16 +482,11 @@ impl EnvProcessInterface {
         self.pid_idx_current_agent_id_list.pop();
         self.pid_idx_prev_timestep_id_list.pop();
         self.pid_idx_current_obs_list.pop();
+        self.pid_idx_current_env_action_list.pop();
         self.pid_idx_current_action_list.pop();
-        self.pid_idx_current_log_prob_list.pop();
-        let removed_pid_idx = self.proc_packages.len();
-        if let Some(idx) = self
-            .pid_idx_requesting_action_list
-            .iter()
-            .position(|&v| v == removed_pid_idx)
-        {
-            self.pid_idx_requesting_action_list.swap_remove(idx);
-        }
+        self.pid_idx_current_log_probs_list.pop();
+        self.added_process_state_info_kv_list
+            .retain(|(py_proc_id, _)| py_proc_id.to_string() != proc_id);
         self.min_process_steps_per_inference = min(
             self.min_process_steps_per_inference,
             self.proc_packages.len().try_into().unwrap(),
@@ -443,7 +513,7 @@ impl EnvProcessInterface {
 
     fn cleanup(&mut self) -> PyResult<()> {
         while let Some(proc_package) = self.proc_packages.pop() {
-            let (parent_end, mut shmem) = proc_package;
+            let (parent_end, mut shmem, _) = proc_package;
             let (ep_evt, used_bytes) = unsafe {
                 Event::from_existing(shmem.as_ptr()).map_err(|err| {
                     InvalidStateError::new_err(format!("Failed to get event: {}", err.to_string()))
@@ -460,26 +530,31 @@ impl EnvProcessInterface {
                     .call_method1(py, intern!(py, "unregister"), (parent_end,))
             })?;
         }
+        self.proc_id_pid_idx_map.clear();
         self.pid_idx_current_agent_id_list.clear();
         self.pid_idx_prev_timestep_id_list.clear();
         self.pid_idx_current_obs_list.clear();
         self.pid_idx_current_action_list.clear();
-        self.pid_idx_current_log_prob_list.clear();
-        self.pid_idx_requesting_action_list.clear();
+        self.pid_idx_current_log_probs_list.clear();
+        self.added_process_state_info_kv_list.clear();
         Ok(())
     }
 
     // Returns: (
-    // list of (AgentID, ObsType)
-    // list of timesteps,
-    // list of state metrics
+    // list of AgentID
+    // list of ObsType
+    // Dict of timesteps, state metrics, and state by proc id
+    // Dict of state, terminated dict, and truncated dict by proc id
     // )
-    fn collect_step_data(
-        &mut self,
-    ) -> PyResult<(Vec<PyObject>, Vec<PyObject>, Vec<PyObject>, Vec<PyObject>)> {
+    fn collect_step_data(&mut self) -> PyResult<(Py<PyDict>, Py<PyDict>, Py<PyDict>)> {
         let mut n_process_steps_collected = 0;
-        let mut collected_timesteps = Vec::with_capacity(self.min_process_steps_per_inference);
-        let mut collected_metrics = Vec::with_capacity(self.min_process_steps_per_inference);
+        let mut obs_data_kv_list = Vec::with_capacity(self.min_process_steps_per_inference);
+        let mut timestep_data_kv_list = Vec::with_capacity(self.min_process_steps_per_inference);
+        let mut state_info_kv_list = Vec::with_capacity(
+            self.min_process_steps_per_inference + self.added_process_state_info_kv_list.len(),
+        );
+        obs_data_kv_list.append(&mut self.added_process_obs_data_kv_list);
+        state_info_kv_list.append(&mut self.added_process_state_info_kv_list);
         Python::with_gil(|py| {
             while n_process_steps_collected < self.min_process_steps_per_inference {
                 for (key, event) in self
@@ -494,34 +569,51 @@ impl EnvProcessInterface {
                     let (parent_end, _, _, pid_idx) =
                         key.extract::<(PyObject, PyObject, PyObject, usize)>(py)?;
                     recvfrom_byte(py, &parent_end)?;
-                    let (mut timesteps, metrics_option) = self.collect_response(pid_idx)?;
+                    let (obs_data_kv, timestep_data_kv, state_info_kv) =
+                        self.collect_response(pid_idx)?;
+                    obs_data_kv_list.push(obs_data_kv);
+                    timestep_data_kv_list.push(timestep_data_kv);
+                    state_info_kv_list.push(state_info_kv);
                     n_process_steps_collected += 1;
-                    self.pid_idx_requesting_action_list.push(pid_idx);
-                    collected_timesteps.append(&mut timesteps);
-                    if let Some(metrics) = metrics_option {
-                        collected_metrics.push(metrics);
-                    }
                 }
             }
-
-            let (python_agent_id_list, python_obs_list) = self.get_python_agent_id_obs_lists(py);
             Ok((
-                python_agent_id_list,
-                python_obs_list,
-                collected_timesteps,
-                collected_metrics,
+                PyDict::from_sequence(&obs_data_kv_list.into_pyobject(py)?)?.unbind(),
+                PyDict::from_sequence(&timestep_data_kv_list.into_pyobject(py)?)?.unbind(),
+                PyDict::from_sequence(&state_info_kv_list.into_pyobject(py)?)?.unbind(),
             ))
         })
     }
 
-    // We assume this will only be called when the python side has detected that the EP has signaled
-    // Returns: (
-    // list of Timesteps,
-    // StateMetrics
-    // )
-    fn collect_response(&mut self, pid_idx: usize) -> PyResult<(Vec<PyObject>, Option<PyObject>)> {
+    // Returns three kv pairs: the keys are all the proc id,
+    // and the values are (agent id list, obs list),
+    // (timestep list, optional state metrics, optional state),
+    // and (optional state, optional terminated dict, optional truncated dict) respectively
+    fn collect_response(
+        &mut self,
+        pid_idx: usize,
+    ) -> PyResult<(
+        (PyObject, (Vec<PyObject>, Vec<PyObject>)),
+        (
+            PyObject,
+            (Vec<PyObject>, Option<PyObject>, Option<PyObject>),
+        ),
+        (
+            PyObject,
+            (Option<PyObject>, Option<Py<PyDict>>, Option<Py<PyDict>>),
+        ),
+    )> {
         // println!("Entering collect_response for pid_idx {}", pid_idx);
-        let (_, shmem) = self.proc_packages.get(pid_idx).unwrap();
+        let env_action = self.pid_idx_current_env_action_list[pid_idx]
+            .as_ref()
+            .ok_or_else(|| {
+                InvalidStateError::new_err(
+                    "Tried to collect response from env which doesn't have an env action yet",
+                )
+            })?;
+        let is_step_action = matches!(env_action, EnvAction::STEP { .. });
+        let new_episode = !is_step_action;
+        let (_, shmem, proc_id) = self.proc_packages.get(pid_idx).unwrap();
         let evt_used_bytes = Event::size_of(None);
         let shm_slice = unsafe { &shmem.as_slice()[evt_used_bytes..] };
         let mut offset = 0;
@@ -543,75 +635,43 @@ impl EnvProcessInterface {
             let mut obs_pyany_serde_option = self.obs_pyany_serde_option.take();
             let mut reward_pyany_serde_option = self.reward_pyany_serde_option.take();
 
-            let next_n_agents;
-            let new_n_agents;
-            let mut next_agent_id_list;
-            let mut next_obs_list;
-            let mut next_reward_list;
-            let mut next_terminated_list;
-            let mut next_truncated_list;
-            let mut new_agent_id_list = Vec::new();
-            let mut new_obs_list = Vec::new();
+            // Get n_agents for incoming data and instantiate lists
+            let n_agents;
+            let (
+                mut agent_id_list,
+                mut obs_list,
+                mut reward_list_option,
+                mut terminated_list_option,
+                mut truncated_list_option,
+            );
 
-            let new_episode;
-            (new_episode, offset) = retrieve_bool(shm_slice, offset)?;
             // println!("new_episode: {}", new_episode);
             if new_episode {
-                next_n_agents = current_agent_id_list.len();
+                (n_agents, offset) = retrieve_usize(shm_slice, offset)?;
+                agent_id_list = Vec::with_capacity(n_agents);
+            } else {
+                n_agents = current_agent_id_list.len();
                 if self.recalculate_agent_id_every_step {
-                    next_agent_id_list = Vec::with_capacity(next_n_agents);
+                    agent_id_list = Vec::with_capacity(n_agents);
                 } else {
-                    next_agent_id_list = current_agent_id_list;
+                    agent_id_list = current_agent_id_list;
                 }
-                next_obs_list = Vec::with_capacity(next_n_agents);
-                next_reward_list = Vec::with_capacity(next_n_agents);
-                next_terminated_list = Vec::with_capacity(next_n_agents);
-                next_truncated_list = Vec::with_capacity(next_n_agents);
+            }
+            obs_list = Vec::with_capacity(n_agents);
+            if is_step_action {
+                reward_list_option = Some(Vec::with_capacity(n_agents));
+                terminated_list_option = Some(Vec::with_capacity(n_agents));
+                truncated_list_option = Some(Vec::with_capacity(n_agents));
+            } else {
+                reward_list_option = None;
+                terminated_list_option = None;
+                truncated_list_option = None;
+            }
 
-                let mut terminated;
-                let mut truncated;
-                for _ in 0..next_n_agents {
-                    // println!("Retrieving prev info for agent {}", idx + 1);
-                    if self.recalculate_agent_id_every_step {
-                        let agent_id;
-                        (agent_id, offset) = retrieve_python_update_serde!(
-                            py,
-                            shm_slice,
-                            offset,
-                            &agent_id_type_serde_option,
-                            agent_id_pyany_serde_option
-                        );
-                        next_agent_id_list.push(agent_id.unbind());
-                    }
-                    let obs;
-                    (obs, offset) = retrieve_python_update_serde!(
-                        py,
-                        shm_slice,
-                        offset,
-                        &obs_type_serde_option,
-                        obs_pyany_serde_option
-                    );
-                    next_obs_list.push(obs.unbind());
-                    let reward;
-                    (reward, offset) = retrieve_python_update_serde!(
-                        py,
-                        shm_slice,
-                        offset,
-                        &reward_type_serde_option,
-                        reward_pyany_serde_option
-                    );
-                    next_reward_list.push(reward.unbind());
-                    (terminated, offset) = retrieve_bool(shm_slice, offset)?;
-                    next_terminated_list.push(terminated);
-                    (truncated, offset) = retrieve_bool(shm_slice, offset)?;
-                    next_truncated_list.push(truncated);
-                }
-                // println!("n_agents: {}", n_agents);
-                (new_n_agents, offset) = retrieve_usize(shm_slice, offset)?;
-                new_agent_id_list = Vec::with_capacity(new_n_agents);
-                new_obs_list = Vec::with_capacity(new_n_agents);
-                for _ in 0..new_n_agents {
-                    // println!("Retrieving info for agent {}", idx + 1);
+            // Populate lists
+            for _ in 0..n_agents {
+                // println!("Retrieving prev info for agent {}", idx + 1);
+                if self.recalculate_agent_id_every_step || new_episode {
                     let agent_id;
                     (agent_id, offset) = retrieve_python_update_serde!(
                         py,
@@ -620,55 +680,18 @@ impl EnvProcessInterface {
                         &agent_id_type_serde_option,
                         agent_id_pyany_serde_option
                     );
-                    new_agent_id_list.push(agent_id.unbind());
-                    let obs;
-                    (obs, offset) = retrieve_python_update_serde!(
-                        py,
-                        shm_slice,
-                        offset,
-                        &obs_type_serde_option,
-                        obs_pyany_serde_option
-                    );
-                    new_obs_list.push(obs.unbind());
+                    agent_id_list.push(agent_id.unbind());
                 }
-            } else {
-                next_n_agents = current_agent_id_list.len();
-                new_n_agents = 0;
-                // println!("next_n_agents: {}", next_n_agents);
-                if self.recalculate_agent_id_every_step {
-                    next_agent_id_list = Vec::with_capacity(next_n_agents);
-                } else {
-                    next_agent_id_list = current_agent_id_list;
-                }
-                next_obs_list = Vec::with_capacity(next_n_agents);
-                next_reward_list = Vec::with_capacity(next_n_agents);
-                next_terminated_list = Vec::with_capacity(next_n_agents);
-                next_truncated_list = Vec::with_capacity(next_n_agents);
-
-                let mut terminated;
-                let mut truncated;
-                for _ in 0..next_n_agents {
-                    // println!("Retrieving info for agent {}", idx + 1);
-                    if self.recalculate_agent_id_every_step {
-                        let agent_id;
-                        (agent_id, offset) = retrieve_python_update_serde!(
-                            py,
-                            shm_slice,
-                            offset,
-                            &agent_id_type_serde_option,
-                            agent_id_pyany_serde_option
-                        );
-                        next_agent_id_list.push(agent_id.unbind());
-                    }
-                    let obs;
-                    (obs, offset) = retrieve_python_update_serde!(
-                        py,
-                        shm_slice,
-                        offset,
-                        &obs_type_serde_option,
-                        obs_pyany_serde_option
-                    );
-                    next_obs_list.push(obs.unbind());
+                let obs;
+                (obs, offset) = retrieve_python_update_serde!(
+                    py,
+                    shm_slice,
+                    offset,
+                    &obs_type_serde_option,
+                    obs_pyany_serde_option
+                );
+                obs_list.push(obs.unbind());
+                if is_step_action {
                     let reward;
                     (reward, offset) = retrieve_python_update_serde!(
                         py,
@@ -677,12 +700,33 @@ impl EnvProcessInterface {
                         &reward_type_serde_option,
                         reward_pyany_serde_option
                     );
-                    next_reward_list.push(reward.unbind());
+                    reward_list_option.as_mut().unwrap().push(reward.unbind());
+                    let terminated;
                     (terminated, offset) = retrieve_bool(shm_slice, offset)?;
-                    next_terminated_list.push(terminated);
+                    terminated_list_option.as_mut().unwrap().push(terminated);
+                    let truncated;
                     (truncated, offset) = retrieve_bool(shm_slice, offset)?;
-                    next_truncated_list.push(truncated);
+                    truncated_list_option.as_mut().unwrap().push(truncated);
                 }
+            }
+
+            let state_option;
+            if self.send_state_to_agent_controllers {
+                let state_type_serde_option =
+                    self.state_type_serde_option.as_mut().map(|v| v.bind(py));
+                let mut state_pyany_serde_option = self.state_pyany_serde_option.take();
+                let state;
+                (state, offset) = retrieve_python_update_serde!(
+                    py,
+                    shm_slice,
+                    offset,
+                    &state_type_serde_option,
+                    state_pyany_serde_option
+                );
+                state_option = Some(state.unbind());
+                self.state_pyany_serde_option = state_pyany_serde_option;
+            } else {
+                state_option = None;
             }
 
             let metrics_option;
@@ -736,92 +780,158 @@ impl EnvProcessInterface {
             //     next_truncated_list.len(),
             // );
 
-            let timestep_class = self.timestep_class.bind(py);
-            let mut timestep_list = Vec::with_capacity(next_n_agents);
-            let mut timestep_id_list = Vec::with_capacity(next_n_agents);
-            for (
-                prev_timestep_id,
-                agent_id,
-                obs,
-                next_obs,
-                action,
-                log_prob,
-                reward,
-                terminated,
-                truncated,
-            ) in izip!(
-                self.pid_idx_prev_timestep_id_list.get(pid_idx).unwrap(),
-                &next_agent_id_list,
-                self.pid_idx_current_obs_list.get(pid_idx).unwrap(),
-                &next_obs_list,
-                self.pid_idx_current_action_list.get(pid_idx).unwrap(),
-                self.pid_idx_current_log_prob_list.get(pid_idx).unwrap(),
-                next_reward_list,
-                next_terminated_list,
-                next_truncated_list
-            ) {
-                let timestep_id = fastrand::u128(..);
-                timestep_id_list.push(Some(timestep_id));
-                timestep_list.push(
-                    timestep_class
-                        .call1((
-                            timestep_id,
-                            *prev_timestep_id,
-                            agent_id,
-                            obs,
-                            next_obs,
-                            action,
-                            log_prob,
-                            reward,
-                            terminated,
-                            truncated,
-                        ))?
-                        .unbind(),
-                )
-            }
-
-            if new_episode {
-                self.pid_idx_current_agent_id_list[pid_idx] = Some(new_agent_id_list);
-                self.pid_idx_prev_timestep_id_list[pid_idx] = vec![None; new_n_agents];
-                self.pid_idx_current_obs_list[pid_idx] = new_obs_list;
+            let timestep_id_list_option;
+            let mut timestep_list;
+            if is_step_action {
+                let timestep_class = self.timestep_class.bind(py);
+                let mut timestep_id_list = Vec::with_capacity(n_agents);
+                timestep_list = Vec::with_capacity(n_agents);
+                // TODO: remove
+                assert!(!self.pid_idx_current_action_list[pid_idx].is_empty());
+                for (
+                    prev_timestep_id,
+                    agent_id,
+                    obs,
+                    next_obs,
+                    action,
+                    log_prob,
+                    reward,
+                    &terminated,
+                    &truncated,
+                ) in izip!(
+                    self.pid_idx_prev_timestep_id_list.get(pid_idx).unwrap(),
+                    &agent_id_list,
+                    self.pid_idx_current_obs_list.get(pid_idx).unwrap(),
+                    &obs_list,
+                    &self.pid_idx_current_action_list[pid_idx],
+                    self.pid_idx_current_log_probs_list[pid_idx]
+                        .as_ref()
+                        .unwrap()
+                        .bind(py)
+                        .call_method1(intern!(py, "unbind"), (0,))?
+                        .extract::<Vec<PyObject>>()?,
+                    reward_list_option.as_ref().unwrap(),
+                    terminated_list_option.as_ref().unwrap(),
+                    truncated_list_option.as_ref().unwrap()
+                ) {
+                    let timestep_id = fastrand::u128(..);
+                    timestep_id_list.push(Some(timestep_id));
+                    timestep_list.push(
+                        timestep_class
+                            .call1((
+                                proc_id.into_py_any(py)?,
+                                timestep_id,
+                                *prev_timestep_id,
+                                agent_id.clone_ref(py),
+                                obs,
+                                next_obs,
+                                action,
+                                log_prob,
+                                reward,
+                                terminated,
+                                truncated,
+                            ))?
+                            .unbind(),
+                    );
+                }
+                timestep_id_list_option = Some(timestep_id_list);
             } else {
-                self.pid_idx_current_agent_id_list[pid_idx] = Some(next_agent_id_list);
-                self.pid_idx_prev_timestep_id_list[pid_idx] = timestep_id_list;
-                self.pid_idx_current_obs_list[pid_idx] = next_obs_list;
+                timestep_id_list_option = None;
+                timestep_list = Vec::new();
             }
 
+            let terminated_dict_option;
+            let truncated_dict_option;
+            if new_episode {
+                terminated_dict_option = None;
+                truncated_dict_option = None;
+            } else {
+                let mut terminated_kv_list = Vec::with_capacity(n_agents);
+                let mut truncated_kv_list = Vec::with_capacity(n_agents);
+                for (agent_id, terminated, truncated) in izip!(
+                    &agent_id_list,
+                    terminated_list_option.unwrap(),
+                    truncated_list_option.unwrap()
+                ) {
+                    terminated_kv_list.push((agent_id.clone_ref(py), terminated));
+                    truncated_kv_list.push((agent_id.clone_ref(py), truncated));
+                }
+                terminated_dict_option =
+                    Some(PyDict::from_sequence(&terminated_kv_list.into_pyobject(py)?)?.unbind());
+                truncated_dict_option =
+                    Some(PyDict::from_sequence(&truncated_kv_list.into_pyobject(py)?)?.unbind());
+            }
+
+            // Set prev_timestep_id_list for proc
+            let prev_timestep_id_list = &mut self.pid_idx_prev_timestep_id_list[pid_idx];
+            if is_step_action {
+                prev_timestep_id_list.clear();
+                prev_timestep_id_list.append(&mut timestep_id_list_option.unwrap());
+            } else if let EnvAction::SET_STATE {
+                prev_timestep_id_dict_option: Some(prev_timestep_id_dict),
+                ..
+            } = env_action
+            {
+                let prev_timestep_id_dict = prev_timestep_id_dict.downcast_bound::<PyDict>(py)?;
+                prev_timestep_id_list.clear();
+                for agent_id in agent_id_list.iter() {
+                    let agent_id = agent_id.bind(py);
+                    prev_timestep_id_list.push(
+                        prev_timestep_id_dict
+                            .get_item(agent_id)?
+                            .map_or(Ok(None), |prev_timestep_id| {
+                                prev_timestep_id.extract::<Option<u128>>()
+                            })?,
+                    );
+                }
+            } else {
+                prev_timestep_id_list.clear();
+                prev_timestep_id_list.append(&mut vec![None; n_agents]);
+            }
+            self.pid_idx_current_agent_id_list[pid_idx] = Some(clone_list(py, &agent_id_list));
+            self.pid_idx_current_obs_list[pid_idx] = clone_list(py, &obs_list);
             self.agent_id_pyany_serde_option = agent_id_pyany_serde_option;
             self.obs_pyany_serde_option = obs_pyany_serde_option;
             self.reward_pyany_serde_option = reward_pyany_serde_option;
 
+            let py_proc_id = proc_id.into_py_any(py)?;
+            let obs_data_kv = (py_proc_id.clone_ref(py), (agent_id_list, obs_list));
+            let timestep_data_kv = (
+                py_proc_id.clone_ref(py),
+                (
+                    timestep_list,
+                    metrics_option,
+                    state_option.as_ref().map(|state| state.clone_ref(py)),
+                ),
+            );
+            let state_info_kv = (
+                py_proc_id,
+                (state_option, terminated_dict_option, truncated_dict_option),
+            );
+
             // println!("Exiting collect_response");
-            Ok((timestep_list, metrics_option))
+            Ok((obs_data_kv, timestep_data_kv, state_info_kv))
         })
     }
 
-    fn send_actions(
-        &mut self,
-        action_list: Vec<PyObject>,
-        log_prob_tensor: PyObject,
-    ) -> PyResult<()> {
+    fn send_env_actions(&mut self, env_actions: HashMap<String, EnvAction>) -> PyResult<()> {
         // println!("EPI: Entering send_actions");
-        Python::with_gil::<_, PyResult<()>>(|py| {
+        Python::with_gil(|py| {
             let action_type_serde_option = self
                 .action_type_serde_option
                 .as_mut()
                 .map(|py_object| py_object.bind(py));
+            let state_type_serde_option = self
+                .state_type_serde_option
+                .as_mut()
+                .map(|py_object| py_object.bind(py));
 
             let mut action_pyany_serde_option = self.action_pyany_serde_option.take();
+            let mut state_pyany_serde_option = self.state_pyany_serde_option.take();
 
-            let mut action_iter = action_list.iter().enumerate();
-            for pid_idx in self.pid_idx_requesting_action_list.drain(..) {
-                let n_agents = self.pid_idx_current_obs_list.get(pid_idx).unwrap().len();
-                let current_action_list =
-                    self.pid_idx_current_action_list.get_mut(pid_idx).unwrap();
-                let current_log_prob_list =
-                    self.pid_idx_current_log_prob_list.get_mut(pid_idx).unwrap();
-
-                let (_, shmem) = self.proc_packages.get_mut(pid_idx).unwrap();
+            for (proc_id, env_action) in env_actions.into_iter() {
+                let &pid_idx = self.proc_id_pid_idx_map.get(&proc_id).unwrap();
+                let (_, shmem, _) = self.proc_packages.get_mut(pid_idx).unwrap();
                 let (ep_evt, evt_used_bytes) = unsafe {
                     Event::from_existing(shmem.as_ptr()).map_err(|err| {
                         InvalidStateError::new_err(format!(
@@ -833,31 +943,44 @@ impl EnvProcessInterface {
                 };
                 let shm_slice = unsafe { &mut shmem.as_slice_mut()[evt_used_bytes..] };
 
-                current_action_list.clear();
-                current_log_prob_list.clear();
-
-                let mut offset = append_header(shm_slice, 0, Header::PolicyActions);
-                for _ in 0..n_agents {
-                    let (idx, action) = action_iter.next().unwrap();
-                    current_action_list.push(action.clone_ref(py));
-                    current_log_prob_list.push(log_prob_tensor.bind(py).get_item(idx)?.unbind());
-
-                    offset = append_python_update_serde!(
-                        shm_slice,
-                        offset,
-                        action.bind(py),
-                        &action_type_serde_option,
-                        action_pyany_serde_option
+                if let EnvAction::STEP {
+                    ref action_list,
+                    ref log_probs,
+                } = env_action
+                {
+                    let current_action_list = &mut self.pid_idx_current_action_list[pid_idx];
+                    current_action_list.clear();
+                    current_action_list.append(
+                        &mut action_list
+                            .bind(py)
+                            .iter()
+                            .map(|action| action.unbind())
+                            .collect_vec(),
                     );
+                    self.pid_idx_current_log_probs_list[pid_idx] = Some(log_probs.clone_ref(py));
+                } else {
+                    self.pid_idx_current_log_probs_list[pid_idx] = None;
                 }
+
+                let offset = append_header(shm_slice, 0, Header::EnvAction);
+                _ = append_env_action_update_serdes!(
+                    py,
+                    shm_slice,
+                    offset,
+                    &env_action,
+                    &action_type_serde_option,
+                    action_pyany_serde_option,
+                    &state_type_serde_option,
+                    state_pyany_serde_option
+                );
 
                 ep_evt
                     .set(EventState::Signaled)
                     .map_err(|err| InvalidStateError::new_err(err.to_string()))?;
+                self.pid_idx_current_env_action_list[pid_idx] = Some(env_action);
             }
-
             self.action_pyany_serde_option = action_pyany_serde_option;
-            // println!("EPI: Exiting send_actions");
+            self.state_pyany_serde_option = state_pyany_serde_option;
             Ok(())
         })
     }

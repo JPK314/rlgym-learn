@@ -15,10 +15,12 @@ from rlgym.api import (
     ObsSpaceType,
     ObsType,
     RewardType,
+    StateType,
 )
 from torch import device as _device
 
 import wandb
+from rlgym_learn.agent import RESET_RESPONSE, STEP_RESPONSE
 from rlgym_learn.api import (
     AgentController,
     DerivedMetricsLoggerConfig,
@@ -82,6 +84,7 @@ class PPOAgentControllerData(Generic[TrajectoryProcessorData]):
     timestep_collection_time: float
 
 
+# TODO: the experience buffer should be passed to init and then get loaded based on config like everything else
 class PPOAgentController(
     AgentController[
         PPOAgentControllerConfigModel,
@@ -89,6 +92,7 @@ class PPOAgentController(
         ObsType,
         ActionType,
         RewardType,
+        StateType,
         ObsSpaceType,
         ActionSpaceType,
         StateMetrics,
@@ -118,6 +122,9 @@ class PPOAgentController(
             ]
         ] = None,
         obs_standardizer: Optional[ObsStandardizer] = None,
+        agent_choice_fn: Callable[
+            [List[AgentID]], List[int]
+        ] = lambda agent_id_list: list(range(len(agent_id_list))),
     ):
         self.learner = PPOLearner(actor_factory, critic_factory)
         self.experience_buffer = ExperienceBuffer(trajectory_processor_factory)
@@ -131,6 +138,7 @@ class PPOAgentController(
             print(
                 "Warning: using an obs standardizer is slow! It is recommended to design your obs to be standardized (i.e. have approximately mean 0 and std 1 for each value) without needing this extra post-processing step."
             )
+        self.agent_choice_fn = agent_choice_fn
 
         self.current_trajectories_by_latest_timestep_id: Dict[
             int,
@@ -419,7 +427,7 @@ class PPOAgentController(
         )
 
     def choose_agents(self, agent_id_list):
-        return list(range(len(agent_id_list)))
+        return self.agent_choice_fn(agent_id_list)
 
     @torch.no_grad
     def get_actions(self, agent_id_list, obs_list):
@@ -444,11 +452,12 @@ class PPOAgentController(
             else:
                 timesteps[obs_idx // 2].next_obs = obs
 
-    def process_timestep_data(
-        self,
-        timesteps: List[Timestep[AgentID, ObsType, ActionType, RewardType]],
-        state_metrics: List[StateMetrics],
-    ):
+    def process_timestep_data(self, timestep_data):
+        timesteps: List[Timestep] = []
+        state_metrics: List[StateMetrics] = []
+        for env_timesteps, env_state_metrics, _ in timestep_data.values():
+            timesteps += env_timesteps
+            state_metrics.append(env_state_metrics)
         if self.obs_standardizer is not None:
             self.standardize_timestep_observations(timesteps)
 
@@ -467,6 +476,7 @@ class PPOAgentController(
                 timesteps_added += self.current_trajectories_by_latest_timestep_id[
                     timestep.timestep_id
                 ].add_timestep(timestep)
+
             else:
                 trajectory = Trajectory(timestep.agent_id)
                 trajectory.add_timestep(timestep)
@@ -484,6 +494,22 @@ class PPOAgentController(
             self._learn()
         if self.ts_since_last_save >= self.config.agent_controller_config.save_every_ts:
             self.save_checkpoint()
+
+    def choose_env_actions(self, state_info):
+        env_action_responses = {}
+        for env_id, (_, terminated_dict, truncated_dict) in state_info.items():
+            done = True
+            if terminated_dict is None or truncated_dict is None:
+                # Episode just started
+                done = False
+            else:
+                for agent_id, terminated in terminated_dict.items():
+                    done &= terminated or truncated_dict[agent_id]
+            if done:
+                env_action_responses[env_id] = RESET_RESPONSE
+            else:
+                env_action_responses[env_id] = STEP_RESPONSE
+        return env_action_responses
 
     def _learn(self):
         trajectories = list(self.current_trajectories_by_latest_timestep_id.values())

@@ -25,6 +25,7 @@ class BaseConfigModel(BaseModel):
     shm_buffer_size: int = 8192
     flinks_folder: str = "shmem_flinks"
     timestep_limit: int = 5_000_000_000
+    send_state_to_agent_controllers: bool = False
 
 
 class WandbConfigModel(BaseModel):

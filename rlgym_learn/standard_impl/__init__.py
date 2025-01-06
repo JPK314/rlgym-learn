@@ -13,4 +13,8 @@ from .serdes import (
     NumpyStaticShapeSerde,
     StrIntTupleSerde,
     StrSerde,
+    car_serde,
+    game_config_serde,
+    game_state_serde,
+    physics_object_serde,
 )
