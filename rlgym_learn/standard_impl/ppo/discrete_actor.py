@@ -57,7 +57,9 @@ class DiscreteFF(Actor[AgentID, np.ndarray, np.ndarray]):
         action = torch.multinomial(probs, 1, True)
         log_prob: torch.Tensor = torch.log(probs).gather(-1, action)
 
-        return action.cpu().numpy(), log_prob.cpu().squeeze()
+        return action.cpu().numpy(), log_prob.squeeze().to(
+            device="cpu", non_blocking=True
+        )
 
     def get_backprop_data(self, agent_id_list, obs_list, acts, **kwargs):
         probs = self.get_output(obs_list)

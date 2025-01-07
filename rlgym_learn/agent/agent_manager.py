@@ -1,5 +1,5 @@
 import os
-from typing import Any, Dict, Generic, Iterable, List, Tuple
+from typing import Any, Dict, Generic, Iterable, List, Optional, Tuple
 
 import numpy as np
 from rlgym.api import (
@@ -9,9 +9,11 @@ from rlgym.api import (
     ObsSpaceType,
     ObsType,
     RewardType,
+    StateType,
 )
 from rlgym_learn_backend import AgentManager as RustAgentManager
-from torch import Tensor, as_tensor, int64, stack
+from rlgym_learn_backend import EnvAction
+from torch import Tensor, as_tensor
 
 from rlgym_learn.api import AgentController, DerivedAgentControllerConfig, StateMetrics
 from rlgym_learn.experience import Timestep
@@ -25,6 +27,7 @@ class AgentManager(
         ObsType,
         ActionType,
         RewardType,
+        StateType,
         ObsSpaceType,
         ActionSpaceType,
         StateMetrics,
@@ -40,6 +43,7 @@ class AgentManager(
                 ObsType,
                 ActionType,
                 RewardType,
+                StateType,
                 ObsSpaceType,
                 ActionSpaceType,
                 StateMetrics,
@@ -55,27 +59,40 @@ class AgentManager(
             self.n_agent_controllers > 0
         ), "There must be at least one agent controller!"
 
-    def get_actions(
-        self, agent_id_list: List[AgentID], obs_list: List[ObsType]
-    ) -> Tuple[Iterable[ActionType], Tensor]:
-        """
-        Function to get an action and the log of its probability from the policy given an observation.
-        :param agent_id_list: List of AgentIDs for which to produce actions, parallel with obs_list. AgentIDs may not be unique here.
-        :param obs_list: List of ObsTypes for which to produce actions. Parallel with agent_id_list.
-        :return: Tuple of a list of chosen actions and Tensor, with the action list and the first dimension of the tensor parallel with obs_list.
-        """
-        (action_list, log_probs) = self.rust_agent_manager.get_actions(
-            agent_id_list, obs_list
-        )
-        if isinstance(log_probs, List):
-            log_probs = as_tensor(log_probs)
-        return action_list, log_probs.to(device="cpu")
-
     def process_timestep_data(
-        self, timesteps: List[Timestep], state_metrics: List[StateMetrics]
+        self,
+        timestep_data: Dict[
+            str,
+            Tuple[
+                List[Timestep],
+                Optional[Tensor],
+                Optional[StateMetrics],
+                Optional[StateType],
+            ],
+        ],
     ):
         for agent_controller in self.agent_controllers_list:
-            agent_controller.process_timestep_data(timesteps, state_metrics)
+            agent_controller.process_timestep_data(timestep_data)
+
+    def get_env_actions(
+        self,
+        env_obs_data_dict: Dict[str, Tuple[List[AgentID], List[ObsType]]],
+        state_info: Dict[
+            str,
+            Tuple[
+                Optional[StateType],
+                Optional[Dict[AgentID, bool]],
+                Optional[Dict[AgentID, bool]],
+            ],
+        ],
+    ) -> Dict[str, EnvAction]:
+        """
+        Function to get env actions from the agent controllers.
+        :param env_obs_data_dict: Dictionary with environment ids as keys and parallel lists of Agent IDs and observations, to be used to get actions if the env action chosen is "step".
+        :param state_info: Dictionary with environment ids as keys and state information as values, to be passed to agent controllers to decide the env action.
+        :return: Dictionary with environment ids as keys and EnvAction instances as values
+        """
+        return self.rust_agent_manager.get_env_actions(env_obs_data_dict, state_info)
 
     def set_space_types(self, obs_space: ObsSpaceType, action_space: ActionSpaceType):
         for agent_controller in self.agent_controllers_list:

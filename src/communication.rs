@@ -14,7 +14,7 @@ use crate::serdes::serde_enum::retrieve_serde;
 #[derive(Debug, PartialEq)]
 pub enum Header {
     EnvShapesRequest,
-    PolicyActions,
+    EnvAction,
     Stop,
 }
 
@@ -22,7 +22,7 @@ impl Display for Header {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
             Self::EnvShapesRequest => write!(f, "EnvShapesRequest"),
-            Self::PolicyActions => write!(f, "PolicyActions"),
+            Self::EnvAction => write!(f, "EnvAction"),
             Self::Stop => write!(f, "Stop"),
         }
     }
@@ -35,7 +35,7 @@ pub fn get_flink(flinks_folder: &str, proc_id: &str) -> String {
 pub fn append_header(buf: &mut [u8], offset: usize, header: Header) -> usize {
     buf[offset] = match header {
         Header::EnvShapesRequest => 0,
-        Header::PolicyActions => 1,
+        Header::EnvAction => 1,
         Header::Stop => 2,
     };
     offset + 1
@@ -44,7 +44,7 @@ pub fn append_header(buf: &mut [u8], offset: usize, header: Header) -> usize {
 pub fn retrieve_header(slice: &[u8], offset: usize) -> PyResult<(Header, usize)> {
     let header = match slice[offset] {
         0 => Ok(Header::EnvShapesRequest),
-        1 => Ok(Header::PolicyActions),
+        1 => Ok(Header::EnvAction),
         2 => Ok(Header::Stop),
         v => Err(InvalidStateError::new_err(format!(
             "tried to retrieve header from shared_memory but got value {}",
@@ -74,6 +74,8 @@ macro_rules! define_primitive_communication {
 define_primitive_communication!(usize);
 define_primitive_communication!(c_double);
 define_primitive_communication!(i64);
+define_primitive_communication!(u64);
+define_primitive_communication!(f32);
 define_primitive_communication!(f64);
 
 pub fn append_bool(buf: &mut [u8], offset: usize, val: bool) -> usize {
@@ -94,6 +96,67 @@ pub fn retrieve_bool(slice: &[u8], offset: usize) -> PyResult<(bool, usize)> {
         ))),
     }?;
     Ok((val, end))
+}
+
+#[macro_export]
+macro_rules! append_n_vec_elements {
+    ($buf: ident, $offset: expr, $vec: ident, $n: expr) => {{
+        let mut offset = $offset;
+        for idx in 0..$n {
+            offset = crate::communication::append_f32($buf, offset, $vec[idx]);
+        }
+        offset
+    }};
+}
+
+#[macro_export]
+macro_rules! retrieve_n_vec_elements {
+    ($buf: ident, $offset: expr, $n: expr) => {{
+        let mut offset = $offset;
+        let mut val;
+        let mut vec = Vec::with_capacity($n);
+        for _ in 0..$n {
+            (val, offset) = crate::communication::retrieve_f32($buf, offset).unwrap();
+            vec.push(val);
+        }
+        (vec, offset)
+    }};
+}
+
+#[macro_export]
+macro_rules! append_n_vec_elements_option {
+    ($buf: ident, $offset: expr, $vec_option: ident, $n: expr) => {{
+        let mut offset = $offset;
+        if let Some(vec) = $vec_option {
+            offset = crate::communication::append_bool($buf, offset, true);
+            for idx in 0..$n {
+                offset = crate::communication::append_f32($buf, offset, vec[idx]);
+            }
+        } else {
+            offset = crate::communication::append_bool($buf, offset, false)
+        }
+        offset
+    }};
+}
+
+#[macro_export]
+macro_rules! retrieve_n_vec_elements_option {
+    ($buf: ident, $offset: expr, $n: expr) => {{
+        let mut offset = $offset;
+        let is_some;
+        (is_some, offset) = crate::communication::retrieve_bool($buf, offset).unwrap();
+        if is_some {
+            let mut val;
+            let mut vec = Vec::with_capacity($n);
+            for _ in 0..$n {
+                (val, offset) = crate::communication::retrieve_f32($buf, offset).unwrap();
+                vec.push(val);
+            }
+            (Some(vec), offset)
+        } else {
+            (None, offset)
+        }
+    }};
 }
 
 pub fn insert_bytes(buf: &mut [u8], offset: usize, bytes: &[u8]) -> PyResult<usize> {
@@ -121,15 +184,39 @@ pub fn retrieve_bytes(slice: &[u8], offset: usize) -> PyResult<(&[u8], usize)> {
 #[macro_export]
 macro_rules! append_python_update_serde {
     ($buf: expr, $offset: expr, $obj: expr, $type_serde_option: expr, $pyany_serde_option: ident) => {{
-        let (offset, new_pyany_serde_option) = append_python(
+        let (offset, new_pyany_serde_option) = crate::communication::append_python(
             $buf,
             $offset,
             $obj,
             $type_serde_option,
-            &$pyany_serde_option,
+            &mut $pyany_serde_option,
         )?;
         if new_pyany_serde_option.is_some() {
             $pyany_serde_option = new_pyany_serde_option;
+        }
+        offset
+    }};
+}
+
+#[macro_export]
+macro_rules! append_python_option_update_serde {
+    ($buf: expr, $offset: expr, $obj_option: expr, $type_serde_option: expr, $pyany_serde_option: ident) => {{
+        let mut offset = $offset;
+        if let Some(obj) = $obj_option {
+            offset = crate::communication::append_bool($buf, offset, true);
+            let new_pyany_serde_option;
+            (offset, new_pyany_serde_option) = crate::communication::append_python(
+                $buf,
+                offset,
+                obj,
+                $type_serde_option,
+                &mut $pyany_serde_option,
+            )?;
+            if new_pyany_serde_option.is_some() {
+                $pyany_serde_option = new_pyany_serde_option;
+            }
+        } else {
+            offset = crate::communication::append_bool($buf, offset, false);
         }
         offset
     }};
@@ -140,7 +227,7 @@ pub fn append_python<'py>(
     offset: usize,
     obj: &Bound<'py, PyAny>,
     type_serde_option: &Option<&Bound<'py, PyAny>>,
-    pyany_serde_option: &Option<Box<dyn PyAnySerde>>,
+    pyany_serde_option: &mut Option<Box<dyn PyAnySerde>>,
 ) -> PyResult<(usize, Option<Box<dyn PyAnySerde>>)> {
     if let Some(type_serde) = type_serde_option {
         // println!("Entering append via typeserde flow");
@@ -167,7 +254,7 @@ pub fn append_python<'py>(
             buf[new_offset..end].copy_from_slice(&serde_enum_bytes[..]);
             new_offset = pyany_serde.append(buf, end, &obj)?;
         } else {
-            let new_pyany_serde = detect_pyany_serde(&obj)?;
+            let mut new_pyany_serde = detect_pyany_serde(&obj)?;
             serde_enum_bytes = new_pyany_serde.get_enum_bytes();
             let end = new_offset + serde_enum_bytes.len();
             buf[new_offset..end].copy_from_slice(&serde_enum_bytes[..]);
@@ -181,13 +268,42 @@ pub fn append_python<'py>(
 
 #[macro_export]
 macro_rules! retrieve_python_update_serde {
-    ($py: expr, $buf: expr, $offset: ident, $type_serde_option: expr, $pyany_serde_option: ident) => {{
-        let (obj, offset, new_pyany_serde_option) =
-            retrieve_python($py, $buf, $offset, $type_serde_option, &$pyany_serde_option)?;
+    ($py: ident, $buf: expr, $offset: ident, $type_serde_option: expr, $pyany_serde_option: ident) => {{
+        let (obj, offset, new_pyany_serde_option) = crate::communication::retrieve_python(
+            $py,
+            $buf,
+            $offset,
+            $type_serde_option,
+            &mut $pyany_serde_option,
+        )?;
         if new_pyany_serde_option.is_some() {
             $pyany_serde_option = new_pyany_serde_option;
         }
         (obj, offset)
+    }};
+}
+
+#[macro_export]
+macro_rules! retrieve_python_option_update_serde {
+    ($py: ident, $buf: expr, $offset: ident, $type_serde_option: expr, $pyany_serde_option: ident) => {{
+        let mut offset = $offset;
+        let is_some;
+        (is_some, offset) = crate::communication::retrieve_bool($buf, offset)?;
+        if is_some {
+            let (obj, offset, new_pyany_serde_option) = crate::communication::retrieve_python(
+                $py,
+                $buf,
+                $offset,
+                $type_serde_option,
+                &mut $pyany_serde_option,
+            )?;
+            if new_pyany_serde_option.is_some() {
+                $pyany_serde_option = new_pyany_serde_option;
+            }
+            (Some(obj), offset)
+        } else {
+            (None, offset)
+        }
     }};
 }
 
@@ -196,7 +312,7 @@ pub fn retrieve_python<'py>(
     buf: &[u8],
     offset: usize,
     type_serde_option: &Option<&Bound<'py, PyAny>>,
-    pyany_serde_option: &Option<Box<dyn PyAnySerde>>,
+    pyany_serde_option: &mut Option<Box<dyn PyAnySerde>>,
 ) -> PyResult<(Bound<'py, PyAny>, usize, Option<Box<dyn PyAnySerde>>)> {
     let (is_type_serde, mut new_offset) = retrieve_bool(buf, offset)?;
     if is_type_serde {
@@ -226,7 +342,7 @@ pub fn retrieve_python<'py>(
                 let serde;
                 (serde, new_offset) = retrieve_serde(buf, new_offset)?;
                 // println!("Retrieved serde: {:?}", serde);
-                let new_pyany_serde = get_pyany_serde(serde)?;
+                let mut new_pyany_serde = get_pyany_serde(serde)?;
                 let obj;
                 (obj, new_offset) = new_pyany_serde.retrieve(py, buf, new_offset)?;
                 (Some(new_pyany_serde), obj)

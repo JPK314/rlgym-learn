@@ -62,7 +62,6 @@ class GAETrajectoryProcessor(
 
     def process_trajectories(self, trajectories):
         return_std = self.return_stats.std[0] if self.standardize_returns else 1
-
         result: Tuple[
             List[AgentID],
             List[ObsType],

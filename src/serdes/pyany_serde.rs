@@ -1,5 +1,6 @@
 use dyn_clone::{clone_trait_object, DynClone};
 use numpy::PyArrayDescr;
+use pyo3::exceptions::asyncio::InvalidStateError;
 use pyo3::types::{PyDict, PyTuple};
 use pyo3::Bound;
 use pyo3::{prelude::*, pyclass};
@@ -33,7 +34,7 @@ impl DynPyAnySerde {
         DynPyAnySerde(None)
     }
     fn __getstate__(&self) -> Vec<u8> {
-        self.0.as_ref().unwrap().get_enum_bytes().clone()
+        self.0.as_ref().unwrap().get_enum_bytes().to_vec()
     }
     fn __setstate__(&mut self, state: Vec<u8>) -> PyResult<()> {
         // println!("Setting state: {:?}", state);
@@ -61,13 +62,18 @@ impl PyAnySerdeFactory {
         DynPyAnySerde(Some(Box::new(ComplexSerde::new())))
     }
     #[staticmethod]
+    #[pyo3(signature = (key_type_serde_option, key_dyn_serde_option, value_type_serde_option, value_dyn_serde_option))]
     pub fn dict_serde(
-        dyn_key_serde: &DynPyAnySerde,
-        dyn_value_serde: &DynPyAnySerde,
+        key_type_serde_option: Option<PyObject>,
+        key_dyn_serde_option: Option<DynPyAnySerde>,
+        value_type_serde_option: Option<PyObject>,
+        value_dyn_serde_option: Option<DynPyAnySerde>,
     ) -> DynPyAnySerde {
         DynPyAnySerde(Some(Box::new(DictSerde::new(
-            dyn_key_serde.0.as_ref().unwrap().clone(),
-            dyn_value_serde.0.as_ref().unwrap().clone(),
+            key_type_serde_option,
+            key_dyn_serde_option.map(|dyn_serde| dyn_serde.0.as_ref().unwrap().clone()),
+            value_type_serde_option,
+            value_dyn_serde_option.map(|dyn_serde| dyn_serde.0.as_ref().unwrap().clone()),
         ))))
     }
     #[staticmethod]
@@ -121,20 +127,20 @@ impl PyAnySerdeFactory {
 
 pub trait PyAnySerde: DynClone + Send + Sync {
     fn append<'py>(
-        &self,
+        &mut self,
         buf: &mut [u8],
         offset: usize,
         obj: &Bound<'py, PyAny>,
     ) -> PyResult<usize>;
     fn retrieve<'py>(
-        &self,
+        &mut self,
         py: Python<'py>,
         buf: &[u8],
         offset: usize,
     ) -> PyResult<(Bound<'py, PyAny>, usize)>;
     fn align_of(&self) -> usize;
     fn get_enum(&self) -> &Serde;
-    fn get_enum_bytes(&self) -> &Vec<u8>;
+    fn get_enum_bytes(&self) -> &[u8];
 }
 
 clone_trait_object!(PyAnySerde);
@@ -171,8 +177,10 @@ pub fn detect_pyany_serde<'py>(v: &Bound<'py, PyAny>) -> PyResult<Box<dyn PyAnyS
             let keys = v.downcast::<PyDict>()?.keys().get_item(0)?;
             let values = v.downcast::<PyDict>()?.values().get_item(0)?;
             Ok(Box::new(DictSerde::new(
-                detect_pyany_serde(&keys)?,
-                detect_pyany_serde(&values)?,
+                None,
+                Some(detect_pyany_serde(&keys)?),
+                None,
+                Some(detect_pyany_serde(&values)?),
             )))
         }
         PythonType::OTHER => Ok(Box::new(PickleSerde::new()?)),
@@ -199,8 +207,11 @@ pub fn get_pyany_serde(serde: Serde) -> PyResult<Box<dyn PyAnySerde>> {
                 .collect::<PyResult<Vec<Box<dyn PyAnySerde>>>>()?,
         ))),
         Serde::DICT { keys, values } => Ok(Box::new(DictSerde::new(
-            get_pyany_serde(*keys)?,
-            get_pyany_serde(*values)?,
+            None,
+            Some(get_pyany_serde(*keys)?),
+            None,
+            Some(get_pyany_serde(*values)?),
         ))),
+        Serde::OTHER => Err(InvalidStateError::new_err("Tried to deserialize an OTHER type of Serde which cannot be dynamically determined / reconstructed. Ensure the RustSerde used is passed to both the EPI and EP explicitly."))
     }
 }

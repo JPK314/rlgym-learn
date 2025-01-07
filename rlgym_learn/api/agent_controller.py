@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Any, Generic, Iterable, List, Tuple
+from typing import Any, Dict, Generic, Iterable, List, Optional, Tuple
 
 from rlgym.api import (
     ActionSpaceType,
@@ -8,7 +8,9 @@ from rlgym.api import (
     ObsSpaceType,
     ObsType,
     RewardType,
+    StateType,
 )
+from rlgym_learn_backend import EnvActionResponse
 from torch import Tensor, as_tensor, device
 
 from rlgym_learn.experience import Timestep
@@ -33,6 +35,7 @@ class AgentController(
         ObsType,
         ActionType,
         RewardType,
+        StateType,
         ObsSpaceType,
         ActionSpaceType,
         StateMetrics,
@@ -47,7 +50,8 @@ class AgentController(
         Function to determine which agent ids (and their associated observations) this agent controller
         will return the actions (and their associated log probs) for.
         :param agent_id_list: List of AgentIDs available to decide actions for
-        :return: list of indices from the agent_id_list which will be used to call get_actions.
+        :return: list of indices from the agent_id_list which will be used to call get_actions for this agent_controller. If the last agent controller fails to select all agent ids,
+        meaning none of the agent controllers chose at least one agent id, an exception is thrown.
         """
         return []
 
@@ -65,14 +69,47 @@ class AgentController(
         return ([], as_tensor([]))
 
     def process_timestep_data(
-        self, timesteps: List[Timestep], state_metrics: List[StateMetrics]
+        self,
+        timestep_data: Dict[
+            str,
+            Tuple[
+                List[Timestep],
+                Optional[Tensor],
+                Optional[StateMetrics],
+                Optional[StateType],
+            ],
+        ],
     ):
         """
         Function to handle processing of timesteps.
-        :param timesteps: list of Timestep instances
-        :param state_metrics: list of state metrics
+        :param timestep_data: Dictionary with environment ids as keys and tuples of
+        timesteps from the environment (the order of agent ids in this list is fixed until a reset or set_state env action is taken)
+        log probs for the timesteps from the environment (parallel to the timestep list, and None if no timesteps exist for the environment),
+        StateMetrics for the state (if calculated in the env process),
+        and the state (if send_state_to_agent_controllers is true in BaseConfig)
         """
         pass
+
+    def choose_env_actions(
+        self,
+        state_info: Dict[
+            str,
+            Tuple[
+                Optional[StateType],
+                Optional[Dict[AgentID, bool]],
+                Optional[Dict[AgentID, bool]],
+            ],
+        ],
+    ) -> Dict[str, Optional[EnvActionResponse]]:
+        """
+        Function to choose EnvActionResponse per environment based on environment information. Called after process_timestep_data.
+        :param state_info: Dictionary with environment ids as keys and tuples of StateType (if send_state_to_agent_controllers is true in BaseConfig), the present terminated dict for the env (None if env was just reset), and the present truncated dict for the env (None if env was just reset).
+        :return: Dictionary with environment ids as keys and EnvActionResponse as values. If STEP_RESPONSE is sent for an environment (and the agent manager agrees to use step as the env action for that environment),
+        then choose_agents and get_actions will be called asking for the actions for the agents in those environments.
+        If None is used as a value in the returned dict, or an environment id key from the state_info dict is not present in the returned dict, the agent manager will ask the other agent controllers for the env action for that environment.
+        If all agent controllers have been asked and an environment id is without an env action, an exception is thrown.
+        """
+        return {}
 
     def set_space_types(self, obs_space: ObsSpaceType, action_space: ActionSpaceType):
         pass

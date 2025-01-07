@@ -38,28 +38,28 @@ impl TupleSerde {
 
 impl PyAnySerde for TupleSerde {
     fn append<'py>(
-        &self,
+        &mut self,
         buf: &mut [u8],
         offset: usize,
         obj: &Bound<'py, PyAny>,
     ) -> PyResult<usize> {
         let tuple = obj.downcast::<PyTuple>()?;
         let mut new_offset = offset;
-        for (item_serde, item) in zip(self.item_serdes.iter(), tuple.iter()) {
+        for (item_serde, item) in zip(self.item_serdes.iter_mut(), tuple.iter()) {
             new_offset = item_serde.append(buf, new_offset, &item)?;
         }
         Ok(new_offset)
     }
 
     fn retrieve<'py>(
-        &self,
+        &mut self,
         py: Python<'py>,
         buf: &[u8],
         offset: usize,
     ) -> PyResult<(Bound<'py, PyAny>, usize)> {
         let mut tuple_vec = Vec::with_capacity(self.item_serdes.len());
         let mut new_offset = offset;
-        for item_serde in self.item_serdes.iter() {
+        for item_serde in self.item_serdes.iter_mut() {
             let item;
             (item, new_offset) = item_serde.retrieve(py, buf, new_offset)?;
             tuple_vec.push(item);
@@ -75,7 +75,7 @@ impl PyAnySerde for TupleSerde {
         &self.serde_enum
     }
 
-    fn get_enum_bytes(&self) -> &Vec<u8> {
+    fn get_enum_bytes(&self) -> &[u8] {
         &self.serde_enum_bytes
     }
 }

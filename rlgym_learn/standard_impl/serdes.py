@@ -3,8 +3,9 @@ from typing import Generic, Iterable, List, Tuple, Type, TypeVar, Union
 
 import numpy as np
 from rlgym.api import RewardType
+from rlgym_learn_backend import RocketLeaguePyAnySerdeFactory
 
-from rlgym_learn.api import TypeSerde
+from rlgym_learn.api import RustSerde, TypeSerde
 
 FLOAT_SIZE = struct.calcsize("f")
 INTEGER_SIZE = struct.calcsize("I")
@@ -209,3 +210,34 @@ class HomogeneousTupleSerde(Generic[T], TypeSerde[Tuple[T, ...]]):
             start = stop
 
         return tuple(obj)
+
+
+# If you can, you should use these Rust-native serdes. They will be faster than the Python TypeSerde abstraction.
+def game_config_serde() -> RustSerde:
+    return RocketLeaguePyAnySerdeFactory.game_config_serde()
+
+
+def physics_object_serde() -> RustSerde:
+    return RocketLeaguePyAnySerdeFactory.physics_object_serde()
+
+
+def car_serde(
+    agent_id_serde: Union[TypeSerde, RustSerde],
+) -> RustSerde:
+    agent_id_type_serde = None
+    if isinstance(agent_id_serde, TypeSerde):
+        agent_id_type_serde = agent_id_serde
+        agent_id_serde = None
+    return RocketLeaguePyAnySerdeFactory.car_serde(agent_id_type_serde, agent_id_serde)
+
+
+def game_state_serde(
+    agent_id_serde: Union[TypeSerde, RustSerde],
+) -> RustSerde:
+    agent_id_type_serde = None
+    if isinstance(agent_id_serde, TypeSerde):
+        agent_id_type_serde = agent_id_serde
+        agent_id_serde = None
+    return RocketLeaguePyAnySerdeFactory.game_state_serde(
+        agent_id_type_serde, agent_id_serde
+    )

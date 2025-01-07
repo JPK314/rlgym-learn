@@ -4,7 +4,7 @@ use pyo3::{
     intern,
     sync::GILOnceCell,
     types::{PyAnyMethods, PyBytes},
-    Bound, IntoPyObjectExt, PyAny, PyObject, PyResult, Python,
+    Bound, IntoPyObjectExt, PyAny, PyErr, PyObject, PyResult, Python,
 };
 use which;
 
@@ -15,6 +15,7 @@ pub fn py_hash(v: &Bound<'_, PyAny>) -> PyResult<i64> {
 
 static INTERNED_INT_1: GILOnceCell<PyObject> = GILOnceCell::new();
 static INTERNED_BYTES_0: GILOnceCell<PyObject> = GILOnceCell::new();
+static INTERNED_AS_TENSOR: GILOnceCell<PyObject> = GILOnceCell::new();
 
 pub fn recvfrom_byte<'py>(py: Python<'py>, socket: &PyObject) -> PyResult<()> {
     socket.call_method1(
@@ -68,4 +69,26 @@ pub fn initialize_python() -> pyo3::PyResult<()> {
     // initialize PyO3.
     pyo3::prepare_freethreaded_python();
     Ok(())
+}
+
+pub fn clone_list<'py>(py: Python<'py>, list: &Vec<PyObject>) -> Vec<PyObject> {
+    list.iter().map(|obj| obj.clone_ref(py)).collect()
+}
+
+pub fn tensor_slice_1d<'py>(
+    py: Python<'py>,
+    tensor: &Bound<'py, PyAny>,
+    start: usize,
+    stop: usize,
+) -> PyResult<Bound<'py, PyAny>> {
+    Ok(tensor.call_method1(intern!(py, "narrow"), (0, start, stop - start))?)
+}
+
+pub fn as_tensor<'py>(py: Python<'py>, obj: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+    Ok(INTERNED_AS_TENSOR
+        .get_or_try_init::<_, PyErr>(py, || {
+            Ok(py.import("torch")?.getattr("as_tensor")?.unbind())
+        })?
+        .bind(py)
+        .call1((obj,))?)
 }

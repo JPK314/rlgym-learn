@@ -75,6 +75,7 @@ class LearningCoordinator(
                 ObsType,
                 ActionType,
                 RewardType,
+                StateType,
                 ObsSpaceType,
                 ActionSpaceType,
                 StateMetrics,
@@ -89,10 +90,10 @@ class LearningCoordinator(
         action_space_serde: Optional[
             Union[TypeSerde[ActionSpaceType], RustSerde]
         ] = None,
+        state_serde: Optional[Union[TypeSerde[StateType], RustSerde]] = None,
         state_metrics_serde: Optional[Union[TypeSerde[StateMetrics], RustSerde]] = None,
-        # TODO: add List[Tuple[AgentID, RewardType]] to collect_state_metrics_fn? Or can this be done in trajectory processor impl?
         collect_state_metrics_fn: Optional[
-            Callable[[StateType, Dict[AgentID, RewardType]], StateMetrics]
+            Callable[[StateType, Optional[Dict[AgentID, RewardType]]], StateMetrics]
         ] = None,
         config_location: str = None,
     ):
@@ -123,21 +124,26 @@ class LearningCoordinator(
             reward_serde,
             obs_space_serde,
             action_space_serde,
+            state_serde,
             state_metrics_serde,
             collect_state_metrics_fn,
             self.config.process_config.min_process_steps_per_inference,
+            self.config.base_config.send_state_to_agent_controllers,
             self.config.base_config.flinks_folder,
             self.config.base_config.shm_buffer_size,
             self.config.base_config.random_seed,
             self.config.process_config.recalculate_agent_id_every_step,
         )
-        self.initial_agent_id_list, self.initial_obs_list, obs_space, action_space = (
-            self.env_process_interface.init_processes(
-                n_processes=self.config.process_config.n_proc,
-                spawn_delay=self.config.process_config.instance_launch_delay,
-                render=self.config.process_config.render,
-                render_delay=self.config.process_config.render_delay,
-            )
+        (
+            self.initial_env_obs_data_dict,
+            self.initial_state_info,
+            obs_space,
+            action_space,
+        ) = self.env_process_interface.init_processes(
+            n_processes=self.config.process_config.n_proc,
+            spawn_delay=self.config.process_config.instance_launch_delay,
+            render=self.config.process_config.render,
+            render_delay=self.config.process_config.render_delay,
         )
         print("Loading agent controllers...")
         self.agent_manager.set_space_types(obs_space, action_space)
@@ -188,24 +194,23 @@ class LearningCoordinator(
         )
 
         # Handle actions for observations created on process init
-        actions, log_probs = self.agent_manager.get_actions(
-            self.initial_agent_id_list, self.initial_obs_list
+        env_actions = self.agent_manager.get_env_actions(
+            self.initial_env_obs_data_dict, self.initial_state_info
         )
-        self.env_process_interface.send_actions(actions, log_probs)
+        self.env_process_interface.send_env_actions(env_actions)
 
         # Collect the desired number of timesteps from our environments.
         loop_iterations = 0
         while self.cumulative_timesteps < self.config.base_config.timestep_limit:
-            agent_id_list, obs_list, timesteps, state_metrics = (
+            total_timesteps_collected, env_obs_data_dict, timestep_data, state_info = (
                 self.env_process_interface.collect_step_data()
             )
-            self.cumulative_timesteps += len(timesteps)
-            self.agent_manager.process_timestep_data(timesteps, state_metrics)
-            action_list, log_probs = self.agent_manager.get_actions(
-                agent_id_list, obs_list
-            )
+            self.cumulative_timesteps += total_timesteps_collected
+            self.agent_manager.process_timestep_data(timestep_data)
 
-            self.env_process_interface.send_actions(action_list, log_probs)
+            self.env_process_interface.send_env_actions(
+                self.agent_manager.get_env_actions(env_obs_data_dict, state_info)
+            )
             loop_iterations += 1
             if loop_iterations % 50 == 0:
                 self.process_kbhit(kb)

@@ -24,7 +24,7 @@ impl ComplexSerde {
 
 impl PyAnySerde for ComplexSerde {
     fn append<'py>(
-        &self,
+        &mut self,
         buf: &mut [u8],
         offset: usize,
         obj: &Bound<'py, PyAny>,
@@ -37,7 +37,7 @@ impl PyAnySerde for ComplexSerde {
     }
 
     fn retrieve<'py>(
-        &self,
+        &mut self,
         py: Python<'py>,
         buf: &[u8],
         offset: usize,
@@ -59,7 +59,7 @@ impl PyAnySerde for ComplexSerde {
         &self.serde_enum
     }
 
-    fn get_enum_bytes(&self) -> &Vec<u8> {
+    fn get_enum_bytes(&self) -> &[u8] {
         &self.serde_enum_bytes
     }
 }

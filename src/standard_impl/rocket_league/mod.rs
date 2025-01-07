@@ -1,5 +1,10 @@
+pub mod api_module;
 pub mod car;
+pub mod car_serde;
 pub mod game_config;
+pub mod game_config_serde;
 pub mod game_state;
-pub mod game_state_pyany_serde_impl;
+pub mod game_state_serde;
 pub mod physics_object;
+pub mod physics_object_serde;
+pub mod rocket_league_serde_factory;

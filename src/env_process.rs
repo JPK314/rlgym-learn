@@ -1,14 +1,14 @@
 use crate::common::misc::{py_hash, recvfrom_byte, sendto_byte};
+use crate::env_action::EnvAction;
 use crate::serdes::pyany_serde::DynPyAnySerde;
-use crate::{append_python_update_serde, communication::*, retrieve_python_update_serde};
+use crate::{append_python_update_serde, communication::*, retrieve_env_action_update_serdes};
 use pyo3::exceptions::asyncio::InvalidStateError;
 use pyo3::prelude::*;
-use pyo3::types::{PyDict, PyList, PyTuple};
+use pyo3::types::{PyDict, PyTuple};
 use pyo3::{intern, PyAny, PyObject, Python};
 use raw_sync::events::{Event, EventInit, EventState};
 use raw_sync::Timeout;
 use shared_memory::ShmemConf;
-use std::collections::HashMap;
 use std::thread::sleep;
 use std::time::Duration;
 
@@ -22,11 +22,22 @@ fn env_reset<'py>(env: &'py Bound<'py, PyAny>) -> PyResult<Bound<'py, PyDict>> {
         .call_method0(intern!(env.py(), "reset"))?
         .downcast_into()?)
 }
+
+fn env_set_state<'py>(
+    env: &'py Bound<'py, PyAny>,
+    desired_state: &Bound<'py, PyAny>,
+) -> PyResult<Bound<'py, PyDict>> {
+    Ok(env
+        .call_method1(intern!(env.py(), "set_state"), (desired_state,))?
+        .downcast_into()?)
+}
+
 fn env_render<'py>(env: &'py Bound<'py, PyAny>) -> PyResult<()> {
     env.call_method0(intern!(env.py(), "render"))?;
     Ok(())
 }
-fn env_state<'py>(env: &'py Bound<'py, PyAny>) -> PyResult<Bound<'py, PyList>> {
+
+fn env_state<'py>(env: &'py Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
     Ok(env.getattr(intern!(env.py(), "state"))?.downcast_into()?)
 }
 
@@ -81,9 +92,12 @@ fn env_step<'py>(
     obs_space_serde_option,
     action_space_type_serde_option,
     action_space_serde_option,
+    state_type_serde_option,
+    state_serde_option,
     state_metrics_type_serde_option,
     state_metrics_serde_option,
     collect_state_metrics_fn_option,
+    send_state_to_agent_controllers=false,
     render=false,
     render_delay_option=None,
     recalculate_agent_id_every_step=false))]
@@ -106,9 +120,12 @@ pub fn env_process(
     obs_space_serde_option: Option<DynPyAnySerde>,
     action_space_type_serde_option: Option<PyObject>,
     action_space_serde_option: Option<DynPyAnySerde>,
+    state_type_serde_option: Option<PyObject>,
+    state_serde_option: Option<DynPyAnySerde>,
     state_metrics_type_serde_option: Option<PyObject>,
     state_metrics_serde_option: Option<DynPyAnySerde>,
     collect_state_metrics_fn_option: Option<PyObject>,
+    send_state_to_agent_controllers: bool,
     render: bool,
     render_delay_option: Option<Duration>,
     recalculate_agent_id_every_step: bool,
@@ -156,6 +173,7 @@ pub fn env_process(
             obs_space_serde_option.map(|dyn_serde| dyn_serde.0.unwrap());
         let mut action_space_pyany_serde_option =
             action_space_serde_option.map(|dyn_serde| dyn_serde.0.unwrap());
+        let mut state_pyany_serde_option = state_serde_option.map(|dyn_serde| dyn_serde.0.unwrap());
         let mut state_metrics_pyany_serde_option =
             state_metrics_serde_option.map(|dyn_serde| dyn_serde.0.unwrap());
         let agent_id_type_serde_option = agent_id_type_serde_option
@@ -176,6 +194,9 @@ pub fn env_process(
         let action_space_type_serde_option = action_space_type_serde_option
             .as_ref()
             .map(|py_object| py_object.bind(py));
+        let state_type_serde_option = state_type_serde_option
+            .as_ref()
+            .map(|py_object| py_object.bind(py));
         let state_metrics_type_serde_option = state_metrics_type_serde_option
             .as_ref()
             .map(|py_object| py_object.bind(py));
@@ -191,10 +212,6 @@ pub fn env_process(
             && !state_metrics_type_serde_option.is_none();
         let mut n_agents = reset_obs.len();
         let mut agent_id_data_list = Vec::with_capacity(n_agents);
-        let mut prev_agent_id_data_list = Vec::with_capacity(n_agents);
-        let mut done_agents = HashMap::new();
-        let mut persistent_truncated_dict = HashMap::new();
-        let mut persistent_terminated_dict = HashMap::new();
         for agent_id in reset_obs.keys().iter() {
             let agent_id_hash = py_hash(&agent_id)?;
             swap_offset = append_python_update_serde!(
@@ -206,12 +223,9 @@ pub fn env_process(
             );
 
             agent_id_data_list.push((agent_id, agent_id_hash, swap_space[0..swap_offset].to_vec()));
-            done_agents.insert(agent_id_hash, false);
-            persistent_terminated_dict.insert(agent_id_hash, false);
-            persistent_truncated_dict.insert(agent_id_hash, false);
         }
 
-        // Write reset message
+        // Write reset message (TODO: no state metrics?)
         let mut offset = 0;
         offset = append_usize(shm_slice, offset, n_agents);
         for (agent_id, _, serialized_agent_id) in agent_id_data_list.iter() {
@@ -228,6 +242,16 @@ pub fn env_process(
                 obs_pyany_serde_option
             );
         }
+
+        if send_state_to_agent_controllers {
+            _ = append_python_update_serde!(
+                shm_slice,
+                offset,
+                &env_state(&env)?,
+                &state_type_serde_option,
+                state_pyany_serde_option
+            );
+        }
         // println!(
         //     "EP: Sending ready message for reading initial obs for proc_id {}",
         //     flink.clone()
@@ -235,7 +259,6 @@ pub fn env_process(
         sendto_byte(py, &child_end, &parent_sockname)?;
 
         // Start main loop
-        let mut new_episode_obs_dict = PyDict::new(py);
         let mut metrics_bytes = Vec::new();
         loop {
             // println!("EP: Waiting for signal from EPI...");
@@ -250,33 +273,67 @@ pub fn env_process(
             (header, offset) = retrieve_header(shm_slice, offset)?;
             // println!("EP: Got signal with header {}", header);
             match header {
-                Header::PolicyActions => {
+                Header::EnvAction => {
+                    let env_action;
+                    (env_action, _) = retrieve_env_action_update_serdes!(
+                        py,
+                        shm_slice,
+                        offset,
+                        agent_id_data_list.len(),
+                        &action_type_serde_option,
+                        action_pyany_serde_option,
+                        &state_type_serde_option,
+                        state_pyany_serde_option
+                    )?;
                     // Read actions message
-                    let actions_dict = PyDict::new(py);
-                    for (agent_id, _, _) in agent_id_data_list.iter() {
-                        let action;
-                        (action, offset) = retrieve_python_update_serde!(
-                            py,
-                            shm_slice,
-                            offset,
-                            &action_type_serde_option,
-                            action_pyany_serde_option
-                        );
-                        actions_dict.set_item(agent_id, action)?;
+                    let (
+                        obs_dict,
+                        rew_dict_option,
+                        terminated_dict_option,
+                        truncated_dict_option,
+                        is_step_action,
+                    );
+                    match &env_action {
+                        EnvAction::STEP { action_list, .. } => {
+                            let mut actions_kv_list = Vec::with_capacity(agent_id_data_list.len());
+                            let action_list = action_list.bind(py);
+                            for ((agent_id, _, _), action) in
+                                agent_id_data_list.iter().zip(action_list.iter())
+                            {
+                                actions_kv_list.push((agent_id, action));
+                            }
+                            let actions_dict =
+                                PyDict::from_sequence(&actions_kv_list.into_pyobject(py)?)?;
+                            let (rew_dict, terminated_dict, truncated_dict);
+                            (obs_dict, rew_dict, terminated_dict, truncated_dict) =
+                                env_step(&env, actions_dict)?;
+                            rew_dict_option = Some(rew_dict);
+                            terminated_dict_option = Some(terminated_dict);
+                            truncated_dict_option = Some(truncated_dict);
+                            is_step_action = true;
+                        }
+                        EnvAction::RESET {} => {
+                            obs_dict = env_reset(&env)?;
+                            rew_dict_option = None;
+                            terminated_dict_option = None;
+                            truncated_dict_option = None;
+                            is_step_action = false;
+                        }
+                        EnvAction::SET_STATE { desired_state, .. } => {
+                            obs_dict = env_set_state(&env, desired_state.bind(py))?;
+                            rew_dict_option = None;
+                            terminated_dict_option = None;
+                            truncated_dict_option = None;
+                            is_step_action = false;
+                        }
                     }
-
-                    // Step the env with actions
-                    // println!("EP: Stepping env");
-                    let (obs_dict, rew_dict, terminated_dict, truncated_dict) =
-                        env_step(&env, actions_dict)?;
-                    // println!("EP: Terminated dict: {}", terminated_dict.repr()?);
-                    // println!("EP: Truncated dict:{}", truncated_dict.repr()?);
+                    let new_episode = !is_step_action;
 
                     // Collect metrics
                     if should_collect_state_metrics {
                         let result = collect_state_metrics_fn_option
                             .unwrap()
-                            .call1(py, (env_state(&env)?, &rew_dict))?
+                            .call1(py, (env_state(&env)?, &rew_dict_option))?
                             .into_bound(py);
                         swap_offset = append_python_update_serde!(
                             swap_space,
@@ -288,12 +345,9 @@ pub fn env_process(
                         metrics_bytes = swap_space[0..swap_offset].to_vec();
                     };
 
-                    // Recalculate agent ids and anything used with current agents that doesn't get overwritten each step
+                    // Recalculate agent ids if needed
                     if recalculate_agent_id_every_step {
                         agent_id_data_list.clear();
-                        persistent_terminated_dict.clear();
-                        persistent_truncated_dict.clear();
-                        done_agents.clear();
                         for agent_id in obs_dict.keys().iter() {
                             let agent_id_hash = py_hash(&agent_id)?;
                             swap_offset = append_python_update_serde!(
@@ -310,160 +364,76 @@ pub fn env_process(
                             ));
                         }
                     }
-
-                    // Update the persistent dicts
-                    for (agent_id, agent_id_hash, _) in agent_id_data_list.iter() {
-                        if !recalculate_agent_id_every_step
-                            && *done_agents.get(agent_id_hash).unwrap()
-                        {
-                            continue;
-                        }
-                        let terminated = terminated_dict
-                            .get_item(agent_id)?
-                            .unwrap()
-                            .extract::<bool>()?;
-                        let truncated = truncated_dict
-                            .get_item(agent_id)?
-                            .unwrap()
-                            .extract::<bool>()?;
-                        // println!("EP: terminated: {}", terminated);
-                        // println!("EP: truncated: {}", truncated);
-                        // println!("");
-                        persistent_terminated_dict.insert(*agent_id_hash, terminated);
-                        persistent_truncated_dict.insert(*agent_id_hash, truncated);
-                        done_agents.insert(*agent_id_hash, terminated || truncated);
-                    }
-                    // println!(
-                    //     "EP: persistent_terminated_dict: {:?}",
-                    //     persistent_terminated_dict
-                    // );
-                    // println!(
-                    //     "EP: persistent_truncated_dict: {:?}",
-                    //     persistent_truncated_dict
-                    // );
-
-                    // Update maps on new episode
-                    let new_episode = done_agents.iter().fold(true, |acc, (_, done)| acc && *done);
-                    // println!("EP: new_episode: {}", new_episode);
                     if new_episode {
-                        prev_agent_id_data_list.clone_from(&agent_id_data_list);
-                        agent_id_data_list.clear();
-                        new_episode_obs_dict = env_reset(&env)?;
-                        done_agents.clear();
-                        for agent_id in new_episode_obs_dict.keys().iter() {
-                            let agent_id_hash = py_hash(&agent_id)?;
-                            swap_offset = append_python_update_serde!(
-                                swap_space,
-                                0,
-                                &agent_id,
-                                &agent_id_type_serde_option,
-                                agent_id_pyany_serde_option
-                            );
-                            agent_id_data_list.push((
-                                agent_id,
-                                agent_id_hash,
-                                swap_space[0..swap_offset].to_vec(),
-                            ));
-                            done_agents.insert(agent_id_hash, false);
-                        }
-                        n_agents = new_episode_obs_dict.len();
+                        n_agents = obs_dict.len();
                     }
 
                     // println!("Writing env step message");
                     // Write env step message
                     offset = 0;
-                    offset = append_bool(shm_slice, offset, new_episode);
                     if new_episode {
-                        // First, the final data from the existing episode
-                        for (agent_id, agent_id_hash, serialized_agent_id) in
-                            prev_agent_id_data_list.iter()
-                        {
-                            if recalculate_agent_id_every_step {
-                                offset = insert_bytes(shm_slice, offset, &serialized_agent_id[..])?;
-                            }
-                            offset = append_python_update_serde!(
-                                shm_slice,
-                                offset,
-                                &obs_dict.get_item(agent_id)?.unwrap(),
-                                &obs_type_serde_option,
-                                obs_pyany_serde_option
-                            );
-                            offset = append_python_update_serde!(
-                                shm_slice,
-                                offset,
-                                &rew_dict.get_item(agent_id)?.unwrap(),
-                                &reward_type_serde_option,
-                                reward_pyany_serde_option
-                            );
-                            offset = append_bool(
-                                shm_slice,
-                                offset,
-                                *persistent_terminated_dict.get(agent_id_hash).unwrap(),
-                            );
-                            offset = append_bool(
-                                shm_slice,
-                                offset,
-                                *persistent_truncated_dict.get(agent_id_hash).unwrap(),
-                            );
-                        }
-                        // Next, the obs data from the new episode
                         offset = append_usize(shm_slice, offset, n_agents);
-                        for (agent_id, _, serialized_agent_id) in agent_id_data_list.iter() {
+                    }
+                    for (agent_id, _, serialized_agent_id) in agent_id_data_list.iter() {
+                        if recalculate_agent_id_every_step || new_episode {
                             offset = insert_bytes(shm_slice, offset, &serialized_agent_id[..])?;
-                            offset = append_python_update_serde!(
-                                shm_slice,
-                                offset,
-                                &new_episode_obs_dict.get_item(agent_id)?.unwrap(),
-                                &obs_type_serde_option,
-                                obs_pyany_serde_option
-                            );
                         }
-                    } else {
-                        for (agent_id, agent_id_hash, serialized_agent_id) in
-                            agent_id_data_list.iter()
-                        {
-                            if recalculate_agent_id_every_step {
-                                offset = insert_bytes(shm_slice, offset, &serialized_agent_id[..])?;
-                            }
+                        offset = append_python_update_serde!(
+                            shm_slice,
+                            offset,
+                            &obs_dict.get_item(agent_id)?.unwrap(),
+                            &obs_type_serde_option,
+                            obs_pyany_serde_option
+                        );
+                        if is_step_action {
                             offset = append_python_update_serde!(
                                 shm_slice,
                                 offset,
-                                &obs_dict.get_item(agent_id)?.unwrap(),
-                                &obs_type_serde_option,
-                                obs_pyany_serde_option
-                            );
-                            offset = append_python_update_serde!(
-                                shm_slice,
-                                offset,
-                                &rew_dict.get_item(agent_id)?.unwrap(),
+                                &rew_dict_option
+                                    .as_ref()
+                                    .unwrap()
+                                    .get_item(agent_id)?
+                                    .unwrap(),
                                 &reward_type_serde_option,
                                 reward_pyany_serde_option
                             );
                             offset = append_bool(
                                 shm_slice,
                                 offset,
-                                *persistent_terminated_dict.get(agent_id_hash).unwrap(),
+                                terminated_dict_option
+                                    .as_ref()
+                                    .unwrap()
+                                    .get_item(agent_id)?
+                                    .unwrap()
+                                    .extract::<bool>()?,
                             );
                             offset = append_bool(
                                 shm_slice,
                                 offset,
-                                *persistent_truncated_dict.get(agent_id_hash).unwrap(),
+                                truncated_dict_option
+                                    .as_ref()
+                                    .unwrap()
+                                    .get_item(agent_id)?
+                                    .unwrap()
+                                    .extract::<bool>()?,
                             );
                         }
                     }
+
+                    if send_state_to_agent_controllers {
+                        offset = append_python_update_serde!(
+                            shm_slice,
+                            offset,
+                            &env_state(&env)?,
+                            &state_type_serde_option,
+                            state_pyany_serde_option
+                        );
+                    }
+
                     if should_collect_state_metrics {
                         append_bytes(shm_slice, offset, &metrics_bytes[..])?;
                     }
                     sendto_byte(py, &child_end, &parent_sockname)?;
-
-                    // Update persistent dicts on new episode for next iteration
-                    if new_episode {
-                        for (_, agent_id_hash, _) in agent_id_data_list.iter() {
-                            done_agents.insert(*agent_id_hash, false);
-                            persistent_terminated_dict.insert(*agent_id_hash, false);
-                            persistent_truncated_dict.insert(*agent_id_hash, false);
-                        }
-                    }
 
                     // Render
                     if render {
