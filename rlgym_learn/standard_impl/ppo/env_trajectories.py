@@ -10,7 +10,7 @@ from .trajectory import Trajectory
 
 
 class EnvTrajectories(Generic[AgentID, ObsType, ActionType, RewardType]):
-    def __init__(self, agent_ids: List[AgentID], prealloc_len=400) -> None:
+    def __init__(self, agent_ids: List[AgentID]) -> None:
         self.agent_ids = agent_ids
         self.obs_lists: Dict[AgentID, List[ObsType]] = {}
         self.action_lists: Dict[AgentID, List[ActionType]] = {}
@@ -25,10 +25,7 @@ class EnvTrajectories(Generic[AgentID, ObsType, ActionType, RewardType]):
             self.final_obs[agent_id] = None
             self.dones[agent_id] = False
             self.truncateds[agent_id] = False
-        self.log_probs = torch.zeros((prealloc_len, len(agent_ids)))
-        self.cur_log_prob_len = 0
-        self.cur_max_len = prealloc_len
-        self.prealloc_len = prealloc_len
+        self.log_probs_list = []
 
     def add_steps(self, timesteps: List[Timestep], log_probs: Tensor):
         steps_added = 0
@@ -44,16 +41,7 @@ class EnvTrajectories(Generic[AgentID, ObsType, ActionType, RewardType]):
                 if now_done:
                     self.dones[agent_id] = True
                     self.truncateds[agent_id] = timestep.truncated
-        if self.cur_log_prob_len >= self.cur_max_len:
-            temp = self.log_probs
-            cur_shape = temp.shape
-            self.log_probs = torch.zeros(
-                (cur_shape[0] + self.prealloc_len, cur_shape[1])
-            )
-            self.log_probs[: self.cur_max_len, :] = temp
-            self.cur_max_len += self.prealloc_len
-        self.log_probs[self.cur_log_prob_len, :] = log_probs
-        self.cur_log_prob_len += 1
+        self.log_probs_list.append(log_probs)
         return steps_added
 
     def finalize(self):
@@ -72,6 +60,7 @@ class EnvTrajectories(Generic[AgentID, ObsType, ActionType, RewardType]):
         """
         :return: List of trajectories relevant to this env
         """
+        log_probs = torch.stack(self.log_probs_list)
         trajectories = []
         for idx, agent_id in enumerate(self.agent_ids):
             obs_list = self.obs_lists[agent_id]
@@ -80,7 +69,7 @@ class EnvTrajectories(Generic[AgentID, ObsType, ActionType, RewardType]):
                     agent_id,
                     obs_list,
                     self.action_lists[agent_id],
-                    self.log_probs[: len(obs_list), idx],
+                    log_probs[:, idx],
                     self.reward_lists[agent_id],
                     None,
                     self.final_obs[agent_id],
