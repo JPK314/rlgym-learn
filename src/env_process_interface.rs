@@ -546,8 +546,9 @@ impl EnvProcessInterface {
     // Dict of timesteps, state metrics, and state by proc id
     // Dict of state, terminated dict, and truncated dict by proc id
     // )
-    fn collect_step_data(&mut self) -> PyResult<(Py<PyDict>, Py<PyDict>, Py<PyDict>)> {
+    fn collect_step_data(&mut self) -> PyResult<(usize, Py<PyDict>, Py<PyDict>, Py<PyDict>)> {
         let mut n_process_steps_collected = 0;
+        let mut total_timesteps_collected = 0;
         let mut obs_data_kv_list = Vec::with_capacity(self.min_process_steps_per_inference);
         let mut timestep_data_kv_list = Vec::with_capacity(self.min_process_steps_per_inference);
         let mut state_info_kv_list = Vec::with_capacity(
@@ -569,15 +570,17 @@ impl EnvProcessInterface {
                     let (parent_end, _, _, pid_idx) =
                         key.extract::<(PyObject, PyObject, PyObject, usize)>(py)?;
                     recvfrom_byte(py, &parent_end)?;
-                    let (obs_data_kv, timestep_data_kv, state_info_kv) =
+                    let (n_timesteps, obs_data_kv, timestep_data_kv, state_info_kv) =
                         self.collect_response(pid_idx)?;
                     obs_data_kv_list.push(obs_data_kv);
                     timestep_data_kv_list.push(timestep_data_kv);
                     state_info_kv_list.push(state_info_kv);
                     n_process_steps_collected += 1;
+                    total_timesteps_collected += n_timesteps;
                 }
             }
             Ok((
+                total_timesteps_collected,
                 PyDict::from_sequence(&obs_data_kv_list.into_pyobject(py)?)?.unbind(),
                 PyDict::from_sequence(&timestep_data_kv_list.into_pyobject(py)?)?.unbind(),
                 PyDict::from_sequence(&state_info_kv_list.into_pyobject(py)?)?.unbind(),
@@ -585,7 +588,7 @@ impl EnvProcessInterface {
         })
     }
 
-    // Returns three kv pairs: the keys are all the proc id,
+    // Returns number of timesteps collected, plus three kv pairs: the keys are all the proc id,
     // and the values are (agent id list, obs list),
     // (timestep list, optional state metrics, optional state),
     // and (optional state, optional terminated dict, optional truncated dict) respectively
@@ -593,10 +596,11 @@ impl EnvProcessInterface {
         &mut self,
         pid_idx: usize,
     ) -> PyResult<(
+        usize,
         (PyObject, (Vec<PyObject>, Vec<PyObject>)),
         (
             PyObject,
-            (Vec<PyObject>, Option<PyObject>, Option<PyObject>),
+            (Vec<PyObject>, PyObject, Option<PyObject>, Option<PyObject>),
         ),
         (
             PyObject,
@@ -786,15 +790,12 @@ impl EnvProcessInterface {
                 let timestep_class = self.timestep_class.bind(py);
                 let mut timestep_id_list = Vec::with_capacity(n_agents);
                 timestep_list = Vec::with_capacity(n_agents);
-                // TODO: remove
-                assert!(!self.pid_idx_current_action_list[pid_idx].is_empty());
                 for (
                     prev_timestep_id,
                     agent_id,
                     obs,
                     next_obs,
                     action,
-                    log_prob,
                     reward,
                     &terminated,
                     &truncated,
@@ -804,12 +805,6 @@ impl EnvProcessInterface {
                     self.pid_idx_current_obs_list.get(pid_idx).unwrap(),
                     &obs_list,
                     &self.pid_idx_current_action_list[pid_idx],
-                    self.pid_idx_current_log_probs_list[pid_idx]
-                        .as_ref()
-                        .unwrap()
-                        .bind(py)
-                        .call_method1(intern!(py, "unbind"), (0,))?
-                        .extract::<Vec<PyObject>>()?,
                     reward_list_option.as_ref().unwrap(),
                     terminated_list_option.as_ref().unwrap(),
                     truncated_list_option.as_ref().unwrap()
@@ -826,7 +821,6 @@ impl EnvProcessInterface {
                                 obs,
                                 next_obs,
                                 action,
-                                log_prob,
                                 reward,
                                 terminated,
                                 truncated,
@@ -839,6 +833,7 @@ impl EnvProcessInterface {
                 timestep_id_list_option = None;
                 timestep_list = Vec::new();
             }
+            let n_timesteps = timestep_list.len();
 
             let terminated_dict_option;
             let truncated_dict_option;
@@ -900,6 +895,7 @@ impl EnvProcessInterface {
                 py_proc_id.clone_ref(py),
                 (
                     timestep_list,
+                    (&self.pid_idx_current_log_probs_list[pid_idx]).into_py_any(py)?,
                     metrics_option,
                     state_option.as_ref().map(|state| state.clone_ref(py)),
                 ),
@@ -910,7 +906,7 @@ impl EnvProcessInterface {
             );
 
             // println!("Exiting collect_response");
-            Ok((obs_data_kv, timestep_data_kv, state_info_kv))
+            Ok((n_timesteps, obs_data_kv, timestep_data_kv, state_info_kv))
         })
     }
 

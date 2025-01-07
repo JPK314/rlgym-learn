@@ -71,12 +71,22 @@ class AgentController(
     def process_timestep_data(
         self,
         timestep_data: Dict[
-            str, Tuple[List[Timestep], Optional[StateMetrics], Optional[StateType]]
+            str,
+            Tuple[
+                List[Timestep],
+                Optional[Tensor],
+                Optional[StateMetrics],
+                Optional[StateType],
+            ],
         ],
     ):
         """
         Function to handle processing of timesteps.
-        :param timestep_data: Dictionary with environment ids as keys and tuples of timesteps from the environment, StateMetrics for the state (if calculated in the env process), and the state (if send_state_to_agent_controllers is true in BaseConfig)
+        :param timestep_data: Dictionary with environment ids as keys and tuples of
+        timesteps from the environment (the order of agent ids in this list is fixed until a reset or set_state env action is taken)
+        log probs for the timesteps from the environment (parallel to the timestep list, and None if no timesteps exist for the environment),
+        StateMetrics for the state (if calculated in the env process),
+        and the state (if send_state_to_agent_controllers is true in BaseConfig)
         """
         pass
 

@@ -363,12 +363,21 @@ class EnvProcessInterface(
     def collect_step_data(
         self,
     ) -> Tuple[
+        int,
         Dict[str, Tuple[List[AgentID], List[ObsType]]],
-        Dict[str, Tuple[List[Timestep], Optional[StateMetrics], Optional[StateType]]],
+        Dict[
+            str,
+            Tuple[
+                List[Timestep],
+                Optional[Tensor],
+                Optional[StateMetrics],
+                Optional[StateType],
+            ],
+        ],
         Dict[str, Tuple[StateType, Dict[AgentID, bool], Dict[AgentID, bool]]],
     ]:
         """
-        :return: Parallel lists of AgentID and ObsType for inference (per environment), a dict of timesteps and related data (per environment), and a dict of state info (per environment).
+        :return: Total timesteps collected, parallel lists of AgentID and ObsType for inference (per environment), a dict of timesteps and related data (per environment), and a dict of state info (per environment).
         """
         return self.rust_env_process_interface.collect_step_data()
 

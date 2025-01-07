@@ -34,6 +34,7 @@ from rlgym_learn.util.torch_functions import get_device
 from ...learning_coordinator_config import WandbConfigModel
 from .actor import Actor
 from .critic import Critic
+from .env_trajectories import EnvTrajectories
 from .experience_buffer import (
     DerivedExperienceBufferConfig,
     ExperienceBuffer,
@@ -140,10 +141,13 @@ class PPOAgentController(
             )
         self.agent_choice_fn = agent_choice_fn
 
-        self.current_trajectories_by_latest_timestep_id: Dict[
-            int,
-            Trajectory[AgentID, ActionType, ObsType, RewardType],
+        self.current_env_trajectories: Dict[
+            str,
+            EnvTrajectories[AgentID, ActionType, ObsType, RewardType],
         ] = {}
+        self.current_trajectories: List[
+            Trajectory[AgentID, ActionType, ObsType, RewardType]
+        ] = []
         self.iteration_state_metrics: List[StateMetrics] = []
         self.cur_iteration = 0
         self.iteration_timesteps = 0
@@ -271,9 +275,9 @@ class PPOAgentController(
             ),
             "rb",
         ) as f:
-            current_trajectories_by_latest_timestep_id: Dict[
+            current_trajectories: Dict[
                 int,
-                Trajectory[AgentID, ActionType, ObsType, RewardType],
+                EnvTrajectories[AgentID, ActionType, ObsType, RewardType],
             ] = pickle.load(f)
         with open(
             os.path.join(
@@ -292,9 +296,7 @@ class PPOAgentController(
         ) as f:
             state = json.load(f)
 
-        self.current_trajectories_by_latest_timestep_id = (
-            current_trajectories_by_latest_timestep_id
-        )
+        self.current_trajectories = current_trajectories
         self.iteration_state_metrics = iteration_state_metrics
         self.cur_iteration = state["cur_iteration"]
         self.iteration_timesteps = state["iteration_timesteps"]
@@ -328,7 +330,7 @@ class PPOAgentController(
             os.path.join(checkpoint_save_folder, CURRENT_TRAJECTORIES_FILE),
             "wb",
         ) as f:
-            pickle.dump(self.current_trajectories_by_latest_timestep_id, f)
+            pickle.dump(self.current_trajectories, f)
         with open(
             os.path.join(checkpoint_save_folder, ITERATION_STATE_METRICS_FILE),
             "wb",
@@ -453,36 +455,25 @@ class PPOAgentController(
                 timesteps[obs_idx // 2].next_obs = obs
 
     def process_timestep_data(self, timestep_data):
-        timesteps: List[Timestep] = []
-        state_metrics: List[StateMetrics] = []
-        for env_timesteps, env_state_metrics, _ in timestep_data.values():
-            timesteps += env_timesteps
-            state_metrics.append(env_state_metrics)
-        if self.obs_standardizer is not None:
-            self.standardize_timestep_observations(timesteps)
-
         timesteps_added = 0
-        for timestep in timesteps:
-            if (
-                timestep.previous_timestep_id is not None
-                and timestep.previous_timestep_id
-                in self.current_trajectories_by_latest_timestep_id
-            ):
-                self.current_trajectories_by_latest_timestep_id[
-                    timestep.timestep_id
-                ] = self.current_trajectories_by_latest_timestep_id.pop(
-                    timestep.previous_timestep_id
+        state_metrics: List[StateMetrics] = []
+        for env_id, (
+            env_timesteps,
+            env_log_probs,
+            env_state_metrics,
+            _,
+        ) in timestep_data.items():
+            if self.obs_standardizer is not None:
+                self.standardize_timestep_observations(env_timesteps)
+            if env_timesteps:
+                if env_id not in self.current_env_trajectories:
+                    self.current_env_trajectories[env_id] = EnvTrajectories(
+                        [timestep.agent_id for timestep in env_timesteps]
+                    )
+                timesteps_added += self.current_env_trajectories[env_id].add_steps(
+                    env_timesteps, env_log_probs
                 )
-                timesteps_added += self.current_trajectories_by_latest_timestep_id[
-                    timestep.timestep_id
-                ].add_timestep(timestep)
-
-            else:
-                trajectory = Trajectory(timestep.agent_id)
-                trajectory.add_timestep(timestep)
-                self.current_trajectories_by_latest_timestep_id[
-                    timestep.timestep_id
-                ] = trajectory
+            state_metrics.append(env_state_metrics)
         self.iteration_timesteps += timesteps_added
         self.cumulative_timesteps += timesteps_added
         self.iteration_state_metrics += state_metrics
@@ -497,28 +488,29 @@ class PPOAgentController(
 
     def choose_env_actions(self, state_info):
         env_action_responses = {}
-        for env_id, (_, terminated_dict, truncated_dict) in state_info.items():
-            done = True
-            if terminated_dict is None or truncated_dict is None:
-                # Episode just started
-                done = False
-            else:
-                for agent_id, terminated in terminated_dict.items():
-                    done &= terminated or truncated_dict[agent_id]
+        for env_id in state_info:
+            if env_id not in self.current_env_trajectories:
+                # This must be the first env action after a reset, so we step
+                env_action_responses[env_id] = STEP_RESPONSE
+                continue
+            done = all(self.current_env_trajectories[env_id].dones.values())
             if done:
                 env_action_responses[env_id] = RESET_RESPONSE
+                self.current_trajectories += self.current_env_trajectories.pop(
+                    env_id
+                ).get_trajectories()
             else:
                 env_action_responses[env_id] = STEP_RESPONSE
         return env_action_responses
 
     def _learn(self):
-        trajectories = list(self.current_trajectories_by_latest_timestep_id.values())
-        # Truncate any unfinished trajectories
-        for trajectory in trajectories:
-            trajectory.truncated = trajectory.truncated or not trajectory.done
-        self._update_value_predictions(trajectories)
+        env_trajectories_list = list(self.current_env_trajectories.values())
+        for env_trajectories in env_trajectories_list:
+            env_trajectories.finalize()
+            self.current_trajectories += env_trajectories.get_trajectories()
+        self._update_value_predictions()
         trajectory_processor_data = self.experience_buffer.submit_experience(
-            trajectories
+            self.current_trajectories
         )
         ppo_data = self.learner.learn(self.experience_buffer)
 
@@ -546,51 +538,38 @@ class PPOAgentController(
             )
 
         self.iteration_state_metrics = []
-        self.current_trajectories_by_latest_timestep_id.clear()
+        self.current_env_trajectories.clear()
+        self.current_trajectories.clear()
         self.iteration_timesteps = 0
         self.iteration_start_time = cur_time
         self.timestep_collection_start_time = time.perf_counter()
 
     @torch.no_grad()
-    def _update_value_predictions(
-        self,
-        trajectories: List[Trajectory[AgentID, ActionType, ObsType, RewardType]],
-    ):
+    def _update_value_predictions(self):
         """
-        Function to add timesteps to our experience buffer and compute the advantage
-        function estimates, value function estimates, and returns.
-        :param trajectories: list of Trajectory instances
-        :return: None
+        Function to update the value predictions inside the Trajectory instances of self.current_trajectories
         """
-
-        # Unpack timestep data.
         traj_timestep_idx_ranges: List[Tuple[int, int]] = []
         start = 0
         stop = 0
-        val_net_agent_id_input: List[AgentID] = []
-        val_net_obs_input: List[ObsType] = []
-        for trajectory in trajectories:
-            traj_agent_id_input = [trajectory.agent_id] * (
-                len(trajectory.complete_steps) + 1
-            )
-            traj_obs_input = [
-                trajectory_step.obs for trajectory_step in trajectory.complete_steps
-            ]
-            traj_obs_input.append(trajectory.final_obs)
-            stop = start + len(traj_obs_input)
+        critic_agent_id_input: List[AgentID] = []
+        critic_obs_input: List[ObsType] = []
+        for trajectory in self.current_trajectories:
+            obs_list = trajectory.obs_list + [trajectory.final_obs]
+            traj_len = len(obs_list)
+            agent_id_list = [trajectory.agent_id] * traj_len
+            stop = start + traj_len
+            critic_agent_id_input += agent_id_list
+            critic_obs_input += obs_list
             traj_timestep_idx_ranges.append((start, stop))
             start = stop
-            val_net_agent_id_input += traj_agent_id_input
-            val_net_obs_input += traj_obs_input
 
-        critic = self.learner.critic
-
-        # Update the trajectories with the value predictions.
         val_preds: torch.Tensor = (
-            critic(val_net_agent_id_input, val_net_obs_input).cpu().flatten()
+            self.learner.critic(critic_agent_id_input, critic_obs_input)
+            .flatten()
+            .to(device="cpu", non_blocking=True)
         )
         torch.cuda.empty_cache()
         for idx, (start, stop) in enumerate(traj_timestep_idx_ranges):
-            val_preds_traj = val_preds[start : stop - 1]
-            final_val_pred = val_preds[stop - 1]
-            trajectories[idx].update_val_preds(val_preds_traj, final_val_pred)
+            self.current_trajectories[idx].val_preds = val_preds[start : stop - 1]
+            self.current_trajectories[idx].final_val_pred = val_preds[stop - 1]

@@ -202,12 +202,10 @@ class LearningCoordinator(
         # Collect the desired number of timesteps from our environments.
         loop_iterations = 0
         while self.cumulative_timesteps < self.config.base_config.timestep_limit:
-            env_obs_data_dict, timestep_data, state_info = (
+            total_timesteps_collected, env_obs_data_dict, timestep_data, state_info = (
                 self.env_process_interface.collect_step_data()
             )
-            self.cumulative_timesteps += sum(
-                len(timesteps) for (timesteps, _, _) in timestep_data.values()
-            )
+            self.cumulative_timesteps += total_timesteps_collected
             self.agent_manager.process_timestep_data(timestep_data)
 
             self.env_process_interface.send_env_actions(

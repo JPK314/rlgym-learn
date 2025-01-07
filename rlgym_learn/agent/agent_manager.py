@@ -62,7 +62,13 @@ class AgentManager(
     def process_timestep_data(
         self,
         timestep_data: Dict[
-            str, Tuple[List[Timestep], Optional[StateMetrics], Optional[StateType]]
+            str,
+            Tuple[
+                List[Timestep],
+                Optional[Tensor],
+                Optional[StateMetrics],
+                Optional[StateType],
+            ],
         ],
     ):
         for agent_controller in self.agent_controllers_list:

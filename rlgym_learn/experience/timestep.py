@@ -15,7 +15,6 @@ class Timestep(Generic[AgentID, ObsType, ActionType, RewardType]):
         "obs",
         "next_obs",
         "action",
-        "log_prob",
         "reward",
         "terminated",
         "truncated",
@@ -27,7 +26,6 @@ class Timestep(Generic[AgentID, ObsType, ActionType, RewardType]):
     obs: ObsType
     next_obs: ObsType
     action: ActionType
-    log_prob: Tensor
     reward: RewardType
     terminated: bool
     truncated: bool
