@@ -181,174 +181,115 @@ pub fn retrieve_bytes(slice: &[u8], offset: usize) -> PyResult<(&[u8], usize)> {
     Ok((&slice[start..end], end))
 }
 
-#[macro_export]
-macro_rules! append_python_update_serde {
-    ($buf: expr, $offset: expr, $obj: expr, $type_serde_option: expr, $pyany_serde_option: ident) => {{
-        let (offset, new_pyany_serde_option) = crate::communication::append_python(
-            $buf,
-            $offset,
-            $obj,
-            $type_serde_option,
-            &mut $pyany_serde_option,
-        )?;
-        if new_pyany_serde_option.is_some() {
-            $pyany_serde_option = new_pyany_serde_option;
-        }
-        offset
-    }};
-}
-
-#[macro_export]
-macro_rules! append_python_option_update_serde {
-    ($buf: expr, $offset: expr, $obj_option: expr, $type_serde_option: expr, $pyany_serde_option: ident) => {{
-        let mut offset = $offset;
-        if let Some(obj) = $obj_option {
-            offset = crate::communication::append_bool($buf, offset, true);
-            let new_pyany_serde_option;
-            (offset, new_pyany_serde_option) = crate::communication::append_python(
-                $buf,
-                offset,
-                obj,
-                $type_serde_option,
-                &mut $pyany_serde_option,
-            )?;
-            if new_pyany_serde_option.is_some() {
-                $pyany_serde_option = new_pyany_serde_option;
-            }
-        } else {
-            offset = crate::communication::append_bool($buf, offset, false);
-        }
-        offset
-    }};
-}
-
-pub fn append_python<'py>(
+pub fn append_python_test<'py>(
     buf: &mut [u8],
     offset: usize,
     obj: &Bound<'py, PyAny>,
     type_serde_option: &Option<&Bound<'py, PyAny>>,
     pyany_serde_option: &mut Option<Box<dyn PyAnySerde>>,
-) -> PyResult<(usize, Option<Box<dyn PyAnySerde>>)> {
+) -> PyResult<usize> {
+    let mut offset = offset;
     if let Some(type_serde) = type_serde_option {
         // println!("Entering append via typeserde flow");
-        let mut new_offset = append_bool(buf, offset, true);
-        new_offset = append_bytes(
+        offset = append_bool(buf, offset, true);
+        offset = append_bytes(
             buf,
-            new_offset,
+            offset,
             type_serde
                 .call_method1(intern!(obj.py(), "to_bytes"), (obj,))?
                 .downcast::<PyBytes>()?
                 .as_bytes(),
         )?;
         // println!("Exiting append via typeserde flow");
-        return Ok((new_offset, None));
     } else {
         // println!("Appending python bytes via pyany serde");
-        let mut new_offset = append_bool(buf, offset, false);
+        offset = append_bool(buf, offset, false);
         let serde_enum_bytes;
-        let new_pyany_serde_option;
         if let Some(pyany_serde) = pyany_serde_option {
             serde_enum_bytes = pyany_serde.get_enum_bytes();
-            new_pyany_serde_option = None;
-            let end = new_offset + serde_enum_bytes.len();
-            buf[new_offset..end].copy_from_slice(&serde_enum_bytes[..]);
-            new_offset = pyany_serde.append(buf, end, &obj)?;
+            let end = offset + serde_enum_bytes.len();
+            buf[offset..end].copy_from_slice(&serde_enum_bytes[..]);
+            offset = pyany_serde.append(buf, end, &obj)?;
         } else {
             let mut new_pyany_serde = detect_pyany_serde(&obj)?;
             serde_enum_bytes = new_pyany_serde.get_enum_bytes();
-            let end = new_offset + serde_enum_bytes.len();
-            buf[new_offset..end].copy_from_slice(&serde_enum_bytes[..]);
-            new_offset = new_pyany_serde.append(buf, end, &obj)?;
-            new_pyany_serde_option = Some(new_pyany_serde);
+            let end = offset + serde_enum_bytes.len();
+            buf[offset..end].copy_from_slice(&serde_enum_bytes[..]);
+            offset = new_pyany_serde.append(buf, end, &obj)?;
+            *pyany_serde_option = Some(new_pyany_serde);
         }
         // println!("Exiting append via pyany serde flow");
-        return Ok((new_offset, new_pyany_serde_option));
     }
+    return Ok(offset);
 }
 
-#[macro_export]
-macro_rules! retrieve_python_update_serde {
-    ($py: ident, $buf: expr, $offset: ident, $type_serde_option: expr, $pyany_serde_option: ident) => {{
-        let (obj, offset, new_pyany_serde_option) = crate::communication::retrieve_python(
-            $py,
-            $buf,
-            $offset,
-            $type_serde_option,
-            &mut $pyany_serde_option,
-        )?;
-        if new_pyany_serde_option.is_some() {
-            $pyany_serde_option = new_pyany_serde_option;
-        }
-        (obj, offset)
-    }};
+pub fn append_python_option_test<'py>(
+    buf: &mut [u8],
+    offset: usize,
+    obj_option: &Option<&Bound<'py, PyAny>>,
+    type_serde_option: &Option<&Bound<'py, PyAny>>,
+    pyany_serde_option: &mut Option<Box<dyn PyAnySerde>>,
+) -> PyResult<usize> {
+    let mut offset = offset;
+    if let Some(obj) = obj_option {
+        offset = append_bool(buf, offset, true);
+        offset = append_python_test(buf, offset, obj, type_serde_option, pyany_serde_option)?;
+    } else {
+        offset = append_bool(buf, offset, false);
+    }
+    Ok(offset)
 }
 
-#[macro_export]
-macro_rules! retrieve_python_option_update_serde {
-    ($py: ident, $buf: expr, $offset: ident, $type_serde_option: expr, $pyany_serde_option: ident) => {{
-        let mut offset = $offset;
-        let is_some;
-        (is_some, offset) = crate::communication::retrieve_bool($buf, offset)?;
-        if is_some {
-            let (obj, offset, new_pyany_serde_option) = crate::communication::retrieve_python(
-                $py,
-                $buf,
-                $offset,
-                $type_serde_option,
-                &mut $pyany_serde_option,
-            )?;
-            if new_pyany_serde_option.is_some() {
-                $pyany_serde_option = new_pyany_serde_option;
-            }
-            (Some(obj), offset)
-        } else {
-            (None, offset)
-        }
-    }};
-}
-
-pub fn retrieve_python<'py>(
+pub fn retrieve_python_test<'py>(
     py: Python<'py>,
     buf: &[u8],
     offset: usize,
     type_serde_option: &Option<&Bound<'py, PyAny>>,
     pyany_serde_option: &mut Option<Box<dyn PyAnySerde>>,
-) -> PyResult<(Bound<'py, PyAny>, usize, Option<Box<dyn PyAnySerde>>)> {
-    let (is_type_serde, mut new_offset) = retrieve_bool(buf, offset)?;
+) -> PyResult<(Bound<'py, PyAny>, usize)> {
+    let (is_type_serde, mut offset) = retrieve_bool(buf, offset)?;
+    let obj;
     if is_type_serde {
         // println!("Entering retrieve via typeserde flow");
         let type_serde = type_serde_option.ok_or(InvalidStateError::new_err(
             "serialization indicated python TypeSerde used, but no such TypeSerde is present here",
         ))?;
         let obj_bytes;
-        (obj_bytes, new_offset) = retrieve_bytes(buf, new_offset)?;
-        let obj =
-            type_serde.call_method1(intern!(py, "from_bytes"), (PyBytes::new(py, obj_bytes),))?;
+        (obj_bytes, offset) = retrieve_bytes(buf, offset)?;
+        obj = type_serde.call_method1(intern!(py, "from_bytes"), (PyBytes::new(py, obj_bytes),))?;
         // println!("Exiting retrieve via typeserde flow");
-        return Ok((obj, new_offset, None));
     } else {
         // println!("Entering retrieve via pyany serde flow");
-        let (new_pyany_serde_option, obj) = match pyany_serde_option {
-            Some(_pyany_serde) => {
-                // println!("pyany_serde_option has Some");
-                new_offset += _pyany_serde.get_enum_bytes().len();
-                let obj;
-                (obj, new_offset) = _pyany_serde.retrieve(py, buf, new_offset)?;
-                (None, obj)
-            }
-            None => {
-                // TODO: there is some problem with this flow
-                // println!("pyany_serde_option has None");
-                let serde;
-                (serde, new_offset) = retrieve_serde(buf, new_offset)?;
-                // println!("Retrieved serde: {:?}", serde);
-                let mut new_pyany_serde = get_pyany_serde(serde)?;
-                let obj;
-                (obj, new_offset) = new_pyany_serde.retrieve(py, buf, new_offset)?;
-                (Some(new_pyany_serde), obj)
-            }
-        };
-        // println!("Exiting retrieve via pyany serde flow");
-        return Ok((obj, new_offset, new_pyany_serde_option));
+        if let Some(pyany_serde) = pyany_serde_option {
+            offset += pyany_serde.get_enum_bytes().len();
+            (obj, offset) = pyany_serde.retrieve(py, buf, offset)?;
+        } else {
+            let serde;
+            (serde, offset) = retrieve_serde(buf, offset)?;
+            // println!("Retrieved serde: {:?}", serde);
+            let mut new_pyany_serde = get_pyany_serde(serde)?;
+            (obj, offset) = new_pyany_serde.retrieve(py, buf, offset)?;
+            *pyany_serde_option = Some(new_pyany_serde)
+        }
+    }
+    return Ok((obj, offset));
+}
+
+pub fn retrieve_python_option_test<'py>(
+    py: Python<'py>,
+    buf: &[u8],
+    offset: usize,
+    type_serde_option: &Option<&Bound<'py, PyAny>>,
+    pyany_serde_option: &mut Option<Box<dyn PyAnySerde>>,
+) -> PyResult<(Option<Bound<'py, PyAny>>, usize)> {
+    let mut offset = offset;
+    let is_some;
+    (is_some, offset) = retrieve_bool(buf, offset)?;
+    if is_some {
+        let (obj, offset) =
+            retrieve_python_test(py, buf, offset, type_serde_option, pyany_serde_option)?;
+        Ok((Some(obj), offset))
+    } else {
+        Ok((None, offset))
     }
 }

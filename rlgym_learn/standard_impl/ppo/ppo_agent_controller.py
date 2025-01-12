@@ -21,17 +21,13 @@ from torch import device as _device
 
 import wandb
 from rlgym_learn.agent import RESET_RESPONSE, STEP_RESPONSE
-from rlgym_learn.api import (
-    AgentController,
-    DerivedMetricsLoggerConfig,
-    MetricsLogger,
-    ObsStandardizer,
-    StateMetrics,
-)
+from rlgym_learn.api import AgentController, StateMetrics
 from rlgym_learn.experience import Timestep
 from rlgym_learn.util.torch_functions import get_device
 
 from ...learning_coordinator_config import WandbConfigModel
+from ..metrics_logger import DerivedMetricsLoggerConfig, MetricsLogger
+from ..obs_standardizer import ObsStandardizer
 from .actor import Actor
 from .critic import Critic
 from .env_trajectories import EnvTrajectories

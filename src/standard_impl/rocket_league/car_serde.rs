@@ -2,9 +2,12 @@ use numpy::{PyArray1, PyArrayMethods};
 use pyo3::{types::PyAnyMethods, IntoPyObject, PyObject, PyResult, Python};
 
 use crate::{
-    append_n_vec_elements, append_python_option_update_serde,
-    communication::{append_bool, append_f32, retrieve_bool, retrieve_f32},
-    retrieve_n_vec_elements, retrieve_python_option_update_serde,
+    append_n_vec_elements,
+    communication::{
+        append_bool, append_f32, append_python_option_test, retrieve_bool, retrieve_f32,
+        retrieve_python_option_test,
+    },
+    retrieve_n_vec_elements,
     serdes::{
         pyany_serde::PyAnySerde,
         serde_enum::{get_serde_bytes, Serde},
@@ -52,15 +55,15 @@ impl CarSerde {
         buf[offset + 1] = car.hitbox_type;
         buf[offset + 2] = car.ball_touches;
         let mut offset = offset + 3;
-        offset = append_python_option_update_serde!(
+        offset = append_python_option_test(
             buf,
             offset,
             &car.bump_victim_id
                 .as_ref()
                 .map(|agent_id| agent_id.bind(py)),
             &agent_id_type_serde_option,
-            agent_id_pyany_serde_option
-        );
+            &mut agent_id_pyany_serde_option,
+        )?;
         offset = append_f32(buf, offset, car.demo_respawn_timer);
         offset = append_bool(buf, offset, car.on_ground);
         offset = append_f32(buf, offset, car.supersonic_time);
@@ -126,13 +129,13 @@ impl CarSerde {
             physics,
             _inverted_physics,
         );
-        (bump_victim_id, offset) = retrieve_python_option_update_serde!(
+        (bump_victim_id, offset) = retrieve_python_option_test(
             py,
             buf,
             offset,
             &agent_id_type_serde_option,
-            agent_id_pyany_serde_option
-        );
+            &mut agent_id_pyany_serde_option,
+        )?;
         (demo_respawn_timer, offset) = retrieve_f32(buf, offset)?;
         (on_ground, offset) = retrieve_bool(buf, offset)?;
         (supersonic_time, offset) = retrieve_f32(buf, offset)?;
