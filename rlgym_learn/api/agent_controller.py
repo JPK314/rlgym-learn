@@ -114,12 +114,8 @@ class AgentController(
     def set_space_types(self, obs_space: ObsSpaceType, action_space: ActionSpaceType):
         pass
 
-    # TODO: is this needed?
-    def set_device(self, device: device):
-        pass
-
     def validate_config(self, config_obj: Any) -> AgentControllerConfig:
-        pass
+        raise NotImplementedError
 
     def load(self, config: DerivedAgentControllerConfig[AgentControllerConfig]):
         """

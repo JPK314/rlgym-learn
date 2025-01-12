@@ -263,7 +263,6 @@ if __name__ == "__main__":
         action_space_serde=tuple_serde(string_serde(), int_serde()),
         state_metrics_serde=list_serde(numpy_serde(np.float64)),
         collect_state_metrics_fn=None,
-        # obs_standardizer=NumpyObsStandardizer(5),
         config_location="config.json",
     )
     coordinator.start()

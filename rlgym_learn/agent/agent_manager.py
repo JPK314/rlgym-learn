@@ -13,7 +13,7 @@ from rlgym.api import (
 )
 from rlgym_learn_backend import AgentManager as RustAgentManager
 from rlgym_learn_backend import EnvAction
-from torch import Tensor, as_tensor
+from torch import Tensor
 
 from rlgym_learn.api import AgentController, DerivedAgentControllerConfig, StateMetrics
 from rlgym_learn.experience import Timestep
@@ -98,10 +98,6 @@ class AgentManager(
         for agent_controller in self.agent_controllers_list:
             agent_controller.set_space_types(obs_space, action_space)
 
-    def set_device(self, device: str):
-        for agent_controller in self.agent_controllers_list:
-            agent_controller.set_device(device)
-
     def load_agent_controllers(
         self,
         learner_config: LearningCoordinatorConfigModel,
@@ -121,7 +117,7 @@ class AgentManager(
                     process_config=learner_config.process_config,
                     save_folder=os.path.join(
                         learner_config.agent_controllers_save_folder,
-                        str(agent_controller_name),
+                        agent_controller_name,
                     ),
                 )
             )

@@ -16,35 +16,61 @@ from typing import Any, Callable, Dict, Generic, List, Optional, Tuple
 
 import numpy as np
 import torch
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from rlgym.api import ActionType, AgentID, ObsType, RewardType
 from torch import device as _device
 from torch import dtype as _dtype
 
 from .trajectory import Trajectory
-from .trajectory_processor import TrajectoryProcessor, TrajectoryProcessorData
+from .trajectory_processor import (
+    DerivedTrajectoryProcessorConfig,
+    TrajectoryProcessor,
+    TrajectoryProcessorConfig,
+    TrajectoryProcessorData,
+)
 
 EXPERIENCE_BUFFER_FILE = "experience_buffer.pkl"
-TRAJECTORY_PROCESSOR_FILE = "trajectory_processor.json"
 
 
 class ExperienceBufferConfigModel(BaseModel):
     max_size: int = 100000
-    trajectory_processor_args: Dict[str, Any] = Field(default_factory=dict)
+    trajectory_processor_config: Dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="before")
+    @classmethod
+    def set_trajectory_processor_config(cls, data):
+        if isinstance(data, ExperienceBufferConfigModel):
+            if isinstance(data.trajectory_processor_config, BaseModel):
+                data.trajectory_processor_config = (
+                    data.trajectory_processor_config.model_dump()
+                )
+        elif isinstance(data, dict) and "trajectory_processor_config" in data:
+            if isinstance(data["trajectory_processor_config"], BaseModel):
+                data["trajectory_processor_config"] = data[
+                    "trajectory_processor_config"
+                ].model_dump()
+        return data
 
 
 @dataclass
 class DerivedExperienceBufferConfig:
     max_size: int
     seed: int
-    dtype: _dtype
-    device: _device
-    trajectory_processor_args: dict
+    dtype: str
+    device: str
+    trajectory_processor_config: Dict[str, Any]
     checkpoint_load_folder: Optional[str] = None
 
 
 class ExperienceBuffer(
-    Generic[AgentID, ObsType, ActionType, RewardType, TrajectoryProcessorData]
+    Generic[
+        TrajectoryProcessorConfig,
+        AgentID,
+        ObsType,
+        ActionType,
+        RewardType,
+        TrajectoryProcessorData,
+    ]
 ):
     @staticmethod
     def _cat(t1, t2, size):
@@ -85,14 +111,16 @@ class ExperienceBuffer(
 
     def __init__(
         self,
-        trajectory_processor_factory: Callable[
-            ...,
-            TrajectoryProcessor[
-                AgentID, ObsType, ActionType, RewardType, TrajectoryProcessorData
-            ],
+        trajectory_processor: TrajectoryProcessor[
+            TrajectoryProcessorConfig,
+            AgentID,
+            ObsType,
+            ActionType,
+            RewardType,
+            TrajectoryProcessorData,
         ],
     ):
-        self.trajectory_processor_factory = trajectory_processor_factory
+        self.trajectory_processor = trajectory_processor
         self.agent_ids: List[AgentID] = []
         self.observations: List[ObsType] = []
         self.actions: List[ActionType] = []
@@ -103,11 +131,16 @@ class ExperienceBuffer(
     def load(self, config: DerivedExperienceBufferConfig):
         self.config = config
         self.rng = np.random.RandomState(config.seed)
-        self.trajectory_processor = self.trajectory_processor_factory(
-            **config.trajectory_processor_args
+        trajectory_processor_config = self.trajectory_processor.validate_config(
+            config.trajectory_processor_config
         )
-        self.trajectory_processor.set_dtype(config.dtype)
-        self.trajectory_processor.set_device(config.device)
+        self.trajectory_processor.load(
+            DerivedTrajectoryProcessorConfig(
+                trajectory_processor_config=trajectory_processor_config,
+                dtype=config.dtype,
+                device=config.device,
+            )
+        )
         if self.config.checkpoint_load_folder is not None:
             self._load_from_checkpoint()
         self.log_probs = self.log_probs.to(config.device)
@@ -121,17 +154,11 @@ class ExperienceBuffer(
             "rb",
         ) as f:
             state_dict = pickle.load(f)
-        with open(
-            os.path.join(self.config.checkpoint_load_folder, TRAJECTORY_PROCESSOR_FILE),
-            "rt",
-        ) as f:
-            trajectory_processor_state_dict = json.load(f)
         self.observations = state_dict["observations"]
         self.actions = state_dict["actions"]
         self.log_probs = state_dict["log_probs"]
         self.values = state_dict["values"]
         self.advantages = state_dict["advantages"]
-        self.trajectory_processor.load_state_dict(trajectory_processor_state_dict)
 
     def save_checkpoint(self, folder_path):
         os.makedirs(folder_path, exist_ok=True)
@@ -149,11 +176,7 @@ class ExperienceBuffer(
                 },
                 f,
             )
-        with open(
-            os.path.join(folder_path, TRAJECTORY_PROCESSOR_FILE),
-            "wt",
-        ) as f:
-            json.dump(self.trajectory_processor.state_dict(), f, indent=4)
+        self.trajectory_processor.save_checkpoint(folder_path)
 
     # TODO: update docs
     def submit_experience(

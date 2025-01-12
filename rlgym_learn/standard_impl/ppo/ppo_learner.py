@@ -20,14 +20,13 @@ from torch import nn as nn
 from .actor import Actor
 from .critic import Critic
 from .experience_buffer import ExperienceBuffer
-from .trajectory_processor import TrajectoryProcessorData
+from .trajectory_processor import TrajectoryProcessorConfig, TrajectoryProcessorData
 
 
-# TODO: change minibatch size to n_minibatches
 class PPOLearnerConfigModel(BaseModel):
-    n_epochs: int = 10
+    n_epochs: int = 1
     batch_size: int = 50000
-    minibatch_size: Optional[int] = None
+    n_minibatches: int = 1
     ent_coef: float = 0.005
     clip_range: float = 0.2
     actor_lr: float = 3e-4
@@ -40,7 +39,7 @@ class DerivedPPOLearnerConfig:
     action_space: ActionSpaceType
     n_epochs: int = 10
     batch_size: int = 50000
-    minibatch_size: Optional[int] = None
+    n_minibatches: int = 1
     ent_coef: float = 0.005
     clip_range: float = 0.2
     actor_lr: float = 3e-4
@@ -70,6 +69,7 @@ MISC_STATE = "misc.json"
 
 class PPOLearner(
     Generic[
+        TrajectoryProcessorConfig,
         AgentID,
         ObsType,
         ActionType,
@@ -95,9 +95,6 @@ class PPOLearner(
     def load(self, config: DerivedPPOLearnerConfig):
         self.config = config
 
-        assert (
-            self.config.batch_size % self.config.minibatch_size == 0
-        ), "MINIBATCH SIZE MUST BE AN INTEGER MULTIPLE OF BATCH SIZE"
         self.actor = self.actor_factory(
             config.obs_space, config.action_space, config.device
         )
@@ -138,6 +135,9 @@ class PPOLearner(
 
         if self.config.checkpoint_load_folder is not None:
             self._load_from_checkpoint()
+        self.minibatch_size = np.ceil(
+            self.config.batch_size / self.config.n_minibatches
+        )
 
     def _load_from_checkpoint(self):
 
@@ -185,7 +185,12 @@ class PPOLearner(
     def learn(
         self,
         exp: ExperienceBuffer[
-            AgentID, ObsType, ActionType, RewardType, TrajectoryProcessorData
+            TrajectoryProcessorConfig,
+            AgentID,
+            ObsType,
+            ActionType,
+            RewardType,
+            TrajectoryProcessorData,
         ],
     ):
         """
@@ -196,12 +201,11 @@ class PPOLearner(
             collect_metrics_fn: Function to be called with the PPO metrics resulting from learn()
         """
 
-        n_iterations = 0
-        n_minibatch_iterations = 0
+        n_batches = 0
+        mean_clip = 0
         mean_entropy = 0
         mean_divergence = 0
         mean_val_loss = 0
-        clip_fractions = []
 
         # Save parameters before computing any updates.
         actor_before = torch.nn.utils.parameters_to_vector(
@@ -229,11 +233,12 @@ class PPOLearner(
                 self.critic_optimizer.zero_grad()
 
                 for minibatch_slice in range(
-                    0, self.config.batch_size, self.config.minibatch_size
+                    0, self.config.batch_size, self.minibatch_size
                 ):
                     # Send everything to the device and enforce correct shapes.
                     start = minibatch_slice
-                    stop = start + self.config.minibatch_size
+                    stop = min(start + self.minibatch_size, self.config.batch_size)
+                    minibatch_ratio = (stop - start) / self.config.batch_size
 
                     agent_ids = batch_agent_ids[start:stop]
                     obs = batch_obs[start:stop]
@@ -252,6 +257,7 @@ class PPOLearner(
                         agent_ids, obs, acts
                     )
                     log_probs = log_probs.view_as(old_probs)
+                    entropy = entropy * minibatch_ratio
 
                     # Compute PPO loss.
                     ratio = torch.exp(log_probs - old_probs)
@@ -265,7 +271,7 @@ class PPOLearner(
                     with torch.no_grad():
                         log_ratio = log_probs - old_probs
                         kl = (torch.exp(log_ratio) - 1) - log_ratio
-                        kl = kl.mean().detach().cpu().item()
+                        kl = kl.mean().detach().cpu().item() * minibatch_ratio
 
                         # From the stable-baselines3 implementation of PPO.
                         clip_fraction = (
@@ -274,18 +280,18 @@ class PPOLearner(
                             )
                             .cpu()
                             .item()
+                            * minibatch_ratio
                         )
-                        clip_fractions.append(clip_fraction)
+                        mean_clip += clip_fraction
 
-                    actor_loss = -torch.min(
-                        ratio * advantages, clipped * advantages
-                    ).mean()
-                    value_loss = self.critic_loss_fn(vals, target_values)
-                    ppo_loss = (
-                        (actor_loss - entropy * self.config.ent_coef)
-                        * self.config.minibatch_size
-                        / self.config.batch_size
+                    actor_loss = (
+                        -torch.min(ratio * advantages, clipped * advantages).mean()
+                        * minibatch_ratio
                     )
+                    value_loss = (
+                        self.critic_loss_fn(vals, target_values) * minibatch_ratio
+                    )
+                    ppo_loss = actor_loss - entropy * self.config.ent_coef
 
                     ppo_loss.backward()
                     value_loss.backward()
@@ -293,7 +299,6 @@ class PPOLearner(
                     mean_val_loss += value_loss.cpu().detach().item()
                     mean_divergence += kl
                     mean_entropy += entropy.cpu().detach().item()
-                    n_minibatch_iterations += 1
 
                 torch.nn.utils.clip_grad_norm_(self.critic.parameters(), max_norm=0.5)
                 torch.nn.utils.clip_grad_norm_(self.actor.parameters(), max_norm=0.5)
@@ -301,22 +306,7 @@ class PPOLearner(
                 self.actor_optimizer.step()
                 self.critic_optimizer.step()
 
-                n_iterations += 1
-
-        if n_iterations == 0:
-            n_iterations = 1
-
-        if n_minibatch_iterations == 0:
-            n_minibatch_iterations = 1
-
-        # Compute averages for the metrics that will be reported.
-        mean_entropy /= n_minibatch_iterations
-        mean_divergence /= n_minibatch_iterations
-        mean_val_loss /= n_minibatch_iterations
-        if len(clip_fractions) == 0:
-            mean_clip = 0
-        else:
-            mean_clip = np.mean(clip_fractions)
+                n_batches += 1
 
         # Compute magnitude of updates made to the actor and critic.
         actor_after = torch.nn.utils.parameters_to_vector(self.actor.parameters()).cpu()
@@ -329,9 +319,9 @@ class PPOLearner(
         self.actor_optimizer.zero_grad()
         self.critic_optimizer.zero_grad()
 
-        self.cumulative_model_updates += n_iterations
+        self.cumulative_model_updates += n_batches
         return PPOData(
-            (time.time() - t1) / n_iterations,
+            (time.time() - t1) / n_batches,
             self.cumulative_model_updates,
             mean_entropy,
             mean_divergence,

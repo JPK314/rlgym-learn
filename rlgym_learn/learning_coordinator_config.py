@@ -33,7 +33,6 @@ class WandbConfigModel(BaseModel):
     group: str = "unnamed-runs"
     run: str = "rlgym-learn-run"
     id: Optional[str] = None
-    resume: bool = False
     additional_wandb_config: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -45,7 +44,7 @@ class LearningCoordinatorConfigModel(BaseModel):
 
     @model_validator(mode="before")
     @classmethod
-    def set_agent_coordinators_config(cls, data):
+    def set_agent_controllers_config(cls, data):
         if isinstance(data, LearningCoordinatorConfigModel):
             agent_controllers_config = {}
             for k, v in data.agent_controllers_config.items():

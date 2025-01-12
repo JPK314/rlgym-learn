@@ -47,7 +47,11 @@ from .ppo_learner import (
     PPOLearnerConfigModel,
 )
 from .trajectory import Trajectory
-from .trajectory_processor import TrajectoryProcessor, TrajectoryProcessorData
+from .trajectory_processor import (
+    TrajectoryProcessor,
+    TrajectoryProcessorConfig,
+    TrajectoryProcessorData,
+)
 
 EXPERIENCE_BUFFER_FOLDER = "experience_buffer"
 PPO_LEARNER_FOLDER = "ppo_learner"
@@ -65,7 +69,7 @@ class PPOAgentControllerConfigModel(BaseModel):
     n_checkpoints_to_keep: int = 5
     random_seed: int = 123
     dtype: str = "float32"
-    device: str = "auto"
+    device: Optional[str] = None
     run_name: str = "rlgym-learn-run"
     log_to_wandb: bool = False
     learner_config: PPOLearnerConfigModel = Field(default_factory=PPOLearnerConfigModel)
@@ -85,7 +89,6 @@ class PPOAgentControllerData(Generic[TrajectoryProcessorData]):
     timestep_collection_time: float
 
 
-# TODO: the experience buffer should be passed to init and then get loaded based on config like everything else
 class PPOAgentController(
     AgentController[
         PPOAgentControllerConfigModel,
@@ -98,7 +101,19 @@ class PPOAgentController(
         ActionSpaceType,
         StateMetrics,
         PPOAgentControllerData[TrajectoryProcessorData],
-    ]
+    ],
+    Generic[
+        TrajectoryProcessorConfig,
+        AgentID,
+        ObsType,
+        ActionType,
+        RewardType,
+        StateType,
+        ObsSpaceType,
+        ActionSpaceType,
+        StateMetrics,
+        TrajectoryProcessorData,
+    ],
 ):
     def __init__(
         self,
@@ -107,11 +122,13 @@ class PPOAgentController(
             Actor[AgentID, ObsType, ActionType],
         ],
         critic_factory: Callable[[ObsSpaceType, _device], Critic[AgentID, ObsType]],
-        trajectory_processor_factory: Callable[
-            ...,
-            TrajectoryProcessor[
-                AgentID, ObsType, ActionType, RewardType, TrajectoryProcessorData
-            ],
+        trajectory_processor: TrajectoryProcessor[
+            TrajectoryProcessorConfig,
+            AgentID,
+            ObsType,
+            ActionType,
+            RewardType,
+            TrajectoryProcessorData,
         ],
         metrics_logger_factory: Optional[
             Callable[
@@ -128,7 +145,7 @@ class PPOAgentController(
         ] = lambda agent_id_list: list(range(len(agent_id_list))),
     ):
         self.learner = PPOLearner(actor_factory, critic_factory)
-        self.experience_buffer = ExperienceBuffer(trajectory_processor_factory)
+        self.experience_buffer = ExperienceBuffer(trajectory_processor)
         if metrics_logger_factory is not None:
             self.metrics_logger = metrics_logger_factory()
         else:
@@ -161,12 +178,15 @@ class PPOAgentController(
         self.obs_space = obs_space
         self.action_space = action_space
 
-    def validate_config(self, config_obj: Any) -> PPOAgentControllerConfigModel:
+    def validate_config(self, config_obj):
         return PPOAgentControllerConfigModel.model_validate(config_obj)
 
     def load(self, config):
         self.config = config
-        self.device = get_device(config.agent_controller_config.device)
+        device = config.agent_controller_config.device
+        if device is None:
+            device = config.base_config.device
+        self.device = get_device(device)
         print(f"{self.config.agent_controller_name}: Using device {self.device}")
         agent_controller_config = config.agent_controller_config
         learner_config = config.agent_controller_config.learner_config
@@ -233,7 +253,7 @@ class PPOAgentController(
                 action_space=self.action_space,
                 n_epochs=learner_config.n_epochs,
                 batch_size=learner_config.batch_size,
-                minibatch_size=learner_config.minibatch_size,
+                n_minibatches=learner_config.n_minibatches,
                 ent_coef=learner_config.ent_coef,
                 clip_range=learner_config.clip_range,
                 actor_lr=learner_config.actor_lr,
@@ -248,7 +268,7 @@ class PPOAgentController(
                 seed=agent_controller_config.random_seed,
                 dtype=agent_controller_config.dtype,
                 device=self.device,
-                trajectory_processor_args=experience_buffer_config.trajectory_processor_args,
+                trajectory_processor_config=experience_buffer_config.trajectory_processor_config,
                 checkpoint_load_folder=experience_buffer_checkpoint_load_folder,
             )
         )
@@ -373,13 +393,15 @@ class PPOAgentController(
         run_suffix: str,
     ):
         if (
-            self.wandb_run_id is not None
+            self.config.agent_controller_config.checkpoint_load_folder is not None
             and self.config.agent_controller_config.wandb_config.id is not None
         ):
             print(
                 f"{self.config.agent_controller_name}: Wandb run id from checkpoint ({self.wandb_run_id}) is being overridden by wandb run id from config: {self.config.agent_controller_config.wandb_config.id}"
             )
             self.wandb_run_id = self.config.agent_controller_config.wandb_config.id
+        else:
+            self.wandb_run_id = None
         # TODO: is this working?
         agent_wandb_config = {
             key: value
@@ -390,7 +412,7 @@ class PPOAgentController(
                 "exp_buffer_size",
                 "n_epochs",
                 "batch_size",
-                "minibatch_size",
+                "n_minibatches",
                 "ent_coef",
                 "clip_range",
                 "actor_lr",
@@ -402,18 +424,10 @@ class PPOAgentController(
             "n_proc": self.config.process_config.n_proc,
             "min_process_steps_per_inference": self.config.process_config.min_process_steps_per_inference,
             "timestep_limit": self.config.base_config.timestep_limit,
-            **self.config.agent_controller_config.experience_buffer_config.trajectory_processor_args,
+            **self.config.agent_controller_config.experience_buffer_config.trajectory_processor_config,
             **self.config.agent_controller_config.wandb_config.additional_wandb_config,
         }
 
-        if self.config.agent_controller_config.wandb_config.resume:
-            print(
-                f"{self.config.agent_controller_name}: Attempting to resume wandb run..."
-            )
-        else:
-            print(
-                f"{self.config.agent_controller_name}: Attempting to create new wandb run..."
-            )
         self.wandb_run = wandb.init(
             project=self.config.agent_controller_config.wandb_config.project,
             group=self.config.agent_controller_config.wandb_config.group,
@@ -540,6 +554,7 @@ class PPOAgentController(
         self.iteration_state_metrics = []
         self.current_env_trajectories.clear()
         self.current_trajectories.clear()
+        self.ts_since_last_save += self.iteration_timesteps
         self.iteration_timesteps = 0
         self.iteration_start_time = cur_time
         self.timestep_collection_start_time = time.perf_counter()

@@ -4,6 +4,7 @@ use numpy::PyArrayDescr;
 use numpy::ToPyArray;
 use paste::paste;
 use pyo3::exceptions::PyNotImplementedError;
+use pyo3::exceptions::PyRuntimeError;
 use pyo3::intern;
 use pyo3::prelude::*;
 use pyo3::PyObject;
@@ -13,6 +14,25 @@ use crate::common::numpy_dtype_enum::NumpyDtype;
 
 use super::trajectory::Trajectory;
 
+#[pyclass]
+pub struct DerivedGAETrajectoryProcessorConfig {
+    gamma: PyObject,
+    lambda: PyObject,
+    dtype: Py<PyArrayDescr>,
+}
+
+#[pymethods]
+impl DerivedGAETrajectoryProcessorConfig {
+    #[new]
+    fn new(gamma: PyObject, lambda: PyObject, dtype: Py<PyArrayDescr>) -> Self {
+        DerivedGAETrajectoryProcessorConfig {
+            gamma,
+            lambda,
+            dtype,
+        }
+    }
+}
+
 macro_rules! define_process_trajectories {
     ($dtype: ty) => {
         paste! {
@@ -21,8 +41,8 @@ macro_rules! define_process_trajectories {
                 trajectories: Vec<Trajectory>,
                 batch_reward_type_numpy_converter: PyObject,
                 return_std: PyObject,
-                gamma: PyObject,
-                lambda: PyObject,
+                gamma: &PyObject,
+                lambda: &PyObject,
             ) -> PyResult<(
                 Vec<PyObject>,
                 Vec<PyObject>,
@@ -113,35 +133,33 @@ define_process_trajectories!(f32);
 
 #[pyclass]
 pub struct GAETrajectoryProcessor {
-    dtype: NumpyDtype,
-    gamma: PyObject,
-    lambda: PyObject,
+    gamma: Option<PyObject>,
+    lambda: Option<PyObject>,
+    dtype: Option<NumpyDtype>,
     batch_reward_type_numpy_converter: PyObject,
 }
 
 #[pymethods]
 impl GAETrajectoryProcessor {
     #[new]
-    fn new(
-        gamma: PyObject,
-        lambda: PyObject,
-        batch_reward_type_numpy_converter: PyObject,
-    ) -> PyResult<Self> {
+    fn new(batch_reward_type_numpy_converter: PyObject) -> PyResult<Self> {
         Ok(GAETrajectoryProcessor {
-            dtype: NumpyDtype::FLOAT32,
-            gamma,
-            lambda,
+            gamma: None,
+            lambda: None,
+            dtype: None,
             batch_reward_type_numpy_converter,
         })
     }
 
-    fn set_dtype(&mut self, py_dtype: Py<PyArrayDescr>) -> PyResult<()> {
+    fn load(&mut self, config: &DerivedGAETrajectoryProcessorConfig) -> PyResult<()> {
         Python::with_gil(|py| {
-            self.dtype = get_numpy_dtype(py_dtype.clone_ref(py))?;
+            self.gamma = Some(config.gamma.clone_ref(py));
+            self.lambda = Some(config.lambda.clone_ref(py));
+            self.dtype = Some(get_numpy_dtype(config.dtype.clone_ref(py))?);
             self.batch_reward_type_numpy_converter.call_method1(
                 py,
                 intern!(py, "set_dtype"),
-                (py_dtype,),
+                (config.dtype.clone_ref(py),),
             )?;
             Ok(())
         })
@@ -161,14 +179,20 @@ impl GAETrajectoryProcessor {
         PyObject,
         PyObject,
     )> {
-        Python::with_gil(|py| match self.dtype {
+        let gamma = self
+            .gamma
+            .as_ref()
+            .ok_or_else(|| PyRuntimeError::new_err("process_trajectories called before load"))?;
+        let lambda = self.lambda.as_ref().unwrap();
+        let dtype = self.dtype.as_ref().unwrap();
+        Python::with_gil(|py| match dtype {
             NumpyDtype::FLOAT32 => process_trajectories_f32(
                 py,
                 trajectories,
                 self.batch_reward_type_numpy_converter.clone_ref(py),
                 return_std,
-                self.gamma.clone_ref(py),
-                self.lambda.clone_ref(py),
+                gamma,
+                lambda,
             ),
 
             NumpyDtype::FLOAT64 => process_trajectories_f64(
@@ -176,8 +200,8 @@ impl GAETrajectoryProcessor {
                 trajectories,
                 self.batch_reward_type_numpy_converter.clone_ref(py),
                 return_std,
-                self.gamma.clone_ref(py),
-                self.lambda.clone_ref(py),
+                gamma,
+                lambda,
             ),
             v => Err(PyNotImplementedError::new_err(format!(
                 "GAE Trajectory Processor not implemented for dtype {:?}",
