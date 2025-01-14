@@ -6,7 +6,6 @@ from rlgym.api import ActionType, AgentID, ObsType
 from torch import Tensor
 
 
-# TODO: maybe add ActionParser to constructor?
 class Actor(nn.Module, Generic[AgentID, ObsType, ActionType]):
     def __init__(self):
         super().__init__()

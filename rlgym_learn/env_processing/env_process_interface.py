@@ -200,9 +200,7 @@ class EnvProcessInterface(
         context = mp.get_context(start_method)
         self.n_procs = n_processes
 
-        self.processes = [
-            None for i in range(n_processes)
-        ]  # TODO: is there a reason to have this in self after migrating it to rust backend?
+        self.processes = [None for i in range(n_processes)]
 
         # Spawn child processes
         print("Spawning processes...")
@@ -304,7 +302,7 @@ class EnvProcessInterface(
                 self.send_state_to_agent_controllers,
                 self.flinks_folder,
                 self.shm_buffer_size,
-                self.seed + proc_id,
+                self.seed + self.n_procs,
                 False,
                 None,
                 self.recalculate_agent_id_every_step,
@@ -314,6 +312,15 @@ class EnvProcessInterface(
         process.start()
         _, child_sockname = recvfrom_byte_py(parent_end)
         sendto_byte_py(parent_end, child_sockname)
+
+        self.processes.append(
+            (
+                process,
+                parent_end,
+                child_sockname,
+                proc_id,
+            )
+        )
 
         self.rust_env_process_interface.add_process(
             (
