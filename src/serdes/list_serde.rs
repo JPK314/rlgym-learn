@@ -2,28 +2,38 @@ use pyo3::prelude::*;
 use pyo3::types::PyList;
 use pyo3::Bound;
 
-use crate::communication::{append_usize, retrieve_usize};
+use crate::communication::{append_python, append_usize, retrieve_python, retrieve_usize};
 
 use super::pyany_serde::PyAnySerde;
 use super::serde_enum::{get_serde_bytes, Serde};
 
 #[derive(Clone)]
 pub struct ListSerde {
-    item_serde: Box<dyn PyAnySerde>,
+    item_type_serde_option: Option<PyObject>,
+    item_pyany_serde_option: Option<Box<dyn PyAnySerde>>,
     align: usize,
     serde_enum: Serde,
     serde_enum_bytes: Vec<u8>,
 }
 
 impl ListSerde {
-    pub fn new(item_serde: Box<dyn PyAnySerde>) -> Self {
-        let item_serde_enum = item_serde.get_enum().clone();
+    pub fn new(
+        item_type_serde_option: Option<PyObject>,
+        item_pyany_serde_option: Option<Box<dyn PyAnySerde>>,
+    ) -> Self {
+        let align = item_pyany_serde_option
+            .as_ref()
+            .map_or(1, |pyany_serde| pyany_serde.align_of());
+        let item_serde_enum = item_pyany_serde_option
+            .as_ref()
+            .map_or(Serde::OTHER, |pyany_serde| pyany_serde.get_enum().clone());
         let serde_enum = Serde::LIST {
             items: Box::new(item_serde_enum),
         };
         ListSerde {
-            align: item_serde.align_of(),
-            item_serde,
+            item_type_serde_option,
+            item_pyany_serde_option,
+            align,
             serde_enum_bytes: get_serde_bytes(&serde_enum),
             serde_enum,
         }
@@ -38,11 +48,21 @@ impl PyAnySerde for ListSerde {
         obj: &Bound<'py, PyAny>,
     ) -> PyResult<usize> {
         let list = obj.downcast::<PyList>()?;
-        let mut new_offset = append_usize(buf, offset, list.len());
+        let mut offset = append_usize(buf, offset, list.len());
+        let item_type_serde_option = self
+            .item_type_serde_option
+            .as_ref()
+            .map(|v| v.bind(obj.py()));
         for item in list.iter() {
-            new_offset = self.item_serde.append(buf, new_offset, &item)?;
+            offset = append_python(
+                buf,
+                offset,
+                &item,
+                &item_type_serde_option,
+                &mut self.item_pyany_serde_option,
+            )?;
         }
-        Ok(new_offset)
+        Ok(offset)
     }
 
     fn retrieve<'py>(
@@ -52,13 +72,20 @@ impl PyAnySerde for ListSerde {
         offset: usize,
     ) -> PyResult<(Bound<'py, PyAny>, usize)> {
         let list = PyList::empty(py);
-        let (n_items, mut new_offset) = retrieve_usize(buf, offset)?;
+        let (n_items, mut offset) = retrieve_usize(buf, offset)?;
+        let item_type_serde_option = self.item_type_serde_option.as_ref().map(|v| v.bind(py));
         for _ in 0..n_items {
             let item;
-            (item, new_offset) = self.item_serde.retrieve(py, buf, new_offset)?;
+            (item, offset) = retrieve_python(
+                py,
+                buf,
+                offset,
+                &item_type_serde_option,
+                &mut self.item_pyany_serde_option,
+            )?;
             list.append(item)?;
         }
-        Ok((list.into_any(), new_offset))
+        Ok((list.into_any(), offset))
     }
 
     fn align_of(&self) -> usize {

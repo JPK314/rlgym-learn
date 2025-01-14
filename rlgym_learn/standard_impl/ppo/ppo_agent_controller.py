@@ -3,8 +3,9 @@ import os
 import pickle
 import shutil
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, Generic, List, Optional, Tuple
+from typing import Dict, Generic, List, Optional, Tuple
 
 import torch
 from pydantic import BaseModel, Field

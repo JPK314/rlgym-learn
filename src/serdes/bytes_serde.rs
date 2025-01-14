@@ -38,8 +38,8 @@ impl PyAnySerde for BytesSerde {
         buf: &[u8],
         offset: usize,
     ) -> PyResult<(Bound<'py, PyAny>, usize)> {
-        let (obj_bytes, new_offset) = retrieve_bytes(buf, offset)?;
-        Ok((PyBytes::new(py, obj_bytes).into_any(), new_offset))
+        let (obj_bytes, offset) = retrieve_bytes(buf, offset)?;
+        Ok((PyBytes::new(py, obj_bytes).into_any(), offset))
     }
 
     fn align_of(&self) -> usize {

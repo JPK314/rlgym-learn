@@ -1,5 +1,5 @@
 from abc import abstractmethod
-from typing import Generic, List, Tuple
+from typing import Generic, List
 
 import torch.nn as nn
 from rlgym.api import AgentID, ObsType

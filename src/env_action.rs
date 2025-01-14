@@ -1,7 +1,7 @@
 use pyo3::{prelude::*, types::PyList, IntoPyObjectExt};
 
 use crate::{
-    communication::{append_python_test, retrieve_python_test},
+    communication::{append_python, retrieve_python},
     serdes::pyany_serde::PyAnySerde,
 };
 
@@ -46,7 +46,7 @@ pub fn append_env_action<'py>(
             offset += 1;
             let action_list = action_list.bind(py);
             for action in action_list.iter() {
-                offset = append_python_test(
+                offset = append_python(
                     buf,
                     offset,
                     &action,
@@ -62,7 +62,7 @@ pub fn append_env_action<'py>(
         EnvAction::SET_STATE { desired_state, .. } => {
             buf[offset] = 2;
             offset += 1;
-            offset = append_python_test(
+            offset = append_python(
                 buf,
                 offset,
                 desired_state.bind(py),
@@ -91,7 +91,7 @@ pub fn retrieve_env_action<'py>(
             let mut action_list = Vec::with_capacity(n_actions);
             for _ in 0..n_actions {
                 let action;
-                (action, offset) = retrieve_python_test(
+                (action, offset) = retrieve_python(
                     py,
                     buf,
                     offset,
@@ -111,7 +111,7 @@ pub fn retrieve_env_action<'py>(
         1 => Ok((EnvAction::RESET {}, offset)),
         2 => {
             let state;
-            (state, offset) = retrieve_python_test(
+            (state, offset) = retrieve_python(
                 py,
                 buf,
                 offset,

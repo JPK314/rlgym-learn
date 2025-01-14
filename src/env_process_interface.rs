@@ -17,9 +17,10 @@ use raw_sync::events::EventState;
 use shared_memory::Shmem;
 use shared_memory::ShmemConf;
 
-use crate::common::misc::{clone_list, recvfrom_byte, sendto_byte};
+use crate::common::misc::clone_list;
 use crate::communication::{
-    append_header, get_flink, retrieve_bool, retrieve_python_test, retrieve_usize, Header,
+    append_header, get_flink, recvfrom_byte, retrieve_bool, retrieve_python, retrieve_usize,
+    sendto_byte, Header,
 };
 use crate::env_action::append_env_action;
 use crate::env_action::EnvAction;
@@ -92,9 +93,6 @@ impl EnvProcessInterface {
             self.agent_id_type_serde_option.as_ref().map(|v| v.bind(py));
         let obs_type_serde_option = self.obs_type_serde_option.as_ref().map(|v| v.bind(py));
 
-        let mut agent_id_pyany_serde_option = self.agent_id_pyany_serde_option.take();
-        let mut obs_pyany_serde_option = self.obs_pyany_serde_option.take();
-
         let (parent_end, shmem, proc_id) = self.proc_packages.get(pid_idx).unwrap();
         let shm_slice = unsafe { &shmem.as_slice()[Event::size_of(None)..] };
         recvfrom_byte(py, parent_end)?;
@@ -106,20 +104,20 @@ impl EnvProcessInterface {
         let mut agent_id;
         let mut obs;
         for _ in 0..n_agents {
-            (agent_id, offset) = retrieve_python_test(
+            (agent_id, offset) = retrieve_python(
                 py,
                 shm_slice,
                 offset,
                 &agent_id_type_serde_option,
-                &mut agent_id_pyany_serde_option,
+                &mut self.agent_id_pyany_serde_option,
             )?;
             agent_id_list.push(agent_id.unbind());
-            (obs, offset) = retrieve_python_test(
+            (obs, offset) = retrieve_python(
                 py,
                 shm_slice,
                 offset,
                 &obs_type_serde_option,
-                &mut obs_pyany_serde_option,
+                &mut self.obs_pyany_serde_option,
             )?;
             obs_list.push(obs.unbind());
         }
@@ -127,23 +125,18 @@ impl EnvProcessInterface {
         let state_option;
         if self.send_state_to_agent_controllers {
             let state_type_serde_option = self.state_type_serde_option.as_mut().map(|v| v.bind(py));
-            let mut state_pyany_serde_option = self.state_pyany_serde_option.take();
             let state;
-            (state, _) = retrieve_python_test(
+            (state, _) = retrieve_python(
                 py,
                 shm_slice,
                 offset,
                 &state_type_serde_option,
-                &mut state_pyany_serde_option,
+                &mut self.state_pyany_serde_option,
             )?;
             state_option = Some(state.unbind());
-            self.state_pyany_serde_option = state_pyany_serde_option;
         } else {
             state_option = None;
         }
-
-        self.agent_id_pyany_serde_option = agent_id_pyany_serde_option;
-        self.obs_pyany_serde_option = obs_pyany_serde_option;
 
         let py_proc_id = proc_id.into_py_any(py)?;
 
@@ -192,9 +185,6 @@ impl EnvProcessInterface {
             .as_mut()
             .map(|v| v.bind(py));
 
-        let mut obs_space_pyany_serde_option = self.obs_space_pyany_serde_option.take();
-        let mut action_space_pyany_serde_option = self.action_space_pyany_serde_option.take();
-
         let (parent_end, shmem, _) = self.proc_packages.get_mut(0).unwrap();
         let (ep_evt, used_bytes) = unsafe {
             Event::from_existing(shmem.as_ptr()).map_err(|err| {
@@ -212,24 +202,21 @@ impl EnvProcessInterface {
         // println!("EPI: Received signal from EP that shm is updated with env shapes data");
         let mut offset = 0;
         let obs_space;
-        (obs_space, offset) = retrieve_python_test(
+        (obs_space, offset) = retrieve_python(
             py,
             shm_slice,
             offset,
             &obs_space_type_serde_option,
-            &mut obs_space_pyany_serde_option,
+            &mut self.obs_space_pyany_serde_option,
         )?;
         let action_space;
-        (action_space, _) = retrieve_python_test(
+        (action_space, _) = retrieve_python(
             py,
             shm_slice,
             offset,
             &action_space_type_serde_option,
-            &mut action_space_pyany_serde_option,
+            &mut self.action_space_pyany_serde_option,
         )?;
-
-        self.obs_space_pyany_serde_option = obs_space_pyany_serde_option;
-        self.action_space_pyany_serde_option = action_space_pyany_serde_option;
         // println!("EPI: Done getting env shapes");
         Ok((obs_space.unbind(), action_space.unbind()))
     }
@@ -408,21 +395,6 @@ impl EnvProcessInterface {
             }
             let (obs_space, action_space) = self.get_space_types(py)?;
 
-            // TODO: delete - was for creating observation dict, but no longer want to do this
-            // let mut initial_obs_kv_list = Vec::with_capacity(n_procs);
-            // for ((_, _, proc_id), agent_id_list, obs_list) in izip!(
-            //     &self.proc_packages,
-            //     &self.pid_idx_current_agent_id_list,
-            //     &self.pid_idx_current_obs_list
-            // ) {
-            //     initial_obs_kv_list.push((
-            //         proc_id,
-            //         (
-            //             clone_list(py, agent_id_list.as_ref().unwrap()),
-            //             clone_list(py, obs_list),
-            //         ),
-            //     ))
-            // }
             Ok((
                 initial_obs_data_dict,
                 initial_state_info_dict,
@@ -629,10 +601,6 @@ impl EnvProcessInterface {
             let reward_type_serde_option =
                 self.reward_type_serde_option.as_mut().map(|v| v.bind(py));
 
-            let mut agent_id_pyany_serde_option = self.agent_id_pyany_serde_option.take();
-            let mut obs_pyany_serde_option = self.obs_pyany_serde_option.take();
-            let mut reward_pyany_serde_option = self.reward_pyany_serde_option.take();
-
             // Get n_agents for incoming data and instantiate lists
             let n_agents;
             let (
@@ -671,32 +639,32 @@ impl EnvProcessInterface {
                 // println!("Retrieving prev info for agent {}", idx + 1);
                 if self.recalculate_agent_id_every_step || new_episode {
                     let agent_id;
-                    (agent_id, offset) = retrieve_python_test(
+                    (agent_id, offset) = retrieve_python(
                         py,
                         shm_slice,
                         offset,
                         &agent_id_type_serde_option,
-                        &mut agent_id_pyany_serde_option,
+                        &mut self.agent_id_pyany_serde_option,
                     )?;
                     agent_id_list.push(agent_id.unbind());
                 }
                 let obs;
-                (obs, offset) = retrieve_python_test(
+                (obs, offset) = retrieve_python(
                     py,
                     shm_slice,
                     offset,
                     &obs_type_serde_option,
-                    &mut obs_pyany_serde_option,
+                    &mut self.obs_pyany_serde_option,
                 )?;
                 obs_list.push(obs.unbind());
                 if is_step_action {
                     let reward;
-                    (reward, offset) = retrieve_python_test(
+                    (reward, offset) = retrieve_python(
                         py,
                         shm_slice,
                         offset,
                         &reward_type_serde_option,
-                        &mut reward_pyany_serde_option,
+                        &mut self.reward_pyany_serde_option,
                     )?;
                     reward_list_option.as_mut().unwrap().push(reward.unbind());
                     let terminated;
@@ -712,17 +680,15 @@ impl EnvProcessInterface {
             if self.send_state_to_agent_controllers {
                 let state_type_serde_option =
                     self.state_type_serde_option.as_mut().map(|v| v.bind(py));
-                let mut state_pyany_serde_option = self.state_pyany_serde_option.take();
                 let state;
-                (state, offset) = retrieve_python_test(
+                (state, offset) = retrieve_python(
                     py,
                     shm_slice,
                     offset,
                     &state_type_serde_option,
-                    &mut state_pyany_serde_option,
+                    &mut self.state_pyany_serde_option,
                 )?;
                 state_option = Some(state.unbind());
-                self.state_pyany_serde_option = state_pyany_serde_option;
             } else {
                 state_option = None;
             }
@@ -735,18 +701,15 @@ impl EnvProcessInterface {
                     .state_metrics_type_serde_option
                     .as_mut()
                     .map(|v| v.bind(py));
-                let mut state_metrics_pyany_serde_option =
-                    self.state_metrics_pyany_serde_option.take();
                 let state_metrics;
-                (state_metrics, offset) = retrieve_python_test(
+                (state_metrics, offset) = retrieve_python(
                     py,
                     shm_slice,
                     offset,
                     &state_metrics_type_serde_option,
-                    &mut state_metrics_pyany_serde_option,
+                    &mut self.state_metrics_pyany_serde_option,
                 )?;
                 metrics_option = Some(state_metrics.unbind());
-                self.state_metrics_pyany_serde_option = state_metrics_pyany_serde_option;
             } else {
                 metrics_option = None;
             }
@@ -879,9 +842,6 @@ impl EnvProcessInterface {
             }
             self.pid_idx_current_agent_id_list[pid_idx] = Some(clone_list(py, &agent_id_list));
             self.pid_idx_current_obs_list[pid_idx] = clone_list(py, &obs_list);
-            self.agent_id_pyany_serde_option = agent_id_pyany_serde_option;
-            self.obs_pyany_serde_option = obs_pyany_serde_option;
-            self.reward_pyany_serde_option = reward_pyany_serde_option;
 
             let py_proc_id = proc_id.into_py_any(py)?;
             let obs_data_kv = (py_proc_id.clone_ref(py), (agent_id_list, obs_list));
@@ -915,9 +875,6 @@ impl EnvProcessInterface {
                 .state_type_serde_option
                 .as_mut()
                 .map(|py_object| py_object.bind(py));
-
-            let mut action_pyany_serde_option = self.action_pyany_serde_option.take();
-            let mut state_pyany_serde_option = self.state_pyany_serde_option.take();
 
             for (proc_id, env_action) in env_actions.into_iter() {
                 let &pid_idx = self.proc_id_pid_idx_map.get(&proc_id).unwrap();
@@ -959,9 +916,9 @@ impl EnvProcessInterface {
                     offset,
                     &env_action,
                     &action_type_serde_option,
-                    &mut action_pyany_serde_option,
+                    &mut self.action_pyany_serde_option,
                     &state_type_serde_option,
-                    &mut state_pyany_serde_option,
+                    &mut self.state_pyany_serde_option,
                 )?;
 
                 ep_evt
@@ -969,8 +926,6 @@ impl EnvProcessInterface {
                     .map_err(|err| InvalidStateError::new_err(err.to_string()))?;
                 self.pid_idx_current_env_action_list[pid_idx] = Some(env_action);
             }
-            self.action_pyany_serde_option = action_pyany_serde_option;
-            self.state_pyany_serde_option = state_pyany_serde_option;
             Ok(())
         })
     }

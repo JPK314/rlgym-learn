@@ -3,9 +3,7 @@ use pyo3::types::PyDict;
 use pyo3::Bound;
 use std::cmp::max;
 
-use crate::communication::{
-    append_python_test, append_usize, retrieve_python_test, retrieve_usize,
-};
+use crate::communication::{append_python, append_usize, retrieve_python, retrieve_usize};
 
 use super::pyany_serde::PyAnySerde;
 use super::serde_enum::{get_serde_bytes, Serde};
@@ -77,26 +75,22 @@ impl PyAnySerde for DictSerde {
                 .as_ref()
                 .map(|type_serde| type_serde.bind(py));
 
-            let mut key_pyany_serde_option = self.key_pyany_serde_option.take();
-            let mut value_pyany_serde_option = self.key_pyany_serde_option.take();
             for (key, value) in dict.iter() {
-                offset = append_python_test(
+                offset = append_python(
                     buf,
                     offset,
                     &key,
                     &key_type_serde_option,
-                    &mut key_pyany_serde_option,
+                    &mut self.key_pyany_serde_option,
                 )?;
-                offset = append_python_test(
+                offset = append_python(
                     buf,
                     offset,
                     &value,
                     &value_type_serde_option,
-                    &mut value_pyany_serde_option,
+                    &mut self.value_pyany_serde_option,
                 )?;
             }
-            self.key_pyany_serde_option = key_pyany_serde_option;
-            self.value_pyany_serde_option = value_pyany_serde_option;
             Ok(())
         })?;
         Ok(offset)
@@ -117,27 +111,24 @@ impl PyAnySerde for DictSerde {
             .as_ref()
             .map(|type_serde| type_serde.bind(py));
 
-        let mut key_pyany_serde_option = self.key_pyany_serde_option.take();
-        let mut value_pyany_serde_option = self.key_pyany_serde_option.take();
-
         let dict = PyDict::new(py);
         let (n_items, mut offset) = retrieve_usize(buf, offset)?;
         for _ in 0..n_items {
             let key;
-            (key, offset) = retrieve_python_test(
+            (key, offset) = retrieve_python(
                 py,
                 buf,
                 offset,
                 &key_type_serde_option,
-                &mut key_pyany_serde_option,
+                &mut self.key_pyany_serde_option,
             )?;
             let value;
-            (value, offset) = retrieve_python_test(
+            (value, offset) = retrieve_python(
                 py,
                 buf,
                 offset,
                 &value_type_serde_option,
-                &mut value_pyany_serde_option,
+                &mut self.value_pyany_serde_option,
             )?;
             dict.set_item(key, value)?;
         }

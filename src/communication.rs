@@ -3,8 +3,9 @@ use std::mem::size_of;
 use std::os::raw::c_double;
 
 use pyo3::exceptions::asyncio::InvalidStateError;
-use pyo3::types::{PyAnyMethods, PyBytes, PyBytesMethods};
-use pyo3::{intern, Bound, PyAny, PyResult, Python};
+use pyo3::sync::GILOnceCell;
+use pyo3::types::PyBytes;
+use pyo3::{intern, prelude::*, IntoPyObjectExt};
 
 use paste::paste;
 
@@ -26,6 +27,40 @@ impl Display for Header {
             Self::Stop => write!(f, "Stop"),
         }
     }
+}
+
+static INTERNED_INT_1: GILOnceCell<PyObject> = GILOnceCell::new();
+static INTERNED_BYTES_0: GILOnceCell<PyObject> = GILOnceCell::new();
+
+#[pyfunction]
+pub fn recvfrom_byte_py(socket: PyObject) -> PyResult<PyObject> {
+    Python::with_gil(|py| recvfrom_byte(py, &socket))
+}
+
+pub fn recvfrom_byte<'py>(py: Python<'py>, socket: &PyObject) -> PyResult<PyObject> {
+    socket.call_method1(
+        py,
+        intern!(py, "recvfrom"),
+        (INTERNED_INT_1.get_or_init(py, || 1_i64.into_py_any(py).unwrap()),),
+    )
+}
+
+#[pyfunction]
+pub fn sendto_byte_py(socket: PyObject, address: PyObject) -> PyResult<()> {
+    Python::with_gil(|py| sendto_byte(py, &socket, &address))
+}
+
+pub fn sendto_byte<'py>(py: Python<'py>, socket: &PyObject, address: &PyObject) -> PyResult<()> {
+    socket.call_method1(
+        py,
+        intern!(py, "sendto"),
+        (
+            INTERNED_BYTES_0
+                .get_or_init(py, || PyBytes::new(py, &vec![0_u8][..]).into_any().unbind()),
+            address,
+        ),
+    )?;
+    Ok(())
 }
 
 pub fn get_flink(flinks_folder: &str, proc_id: &str) -> String {
@@ -181,7 +216,7 @@ pub fn retrieve_bytes(slice: &[u8], offset: usize) -> PyResult<(&[u8], usize)> {
     Ok((&slice[start..end], end))
 }
 
-pub fn append_python_test<'py>(
+pub fn append_python<'py>(
     buf: &mut [u8],
     offset: usize,
     obj: &Bound<'py, PyAny>,
@@ -223,7 +258,7 @@ pub fn append_python_test<'py>(
     return Ok(offset);
 }
 
-pub fn append_python_option_test<'py>(
+pub fn append_python_option<'py>(
     buf: &mut [u8],
     offset: usize,
     obj_option: &Option<&Bound<'py, PyAny>>,
@@ -233,14 +268,14 @@ pub fn append_python_option_test<'py>(
     let mut offset = offset;
     if let Some(obj) = obj_option {
         offset = append_bool(buf, offset, true);
-        offset = append_python_test(buf, offset, obj, type_serde_option, pyany_serde_option)?;
+        offset = append_python(buf, offset, obj, type_serde_option, pyany_serde_option)?;
     } else {
         offset = append_bool(buf, offset, false);
     }
     Ok(offset)
 }
 
-pub fn retrieve_python_test<'py>(
+pub fn retrieve_python<'py>(
     py: Python<'py>,
     buf: &[u8],
     offset: usize,
@@ -275,7 +310,7 @@ pub fn retrieve_python_test<'py>(
     return Ok((obj, offset));
 }
 
-pub fn retrieve_python_option_test<'py>(
+pub fn retrieve_python_option<'py>(
     py: Python<'py>,
     buf: &[u8],
     offset: usize,
@@ -287,7 +322,7 @@ pub fn retrieve_python_option_test<'py>(
     (is_some, offset) = retrieve_bool(buf, offset)?;
     if is_some {
         let (obj, offset) =
-            retrieve_python_test(py, buf, offset, type_serde_option, pyany_serde_option)?;
+            retrieve_python(py, buf, offset, type_serde_option, pyany_serde_option)?;
         Ok((Some(obj), offset))
     } else {
         Ok((None, offset))

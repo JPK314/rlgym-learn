@@ -1,8 +1,9 @@
 import json
 import os
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Callable, Generic, Optional
+from typing import Generic, Optional
 
 import numpy as np
 import torch

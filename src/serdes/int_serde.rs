@@ -37,8 +37,8 @@ impl PyAnySerde for IntSerde {
         buf: &[u8],
         offset: usize,
     ) -> PyResult<(Bound<'py, PyAny>, usize)> {
-        let (val, new_offset) = retrieve_i64(buf, offset)?;
-        Ok((val.into_pyobject(py)?.to_owned().into_any(), new_offset))
+        let (val, offset) = retrieve_i64(buf, offset)?;
+        Ok((val.into_pyobject(py)?.to_owned().into_any(), offset))
     }
 
     fn align_of(&self) -> usize {

@@ -43,10 +43,10 @@ impl PyAnySerde for StringSerde {
         buf: &[u8],
         offset: usize,
     ) -> PyResult<(Bound<'py, PyAny>, usize)> {
-        let (obj_bytes, new_offset) = retrieve_bytes(buf, offset)?;
+        let (obj_bytes, offset) = retrieve_bytes(buf, offset)?;
         Ok((
             PyString::new(py, str::from_utf8(obj_bytes)?).into_any(),
-            new_offset,
+            offset,
         ))
     }
 

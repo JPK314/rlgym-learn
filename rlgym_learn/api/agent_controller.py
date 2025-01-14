@@ -11,7 +11,7 @@ from rlgym.api import (
     StateType,
 )
 from rlgym_learn_backend import EnvActionResponse
-from torch import Tensor, as_tensor, device
+from torch import Tensor, as_tensor
 
 from rlgym_learn.experience import Timestep
 
@@ -133,12 +133,5 @@ class AgentController(
     def cleanup(self):
         """
         Function to clean up any memory still in use when shutting down.
-        """
-        pass
-
-    def is_learning(self) -> bool:
-        """
-        Function to determine if the agent is still learning.
-        :return: True if agent is still learning, false otherwise
         """
         pass

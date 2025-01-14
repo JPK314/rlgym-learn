@@ -11,7 +11,8 @@ reports to wandb and the console, and handles checkpointing.
 import cProfile
 import os
 import random
-from typing import Any, Callable, Dict, Generic, Optional, Union
+from collections.abc import Callable
+from typing import Any, Dict, Generic, Optional, Union
 
 import numpy as np
 import torch

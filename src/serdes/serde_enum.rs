@@ -5,7 +5,7 @@ use pyo3::prelude::*;
 
 use crate::common::numpy_dtype_enum::NumpyDtype;
 
-// This enum is used to store all of the information about a Python type required to choose a Serde
+// This enum is used to store information about a type which is sent between processes to dynamically recover a Box<dyn PyAnySerde>
 #[derive(Debug, PartialEq, Clone)]
 pub enum Serde {
     PICKLE,
@@ -31,6 +31,12 @@ pub enum Serde {
     DICT {
         keys: Box<Serde>,
         values: Box<Serde>,
+    },
+    TYPEDDICT {
+        kv_pairs: Vec<(String, Serde)>,
+    },
+    OPTION {
+        value: Box<Serde>,
     },
     OTHER,
 }
@@ -58,17 +64,17 @@ pub fn get_serde_bytes(serde: &Serde) -> Vec<u8> {
             NumpyDtype::FLOAT64 => vec![8, 9],
         },
         Serde::LIST { items } => {
-            let mut bytes: Vec<u8> = vec![9];
+            let mut bytes = vec![9];
             bytes.append(&mut get_serde_bytes(&*items));
             bytes
         }
         Serde::SET { items } => {
-            let mut bytes: Vec<u8> = vec![10];
+            let mut bytes = vec![10];
             bytes.append(&mut get_serde_bytes(&*items));
             bytes
         }
         Serde::TUPLE { items } => {
-            let mut bytes: Vec<u8> = vec![11];
+            let mut bytes = vec![11];
             bytes.extend_from_slice(&items.len().to_ne_bytes());
             for item in items {
                 bytes.append(&mut get_serde_bytes(item));
@@ -76,19 +82,36 @@ pub fn get_serde_bytes(serde: &Serde) -> Vec<u8> {
             bytes
         }
         Serde::DICT { keys, values } => {
-            let mut bytes: Vec<u8> = vec![12];
+            let mut bytes = vec![12];
             bytes.append(&mut get_serde_bytes(&*keys));
             bytes.append(&mut get_serde_bytes(&*values));
             bytes
         }
-        Serde::OTHER => vec![13],
+
+        Serde::TYPEDDICT { kv_pairs } => {
+            let mut bytes = vec![13];
+            bytes.extend_from_slice(&kv_pairs.len().to_ne_bytes());
+            for (key, serde) in kv_pairs {
+                let key_bytes = key.as_bytes();
+                bytes.extend_from_slice(&key_bytes.len().to_ne_bytes());
+                bytes.extend_from_slice(key.as_bytes());
+                bytes.append(&mut get_serde_bytes(serde));
+            }
+            bytes
+        }
+        Serde::OPTION { value } => {
+            let mut bytes = vec![14];
+            bytes.append(&mut get_serde_bytes(&*value));
+            bytes
+        }
+        Serde::OTHER => vec![15],
     }
 }
 
 pub fn retrieve_serde(buf: &[u8], offset: usize) -> PyResult<(Serde, usize)> {
-    let mut cur_offset = offset;
-    let v = buf[cur_offset];
-    cur_offset += 1;
+    let mut offset = offset;
+    let v = buf[offset];
+    offset += 1;
     let serde = match v {
         0 => Ok(Serde::PICKLE),
         1 => Ok(Serde::INT),
@@ -99,7 +122,7 @@ pub fn retrieve_serde(buf: &[u8], offset: usize) -> PyResult<(Serde, usize)> {
         6 => Ok(Serde::BYTES),
         7 => Ok(Serde::DYNAMIC),
         8 => {
-            let dtype = match buf[cur_offset] {
+            let dtype = match buf[offset] {
                 0 => Ok(NumpyDtype::INT8),
                 1 => Ok(NumpyDtype::INT16),
                 2 => Ok(NumpyDtype::INT32),
@@ -115,52 +138,77 @@ pub fn retrieve_serde(buf: &[u8], offset: usize) -> PyResult<(Serde, usize)> {
                     v
                 ))),
             }?;
-            cur_offset += 1;
+            offset += 1;
             Ok(Serde::NUMPY { dtype })
         }
         9 => {
             let items;
-            (items, cur_offset) = retrieve_serde(buf, cur_offset)?;
+            (items, offset) = retrieve_serde(buf, offset)?;
             Ok(Serde::LIST {
                 items: Box::new(items),
             })
         }
         10 => {
             let items;
-            (items, cur_offset) = retrieve_serde(buf, cur_offset)?;
+            (items, offset) = retrieve_serde(buf, offset)?;
             Ok(Serde::SET {
                 items: Box::new(items),
             })
         }
         11 => {
-            let end = cur_offset + size_of::<usize>();
-            let items_len = usize::from_ne_bytes(buf[cur_offset..end].try_into()?);
-            cur_offset = end;
+            let end = offset + size_of::<usize>();
+            let items_len = usize::from_ne_bytes(buf[offset..end].try_into()?);
+            offset = end;
             let mut items = Vec::with_capacity(items_len);
             for _ in 0..items_len {
                 let item;
-                (item, cur_offset) = retrieve_serde(buf, cur_offset)?;
+                (item, offset) = retrieve_serde(buf, offset)?;
                 items.push(item);
             }
             Ok(Serde::TUPLE { items })
         }
         12 => {
             let keys;
-            (keys, cur_offset) = retrieve_serde(buf, cur_offset)?;
+            (keys, offset) = retrieve_serde(buf, offset)?;
             let values;
-            (values, cur_offset) = retrieve_serde(buf, cur_offset)?;
+            (values, offset) = retrieve_serde(buf, offset)?;
             Ok(Serde::DICT {
                 keys: Box::new(keys),
                 values: Box::new(values),
             })
         }
-        13 => Ok(Serde::OTHER),
+        13 => {
+            let mut end = offset + size_of::<usize>();
+            let items_len = usize::from_ne_bytes(buf[offset..end].try_into()?);
+            offset = end;
+            let mut kv_pairs = Vec::with_capacity(items_len);
+            for _ in 0..items_len {
+                end = offset + size_of::<usize>();
+                let key_bytes_len = usize::from_ne_bytes(buf[offset..end].try_into()?);
+                offset = end;
+                end = offset + key_bytes_len;
+                let key = String::from_utf8(buf[offset..end].to_vec())?;
+                offset = end;
+                let item;
+                (item, offset) = retrieve_serde(buf, offset)?;
+                kv_pairs.push((key, item));
+            }
+            Ok(Serde::TYPEDDICT { kv_pairs })
+        }
+        14 => {
+            let value;
+            (value, offset) = retrieve_serde(buf, offset)?;
+            Ok(Serde::OPTION {
+                value: Box::new(value),
+            })
+        }
+        15 => Ok(Serde::OTHER),
         v => Err(InvalidStateError::new_err(format!(
             "Tried to deserialize Serde but got {}",
             v
         ))),
     }?;
-    Ok((serde, cur_offset))
+    Ok((serde, offset))
 }
 
 #[cfg(test)]

@@ -8,18 +8,15 @@ Description:
     a FIFO fashion.
 """
 
-import json
 import os
 import pickle
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, Generic, List, Optional, Tuple
+from typing import Any, Dict, Generic, List, Optional, Tuple
 
 import numpy as np
 import torch
 from pydantic import BaseModel, Field, model_validator
 from rlgym.api import ActionType, AgentID, ObsType, RewardType
-from torch import device as _device
-from torch import dtype as _dtype
 
 from .trajectory import Trajectory
 from .trajectory_processor import (

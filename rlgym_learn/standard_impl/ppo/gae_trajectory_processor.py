@@ -1,6 +1,5 @@
 import json
 import os
-from collections.abc import Callable
 from dataclasses import dataclass
 from typing import List, Tuple
 

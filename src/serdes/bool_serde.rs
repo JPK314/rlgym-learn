@@ -37,8 +37,8 @@ impl PyAnySerde for BoolSerde {
         buf: &[u8],
         offset: usize,
     ) -> PyResult<(Bound<'py, PyAny>, usize)> {
-        let (val, new_offset) = retrieve_bool(buf, offset)?;
-        Ok((val.into_pyobject(py)?.to_owned().into_any(), new_offset))
+        let (val, offset) = retrieve_bool(buf, offset)?;
+        Ok((val.into_pyobject(py)?.to_owned().into_any(), offset))
     }
 
     fn align_of(&self) -> usize {

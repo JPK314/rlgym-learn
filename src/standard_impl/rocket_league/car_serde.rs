@@ -4,8 +4,8 @@ use pyo3::{types::PyAnyMethods, IntoPyObject, PyObject, PyResult, Python};
 use crate::{
     append_n_vec_elements,
     communication::{
-        append_bool, append_f32, append_python_option_test, retrieve_bool, retrieve_f32,
-        retrieve_python_option_test,
+        append_bool, append_f32, append_python_option, retrieve_bool, retrieve_f32,
+        retrieve_python_option,
     },
     retrieve_n_vec_elements,
     serdes::{
@@ -48,21 +48,20 @@ impl CarSerde {
     ) -> PyResult<usize> {
         let agent_id_type_serde_option =
             self.agent_id_type_serde_option.as_ref().map(|v| v.bind(py));
-        let mut agent_id_pyany_serde_option = self.agent_id_pyany_serde_option.take();
 
         let flip_torque = car.flip_torque.bind(py).to_vec()?;
         buf[offset] = car.team_num;
         buf[offset + 1] = car.hitbox_type;
         buf[offset + 2] = car.ball_touches;
         let mut offset = offset + 3;
-        offset = append_python_option_test(
+        offset = append_python_option(
             buf,
             offset,
             &car.bump_victim_id
                 .as_ref()
                 .map(|agent_id| agent_id.bind(py)),
             &agent_id_type_serde_option,
-            &mut agent_id_pyany_serde_option,
+            &mut self.agent_id_pyany_serde_option,
         )?;
         offset = append_f32(buf, offset, car.demo_respawn_timer);
         offset = append_bool(buf, offset, car.on_ground);
@@ -88,7 +87,6 @@ impl CarSerde {
         offset = self
             .physics_object_serde
             .append(py, buf, offset, &car._inverted_physics)?;
-        self.agent_id_pyany_serde_option = agent_id_pyany_serde_option;
         Ok(offset)
     }
 
@@ -100,7 +98,6 @@ impl CarSerde {
     ) -> PyResult<(Car, usize)> {
         let agent_id_type_serde_option =
             self.agent_id_type_serde_option.as_ref().map(|v| v.bind(py));
-        let mut agent_id_pyany_serde_option = self.agent_id_pyany_serde_option.take();
 
         let team_num = buf[offset];
         let hitbox_type = buf[offset + 1];
@@ -129,12 +126,12 @@ impl CarSerde {
             physics,
             _inverted_physics,
         );
-        (bump_victim_id, offset) = retrieve_python_option_test(
+        (bump_victim_id, offset) = retrieve_python_option(
             py,
             buf,
             offset,
             &agent_id_type_serde_option,
-            &mut agent_id_pyany_serde_option,
+            &mut self.agent_id_pyany_serde_option,
         )?;
         (demo_respawn_timer, offset) = retrieve_f32(buf, offset)?;
         (on_ground, offset) = retrieve_bool(buf, offset)?;
@@ -156,7 +153,6 @@ impl CarSerde {
         (autoflip_direction, offset) = retrieve_f32(buf, offset)?;
         (physics, offset) = self.physics_object_serde.retrieve(py, buf, offset)?;
         (_inverted_physics, offset) = self.physics_object_serde.retrieve(py, buf, offset)?;
-        self.agent_id_pyany_serde_option = agent_id_pyany_serde_option;
         Ok((
             Car {
                 team_num,

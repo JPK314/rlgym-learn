@@ -1,24 +1,12 @@
 import multiprocessing as mp
 import os
-import random
-import selectors
 import socket
-import traceback
-
-try:
-    from tqdm import tqdm
-except ImportError:
-
-    def tqdm(iterator, *args, **kwargs):
-        return iterator
-
-
-import selectors
 import time
-from typing import Any, Callable, Dict, Generic, List, Optional, Tuple, Union, cast
+import traceback
+from collections.abc import Callable
+from typing import Dict, Generic, List, Optional, Tuple, Union
 from uuid import uuid4
 
-import torch
 from rlgym.api import (
     ActionSpaceType,
     ActionType,
@@ -32,13 +20,19 @@ from rlgym.api import (
 )
 from rlgym_learn_backend import EnvAction
 from rlgym_learn_backend import EnvProcessInterface as RustEnvProcessInterface
+from rlgym_learn_backend import recvfrom_byte_py, sendto_byte_py
 from torch import Tensor
 
 from rlgym_learn.api import RustSerde, StateMetrics, TypeSerde
 from rlgym_learn.env_processing.env_process import env_process
 from rlgym_learn.experience import Timestep
 
-from .communication import EVENT_STRING
+try:
+    from tqdm import tqdm
+except ImportError:
+
+    def tqdm(iterator, *args, **kwargs):
+        return iterator
 
 
 class EnvProcessInterface(
@@ -255,8 +249,8 @@ class EnvProcessInterface(
             process, parent_end, _, proc_id = self.processes[pid_idx]
 
             # Get child endpoint
-            _, child_sockname = parent_end.recvfrom(1)
-            parent_end.sendto(EVENT_STRING, child_sockname)
+            _, child_sockname = recvfrom_byte_py(parent_end)
+            sendto_byte_py(parent_end, child_sockname)
 
             if spawn_delay is not None:
                 time.sleep(spawn_delay)
@@ -318,8 +312,8 @@ class EnvProcessInterface(
         )
 
         process.start()
-        _, child_sockname = parent_end.recvfrom(1)
-        parent_end.sendto(EVENT_STRING, child_sockname)
+        _, child_sockname = recvfrom_byte_py(parent_end)
+        sendto_byte_py(parent_end, child_sockname)
 
         self.rust_env_process_interface.add_process(
             (

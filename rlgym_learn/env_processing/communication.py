@@ -1,1 +1,0 @@
-EVENT_STRING = b"0"

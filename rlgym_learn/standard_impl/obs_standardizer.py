@@ -1,5 +1,5 @@
 from abc import abstractmethod
-from typing import Generic, List, Tuple
+from typing import Generic, List
 
 from rlgym.api import AgentID, ObsType
 

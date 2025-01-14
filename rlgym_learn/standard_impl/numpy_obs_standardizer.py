@@ -3,8 +3,9 @@ from typing import List, Tuple
 import numpy as np
 from rlgym.api import AgentID
 
-from rlgym_learn.api import ObsStandardizer
 from rlgym_learn.util import WelfordRunningStat
+
+from .obs_standardizer import ObsStandardizer
 
 
 class NumpyObsStandardizer(ObsStandardizer[AgentID, np.ndarray]):

@@ -1,5 +1,5 @@
 import os
-from typing import Any, Dict, Generic, Iterable, List, Optional, Tuple
+from typing import Any, Dict, Generic, List, Optional, Tuple
 
 import numpy as np
 from rlgym.api import (
@@ -129,12 +129,3 @@ class AgentManager(
     def cleanup(self):
         for agent_controller in self.agent_controllers_list:
             agent_controller.cleanup()
-
-    # TODO: what's the point of this again?
-    def is_learning(self):
-        return any(
-            [
-                agent_controller.is_learning()
-                for agent_controller in self.agent_controllers_list
-            ]
-        )

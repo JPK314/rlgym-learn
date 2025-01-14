@@ -116,102 +116,92 @@ impl PyAnySerde for DynamicSerde {
     ) -> PyResult<usize> {
         let python_type = detect_python_type(obj)?;
         buf[offset] = get_python_type_byte(&python_type);
-        let mut new_offset = offset + 1;
+        let mut offset = offset + 1;
         match python_type {
             PythonType::BOOL => {
-                new_offset = self.boolean_serde.append(buf, new_offset, obj)?;
+                offset = self.boolean_serde.append(buf, offset, obj)?;
             }
             PythonType::INT => {
-                new_offset = self.int_serde.append(buf, new_offset, obj)?;
+                offset = self.int_serde.append(buf, offset, obj)?;
             }
             PythonType::FLOAT => {
-                new_offset = self.float_serde.append(buf, new_offset, obj)?;
+                offset = self.float_serde.append(buf, offset, obj)?;
             }
             PythonType::COMPLEX => {
-                new_offset = self.complex_serde.append(buf, new_offset, obj)?;
+                offset = self.complex_serde.append(buf, offset, obj)?;
             }
             PythonType::STRING => {
-                new_offset = self.string_serde.append(buf, new_offset, obj)?;
+                offset = self.string_serde.append(buf, offset, obj)?;
             }
             PythonType::BYTES => {
-                new_offset = self.bytes_serde.append(buf, new_offset, obj)?;
+                offset = self.bytes_serde.append(buf, offset, obj)?;
             }
             PythonType::NUMPY { dtype } => match dtype {
                 NumpyDtype::INT8 => {
-                    new_offset =
-                        PyAnySerde::append(&mut self.numpy_i8_serde, buf, new_offset, obj)?;
+                    offset = PyAnySerde::append(&mut self.numpy_i8_serde, buf, offset, obj)?;
                 }
                 NumpyDtype::INT16 => {
-                    new_offset =
-                        PyAnySerde::append(&mut self.numpy_i16_serde, buf, new_offset, obj)?;
+                    offset = PyAnySerde::append(&mut self.numpy_i16_serde, buf, offset, obj)?;
                 }
                 NumpyDtype::INT32 => {
-                    new_offset =
-                        PyAnySerde::append(&mut self.numpy_i32_serde, buf, new_offset, obj)?;
+                    offset = PyAnySerde::append(&mut self.numpy_i32_serde, buf, offset, obj)?;
                 }
                 NumpyDtype::INT64 => {
-                    new_offset =
-                        PyAnySerde::append(&mut self.numpy_i64_serde, buf, new_offset, obj)?;
+                    offset = PyAnySerde::append(&mut self.numpy_i64_serde, buf, offset, obj)?;
                 }
                 NumpyDtype::UINT8 => {
-                    new_offset =
-                        PyAnySerde::append(&mut self.numpy_u8_serde, buf, new_offset, obj)?;
+                    offset = PyAnySerde::append(&mut self.numpy_u8_serde, buf, offset, obj)?;
                 }
                 NumpyDtype::UINT16 => {
-                    new_offset =
-                        PyAnySerde::append(&mut self.numpy_u16_serde, buf, new_offset, obj)?;
+                    offset = PyAnySerde::append(&mut self.numpy_u16_serde, buf, offset, obj)?;
                 }
                 NumpyDtype::UINT32 => {
-                    new_offset =
-                        PyAnySerde::append(&mut self.numpy_u32_serde, buf, new_offset, obj)?;
+                    offset = PyAnySerde::append(&mut self.numpy_u32_serde, buf, offset, obj)?;
                 }
                 NumpyDtype::UINT64 => {
-                    new_offset =
-                        PyAnySerde::append(&mut self.numpy_u64_serde, buf, new_offset, obj)?;
+                    offset = PyAnySerde::append(&mut self.numpy_u64_serde, buf, offset, obj)?;
                 }
                 NumpyDtype::FLOAT32 => {
-                    new_offset =
-                        PyAnySerde::append(&mut self.numpy_f32_serde, buf, new_offset, obj)?;
+                    offset = PyAnySerde::append(&mut self.numpy_f32_serde, buf, offset, obj)?;
                 }
                 NumpyDtype::FLOAT64 => {
-                    new_offset =
-                        PyAnySerde::append(&mut self.numpy_f64_serde, buf, new_offset, obj)?;
+                    offset = PyAnySerde::append(&mut self.numpy_f64_serde, buf, offset, obj)?;
                 }
             },
             PythonType::LIST => {
                 let list = obj.downcast::<PyList>()?;
-                new_offset = append_usize(buf, new_offset, list.len());
+                offset = append_usize(buf, offset, list.len());
                 for item in list.iter() {
-                    new_offset = self.append(buf, new_offset, &item)?;
+                    offset = self.append(buf, offset, &item)?;
                 }
             }
             PythonType::SET => {
                 let set = obj.downcast::<PySet>()?;
-                new_offset = append_usize(buf, new_offset, set.len());
+                offset = append_usize(buf, offset, set.len());
                 for item in set.iter() {
-                    new_offset = self.append(buf, new_offset, &item)?;
+                    offset = self.append(buf, offset, &item)?;
                 }
             }
             PythonType::TUPLE => {
                 let tuple = obj.downcast::<PyTuple>()?;
-                new_offset = append_usize(buf, new_offset, tuple.len());
+                offset = append_usize(buf, offset, tuple.len());
                 for item in tuple.iter() {
-                    new_offset = self.append(buf, new_offset, &item)?;
+                    offset = self.append(buf, offset, &item)?;
                 }
             }
             PythonType::DICT => {
                 let dict = obj.downcast::<PyDict>()?;
-                new_offset = append_usize(buf, new_offset, dict.len());
+                offset = append_usize(buf, offset, dict.len());
                 for (key, value) in dict.iter() {
-                    new_offset = self.append(buf, new_offset, &key)?;
-                    new_offset = self.append(buf, new_offset, &value)?;
+                    offset = self.append(buf, offset, &key)?;
+                    offset = self.append(buf, offset, &value)?;
                 }
             }
             PythonType::OTHER => {
-                new_offset = self.pickle_serde.append(buf, new_offset, obj)?;
+                offset = self.pickle_serde.append(buf, offset, obj)?;
             }
         };
-        Ok(new_offset)
+        Ok(offset)
     }
 
     fn retrieve<'py>(
@@ -220,76 +210,76 @@ impl PyAnySerde for DynamicSerde {
         buf: &[u8],
         offset: usize,
     ) -> PyResult<(Bound<'py, PyAny>, usize)> {
-        let (python_type, mut new_offset) = retrieve_python_type(buf, offset)?;
+        let (python_type, mut offset) = retrieve_python_type(buf, offset)?;
         let obj;
         match python_type {
             PythonType::BOOL => {
-                (obj, new_offset) = self.boolean_serde.retrieve(py, buf, new_offset)?;
+                (obj, offset) = self.boolean_serde.retrieve(py, buf, offset)?;
             }
             PythonType::INT => {
-                (obj, new_offset) = self.int_serde.retrieve(py, buf, new_offset)?;
+                (obj, offset) = self.int_serde.retrieve(py, buf, offset)?;
             }
             PythonType::FLOAT => {
-                (obj, new_offset) = self.float_serde.retrieve(py, buf, new_offset)?;
+                (obj, offset) = self.float_serde.retrieve(py, buf, offset)?;
             }
             PythonType::COMPLEX => {
-                (obj, new_offset) = self.complex_serde.retrieve(py, buf, new_offset)?;
+                (obj, offset) = self.complex_serde.retrieve(py, buf, offset)?;
             }
             PythonType::STRING => {
-                (obj, new_offset) = self.string_serde.retrieve(py, buf, new_offset)?;
+                (obj, offset) = self.string_serde.retrieve(py, buf, offset)?;
             }
             PythonType::BYTES => {
-                (obj, new_offset) = self.bytes_serde.retrieve(py, buf, new_offset)?;
+                (obj, offset) = self.bytes_serde.retrieve(py, buf, offset)?;
             }
             PythonType::NUMPY { dtype } => match dtype {
                 NumpyDtype::INT8 => {
-                    (obj, new_offset) =
-                        PyAnySerde::retrieve(&mut self.numpy_i8_serde, py, buf, new_offset)?;
+                    (obj, offset) =
+                        PyAnySerde::retrieve(&mut self.numpy_i8_serde, py, buf, offset)?;
                 }
                 NumpyDtype::INT16 => {
-                    (obj, new_offset) =
-                        PyAnySerde::retrieve(&mut self.numpy_i16_serde, py, buf, new_offset)?;
+                    (obj, offset) =
+                        PyAnySerde::retrieve(&mut self.numpy_i16_serde, py, buf, offset)?;
                 }
                 NumpyDtype::INT32 => {
-                    (obj, new_offset) =
-                        PyAnySerde::retrieve(&mut self.numpy_i32_serde, py, buf, new_offset)?;
+                    (obj, offset) =
+                        PyAnySerde::retrieve(&mut self.numpy_i32_serde, py, buf, offset)?;
                 }
                 NumpyDtype::INT64 => {
-                    (obj, new_offset) =
-                        PyAnySerde::retrieve(&mut self.numpy_i64_serde, py, buf, new_offset)?;
+                    (obj, offset) =
+                        PyAnySerde::retrieve(&mut self.numpy_i64_serde, py, buf, offset)?;
                 }
                 NumpyDtype::UINT8 => {
-                    (obj, new_offset) =
-                        PyAnySerde::retrieve(&mut self.numpy_u8_serde, py, buf, new_offset)?;
+                    (obj, offset) =
+                        PyAnySerde::retrieve(&mut self.numpy_u8_serde, py, buf, offset)?;
                 }
                 NumpyDtype::UINT16 => {
-                    (obj, new_offset) =
-                        PyAnySerde::retrieve(&mut self.numpy_u16_serde, py, buf, new_offset)?;
+                    (obj, offset) =
+                        PyAnySerde::retrieve(&mut self.numpy_u16_serde, py, buf, offset)?;
                 }
                 NumpyDtype::UINT32 => {
-                    (obj, new_offset) =
-                        PyAnySerde::retrieve(&mut self.numpy_u32_serde, py, buf, new_offset)?;
+                    (obj, offset) =
+                        PyAnySerde::retrieve(&mut self.numpy_u32_serde, py, buf, offset)?;
                 }
                 NumpyDtype::UINT64 => {
-                    (obj, new_offset) =
-                        PyAnySerde::retrieve(&mut self.numpy_u64_serde, py, buf, new_offset)?;
+                    (obj, offset) =
+                        PyAnySerde::retrieve(&mut self.numpy_u64_serde, py, buf, offset)?;
                 }
                 NumpyDtype::FLOAT32 => {
-                    (obj, new_offset) =
-                        PyAnySerde::retrieve(&mut self.numpy_f32_serde, py, buf, new_offset)?;
+                    (obj, offset) =
+                        PyAnySerde::retrieve(&mut self.numpy_f32_serde, py, buf, offset)?;
                 }
                 NumpyDtype::FLOAT64 => {
-                    (obj, new_offset) =
-                        PyAnySerde::retrieve(&mut self.numpy_f64_serde, py, buf, new_offset)?;
+                    (obj, offset) =
+                        PyAnySerde::retrieve(&mut self.numpy_f64_serde, py, buf, offset)?;
                 }
             },
             PythonType::LIST => {
                 let list = PyList::empty(py);
                 let n_items;
-                (n_items, new_offset) = retrieve_usize(buf, new_offset)?;
+                (n_items, offset) = retrieve_usize(buf, offset)?;
                 for _ in 0..n_items {
                     let item;
-                    (item, new_offset) = self.retrieve(py, buf, new_offset)?;
+                    (item, offset) = self.retrieve(py, buf, offset)?;
                     list.append(item)?;
                 }
                 obj = list.into_any();
@@ -297,21 +287,21 @@ impl PyAnySerde for DynamicSerde {
             PythonType::SET => {
                 let set = PySet::empty(py)?;
                 let n_items;
-                (n_items, new_offset) = retrieve_usize(buf, new_offset)?;
+                (n_items, offset) = retrieve_usize(buf, offset)?;
                 for _ in 0..n_items {
                     let item;
-                    (item, new_offset) = self.retrieve(py, buf, new_offset)?;
+                    (item, offset) = self.retrieve(py, buf, offset)?;
                     set.add(item)?;
                 }
                 obj = set.into_any();
             }
             PythonType::TUPLE => {
                 let n_items;
-                (n_items, new_offset) = retrieve_usize(buf, new_offset)?;
+                (n_items, offset) = retrieve_usize(buf, offset)?;
                 let mut tuple_vec = Vec::with_capacity(n_items);
                 for _ in 0..n_items {
                     let item;
-                    (item, new_offset) = self.retrieve(py, buf, new_offset)?;
+                    (item, offset) = self.retrieve(py, buf, offset)?;
                     tuple_vec.push(item);
                 }
                 obj = PyTuple::new(py, tuple_vec)?.into_any();
@@ -319,21 +309,21 @@ impl PyAnySerde for DynamicSerde {
             PythonType::DICT => {
                 let dict = PyDict::new(py);
                 let n_items;
-                (n_items, new_offset) = retrieve_usize(buf, new_offset)?;
+                (n_items, offset) = retrieve_usize(buf, offset)?;
                 for _ in 0..n_items {
                     let key;
-                    (key, new_offset) = self.retrieve(py, buf, new_offset)?;
+                    (key, offset) = self.retrieve(py, buf, offset)?;
                     let value;
-                    (value, new_offset) = self.retrieve(py, buf, new_offset)?;
+                    (value, offset) = self.retrieve(py, buf, offset)?;
                     dict.set_item(key, value)?;
                 }
                 obj = dict.into_any();
             }
             PythonType::OTHER => {
-                (obj, new_offset) = self.pickle_serde.retrieve(py, buf, new_offset)?;
+                (obj, offset) = self.pickle_serde.retrieve(py, buf, offset)?;
             }
         };
-        Ok((obj, new_offset))
+        Ok((obj, offset))
     }
 
     fn align_of(&self) -> usize {

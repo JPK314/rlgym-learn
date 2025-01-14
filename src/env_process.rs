@@ -1,7 +1,7 @@
-use crate::common::misc::{py_hash, recvfrom_byte, sendto_byte};
+use crate::common::misc::py_hash;
 use crate::communication::{
-    append_bool, append_bytes, append_python_test, append_usize, get_flink, insert_bytes,
-    retrieve_header, Header,
+    append_bool, append_bytes, append_python, append_usize, get_flink, insert_bytes, recvfrom_byte,
+    retrieve_header, sendto_byte, Header,
 };
 use crate::env_action::{retrieve_env_action, EnvAction};
 use crate::serdes::pyany_serde::DynPyAnySerde;
@@ -17,7 +17,8 @@ use std::time::Duration;
 
 fn sync_with_epi<'py>(py: Python<'py>, socket: &PyObject, address: &PyObject) -> PyResult<()> {
     sendto_byte(py, socket, address)?;
-    recvfrom_byte(py, socket)
+    recvfrom_byte(py, socket)?;
+    Ok(())
 }
 
 fn env_reset<'py>(env: &'py Bound<'py, PyAny>) -> PyResult<Bound<'py, PyDict>> {
@@ -217,7 +218,7 @@ pub fn env_process(
         let mut agent_id_data_list = Vec::with_capacity(n_agents);
         for agent_id in reset_obs.keys().iter() {
             let agent_id_hash = py_hash(&agent_id)?;
-            swap_offset = append_python_test(
+            swap_offset = append_python(
                 swap_space,
                 0,
                 &agent_id,
@@ -228,12 +229,12 @@ pub fn env_process(
             agent_id_data_list.push((agent_id, agent_id_hash, swap_space[0..swap_offset].to_vec()));
         }
 
-        // Write reset message (TODO: no state metrics?)
+        // Write reset message
         let mut offset = 0;
         offset = append_usize(shm_slice, offset, n_agents);
         for (agent_id, _, serialized_agent_id) in agent_id_data_list.iter() {
             offset = insert_bytes(shm_slice, offset, &serialized_agent_id[..])?;
-            offset = append_python_test(
+            offset = append_python(
                 shm_slice,
                 offset,
                 &reset_obs
@@ -247,7 +248,7 @@ pub fn env_process(
         }
 
         if send_state_to_agent_controllers {
-            _ = append_python_test(
+            _ = append_python(
                 shm_slice,
                 offset,
                 &env_state(&env)?,
@@ -338,7 +339,7 @@ pub fn env_process(
                             .unwrap()
                             .call1(py, (env_state(&env)?, &rew_dict_option))?
                             .into_bound(py);
-                        swap_offset = append_python_test(
+                        swap_offset = append_python(
                             swap_space,
                             0,
                             &result,
@@ -353,7 +354,7 @@ pub fn env_process(
                         agent_id_data_list.clear();
                         for agent_id in obs_dict.keys().iter() {
                             let agent_id_hash = py_hash(&agent_id)?;
-                            swap_offset = append_python_test(
+                            swap_offset = append_python(
                                 swap_space,
                                 0,
                                 &agent_id,
@@ -381,7 +382,7 @@ pub fn env_process(
                         if recalculate_agent_id_every_step || new_episode {
                             offset = insert_bytes(shm_slice, offset, &serialized_agent_id[..])?;
                         }
-                        offset = append_python_test(
+                        offset = append_python(
                             shm_slice,
                             offset,
                             &obs_dict.get_item(agent_id)?.unwrap(),
@@ -389,7 +390,7 @@ pub fn env_process(
                             &mut obs_pyany_serde_option,
                         )?;
                         if is_step_action {
-                            offset = append_python_test(
+                            offset = append_python(
                                 shm_slice,
                                 offset,
                                 &rew_dict_option
@@ -424,7 +425,7 @@ pub fn env_process(
                     }
 
                     if send_state_to_agent_controllers {
-                        offset = append_python_test(
+                        offset = append_python(
                             shm_slice,
                             offset,
                             &env_state(&env)?,
@@ -461,14 +462,14 @@ pub fn env_process(
                     println!("--------------------");
 
                     offset = 0;
-                    offset = append_python_test(
+                    offset = append_python(
                         shm_slice,
                         offset,
                         &obs_space,
                         &obs_space_type_serde_option,
                         &mut obs_space_pyany_serde_option,
                     )?;
-                    append_python_test(
+                    append_python(
                         shm_slice,
                         offset,
                         &action_space,

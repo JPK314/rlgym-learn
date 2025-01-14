@@ -6,8 +6,8 @@ from typing import Any, Dict, Generic, List, Optional
 
 from wandb.wandb_run import Run
 
-from .agent_controller import AgentControllerData
-from .typing import AgentControllerData, StateMetrics
+from ..api.agent_controller import AgentControllerData
+from ..api.typing import AgentControllerData, StateMetrics
 
 METRICS_LOGGER_FILE = "metrics_logger.pkl"
 

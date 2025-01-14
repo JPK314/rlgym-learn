@@ -1,4 +1,4 @@
-from typing import Dict, Generic, List, Optional, Tuple
+from typing import Dict, Generic, List, Optional
 
 import torch
 from rlgym.api import ActionType, AgentID, ObsType, RewardType

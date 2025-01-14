@@ -1,11 +1,9 @@
 from abc import abstractmethod
 from dataclasses import dataclass
-from typing import Any, Dict, Generic, List, Optional, Tuple, TypeVar
+from typing import Any, Generic, List, Optional, Tuple, TypeVar
 
 from rlgym.api import ActionType, AgentID, ObsType, RewardType
 from torch import Tensor
-from torch import device as _device
-from torch import dtype, float32, float64
 
 from .trajectory import Trajectory
 

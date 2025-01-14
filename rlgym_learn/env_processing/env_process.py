@@ -1,6 +1,7 @@
 import socket
+from collections.abc import Callable
 from datetime import timedelta
-from typing import Callable, Dict, Optional, Union
+from typing import Dict, Optional, Union
 
 from rlgym.api import (
     ActionSpaceType,
@@ -14,10 +15,9 @@ from rlgym.api import (
     StateType,
 )
 from rlgym_learn_backend import env_process as rust_env_process
+from rlgym_learn_backend import recvfrom_byte_py, sendto_byte_py
 
 from rlgym_learn.api import RustSerde, StateMetrics, TypeSerde
-
-from .communication import EVENT_STRING
 
 
 def env_process(
@@ -58,8 +58,8 @@ def env_process(
     child_end = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     child_end.bind(("127.0.0.1", 0))
 
-    child_end.sendto(EVENT_STRING, parent_sockname)
-    child_end.recvfrom(1)
+    sendto_byte_py(child_end, parent_sockname)
+    recvfrom_byte_py(child_end)
 
     agent_id_type_serde = None
     action_type_serde = None

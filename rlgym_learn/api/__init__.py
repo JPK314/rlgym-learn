@@ -15,9 +15,12 @@ from .serdes import (
     int_serde,
     list_serde,
     numpy_serde,
+    option_serde,
     pickle_serde,
     set_serde,
     string_serde,
     tuple_serde,
+    typed_dict_serde,
+    union_serde,
 )
 from .typing import AgentControllerConfig, AgentControllerData, StateMetrics

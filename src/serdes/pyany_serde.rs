@@ -1,7 +1,7 @@
 use dyn_clone::{clone_trait_object, DynClone};
 use numpy::PyArrayDescr;
 use pyo3::exceptions::asyncio::InvalidStateError;
-use pyo3::types::{PyDict, PyTuple};
+use pyo3::types::{PyDict, PyFunction, PyString, PyTuple};
 use pyo3::Bound;
 use pyo3::{prelude::*, pyclass};
 
@@ -17,11 +17,14 @@ use super::float_serde::FloatSerde;
 use super::int_serde::IntSerde;
 use super::list_serde::ListSerde;
 use super::numpy_dynamic_shape_serde::get_numpy_dynamic_shape_serde;
+use super::option_serde::OptionSerde;
 use super::pickle_serde::PickleSerde;
 use super::serde_enum::{retrieve_serde, Serde};
 use super::set_serde::SetSerde;
 use super::string_serde::StringSerde;
 use super::tuple_serde::TupleSerde;
+use super::typed_dict_serde::TypedDictSerde;
+use super::union_serde::UnionSerde;
 
 #[pyclass(module = "rlgym_learn_backend")]
 #[derive(Clone)]
@@ -89,9 +92,14 @@ impl PyAnySerdeFactory {
         DynPyAnySerde(Some(Box::new(IntSerde::new())))
     }
     #[staticmethod]
-    pub fn list_serde(dyn_items_serde: &DynPyAnySerde) -> DynPyAnySerde {
+    #[pyo3(signature = (items_type_serde_option, items_dyn_serde_option))]
+    pub fn list_serde(
+        items_type_serde_option: Option<PyObject>,
+        items_dyn_serde_option: Option<DynPyAnySerde>,
+    ) -> DynPyAnySerde {
         DynPyAnySerde(Some(Box::new(ListSerde::new(
-            dyn_items_serde.0.as_ref().unwrap().clone(),
+            items_type_serde_option,
+            items_dyn_serde_option.map(|dyn_serde| dyn_serde.0.as_ref().unwrap().clone()),
         ))))
     }
     #[staticmethod]
@@ -101,13 +109,29 @@ impl PyAnySerdeFactory {
         ))))
     }
     #[staticmethod]
+    #[pyo3(signature = (value_type_serde_option, value_dyn_serde_option))]
+    pub fn option_serde(
+        value_type_serde_option: Option<PyObject>,
+        value_dyn_serde_option: Option<DynPyAnySerde>,
+    ) -> DynPyAnySerde {
+        DynPyAnySerde(Some(Box::new(OptionSerde::new(
+            value_type_serde_option,
+            value_dyn_serde_option.map(|dyn_serde| dyn_serde.0.as_ref().unwrap().clone()),
+        ))))
+    }
+    #[staticmethod]
     pub fn pickle_serde() -> PyResult<DynPyAnySerde> {
         Ok(DynPyAnySerde(Some(Box::new(PickleSerde::new()?))))
     }
     #[staticmethod]
-    pub fn set_serde(dyn_items_serde: &DynPyAnySerde) -> DynPyAnySerde {
+    #[pyo3(signature = (items_type_serde_option, items_dyn_serde_option))]
+    pub fn set_serde(
+        items_type_serde_option: Option<PyObject>,
+        items_dyn_serde_option: Option<DynPyAnySerde>,
+    ) -> DynPyAnySerde {
         DynPyAnySerde(Some(Box::new(SetSerde::new(
-            dyn_items_serde.0.as_ref().unwrap().clone(),
+            items_type_serde_option,
+            items_dyn_serde_option.map(|dyn_serde| dyn_serde.0.as_ref().unwrap().clone()),
         ))))
     }
     #[staticmethod]
@@ -115,12 +139,56 @@ impl PyAnySerdeFactory {
         DynPyAnySerde(Some(Box::new(StringSerde::new())))
     }
     #[staticmethod]
-    pub fn tuple_serde(dyn_item_serdes: Vec<DynPyAnySerde>) -> DynPyAnySerde {
-        DynPyAnySerde(Some(Box::new(TupleSerde::new(
-            dyn_item_serdes
+    pub fn tuple_serde(
+        item_serdes: Vec<(Option<PyObject>, Option<DynPyAnySerde>)>,
+    ) -> PyResult<DynPyAnySerde> {
+        Ok(DynPyAnySerde(Some(Box::new(TupleSerde::new(
+            item_serdes
                 .into_iter()
-                .map(|dyn_item_serde| dyn_item_serde.0.unwrap())
+                .map(|(type_serde_option, dyn_serde_option)| {
+                    (
+                        type_serde_option,
+                        dyn_serde_option.map(|dyn_serde| dyn_serde.0.unwrap()),
+                    )
+                })
                 .collect(),
+        )?))))
+    }
+    #[staticmethod]
+    pub fn typed_dict_serde(
+        serde_kv_list: Vec<(Py<PyString>, (Option<PyObject>, Option<DynPyAnySerde>))>,
+    ) -> PyResult<DynPyAnySerde> {
+        Ok(DynPyAnySerde(Some(Box::new(TypedDictSerde::new(
+            serde_kv_list
+                .into_iter()
+                .map(|(key, (type_serde_option, dyn_serde_option))| {
+                    (
+                        key,
+                        (
+                            type_serde_option,
+                            dyn_serde_option.map(|dyn_serde| dyn_serde.0.unwrap()),
+                        ),
+                    )
+                })
+                .collect(),
+        )?))))
+    }
+    #[staticmethod]
+    pub fn union_serde(
+        serde_options: Vec<(Option<PyObject>, Option<DynPyAnySerde>)>,
+        serde_choice_fn: Py<PyFunction>,
+    ) -> DynPyAnySerde {
+        DynPyAnySerde(Some(Box::new(UnionSerde::new(
+            serde_options
+                .into_iter()
+                .map(|(type_serde_option, dyn_serde_option)| {
+                    (
+                        type_serde_option,
+                        dyn_serde_option.map(|dyn_serde| dyn_serde.0.unwrap()),
+                    )
+                })
+                .collect(),
+            serde_choice_fn,
         ))))
     }
 }
@@ -155,23 +223,27 @@ pub fn detect_pyany_serde<'py>(v: &Bound<'py, PyAny>) -> PyResult<Box<dyn PyAnyS
         PythonType::STRING => Ok(Box::new(StringSerde::new())),
         PythonType::BYTES => Ok(Box::new(BytesSerde::new())),
         PythonType::NUMPY { dtype } => Ok(get_numpy_dynamic_shape_serde(dtype)),
-        PythonType::LIST => Ok(Box::new(ListSerde::new(detect_pyany_serde(
-            &v.get_item(0)?,
-        )?))),
-        PythonType::SET => Ok(Box::new(SetSerde::new(detect_pyany_serde(
-            &v.py()
-                .get_type::<PyAny>()
-                .call_method1("list", (v,))?
-                .get_item(0)?
-                .as_borrowed(),
-        )?))),
+        PythonType::LIST => Ok(Box::new(ListSerde::new(
+            None,
+            Some(detect_pyany_serde(&v.get_item(0)?)?),
+        ))),
+        PythonType::SET => Ok(Box::new(SetSerde::new(
+            None,
+            Some(detect_pyany_serde(
+                &v.py()
+                    .get_type::<PyAny>()
+                    .call_method1("list", (v,))?
+                    .get_item(0)?
+                    .as_borrowed(),
+            )?),
+        ))),
         PythonType::TUPLE => {
             let tuple = v.downcast::<PyTuple>()?;
             let mut item_serdes = Vec::with_capacity(tuple.len());
             for item in tuple.iter() {
-                item_serdes.push(detect_pyany_serde(&item)?);
+                item_serdes.push((None, Some(detect_pyany_serde(&item)?)));
             }
-            Ok(Box::new(TupleSerde::new(item_serdes)))
+            Ok(Box::new(TupleSerde::new(item_serdes)?))
         }
         PythonType::DICT => {
             let keys = v.downcast::<PyDict>()?.keys().get_item(0)?;
@@ -198,20 +270,28 @@ pub fn get_pyany_serde(serde: Serde) -> PyResult<Box<dyn PyAnySerde>> {
         Serde::BYTES => Ok(Box::new(BytesSerde::new())),
         Serde::DYNAMIC => Ok(Box::new(DynamicSerde::new()?)),
         Serde::NUMPY { dtype } => Ok(get_numpy_dynamic_shape_serde(dtype)),
-        Serde::LIST { items } => Ok(Box::new(ListSerde::new(get_pyany_serde(*items)?))),
-        Serde::SET { items } => Ok(Box::new(SetSerde::new(get_pyany_serde(*items)?))),
+        Serde::LIST { items } => Ok(Box::new(ListSerde::new(None, Some(get_pyany_serde(*items)?)))),
+        Serde::SET { items } => Ok(Box::new(SetSerde::new(None, Some(get_pyany_serde(*items)?)))),
         Serde::TUPLE { items } => Ok(Box::new(TupleSerde::new(
             items
                 .into_iter()
-                .map(|item| get_pyany_serde(item))
-                .collect::<PyResult<Vec<Box<dyn PyAnySerde>>>>()?,
-        ))),
+                .map(|item| get_pyany_serde(item).map(|pyany_serde| (None, Some(pyany_serde))))
+                .collect::<PyResult<_>>()?,
+        )?)),
         Serde::DICT { keys, values } => Ok(Box::new(DictSerde::new(
             None,
             Some(get_pyany_serde(*keys)?),
             None,
             Some(get_pyany_serde(*values)?),
         ))),
-        Serde::OTHER => Err(InvalidStateError::new_err("Tried to deserialize an OTHER type of Serde which cannot be dynamically determined / reconstructed. Ensure the RustSerde used is passed to both the EPI and EP explicitly."))
+        Serde::TYPEDDICT { kv_pairs } => Python::with_gil(|py| {
+            let serde_kv_list = kv_pairs.into_iter().map(|(key, item_serde)| {
+                let pyany_serde_result = get_pyany_serde(item_serde);
+                pyany_serde_result.map(|pyany_serde| (PyString::new(py, key.as_str()).unbind(), (None, Some(pyany_serde))))
+            }).collect::<PyResult<_>>()?;
+            Ok(Box::new(TypedDictSerde::new(serde_kv_list)?) as Box<dyn PyAnySerde>)
+        }),
+        Serde::OPTION { value } => Ok(Box::new(OptionSerde::new(None, Some(get_pyany_serde(*value)?)))),
+        Serde::OTHER => Err(InvalidStateError::new_err("Tried to deserialize an OTHER type of Serde which cannot be dynamically determined / reconstructed. Ensure the RustSerde used is passed to both the EPI and EP explicitly.")),
     }
 }

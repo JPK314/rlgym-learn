@@ -30,10 +30,9 @@ impl PyAnySerde for ComplexSerde {
         obj: &Bound<'py, PyAny>,
     ) -> PyResult<usize> {
         let complex = obj.downcast::<PyComplex>()?;
-        let mut new_offset;
-        new_offset = append_c_double(buf, offset, complex.real());
-        new_offset = append_c_double(buf, new_offset, complex.imag());
-        Ok(new_offset)
+        let mut offset = append_c_double(buf, offset, complex.real());
+        offset = append_c_double(buf, offset, complex.imag());
+        Ok(offset)
     }
 
     fn retrieve<'py>(
@@ -42,13 +41,10 @@ impl PyAnySerde for ComplexSerde {
         buf: &[u8],
         offset: usize,
     ) -> PyResult<(Bound<'py, PyAny>, usize)> {
-        let (real, mut new_offset) = retrieve_c_double(buf, offset)?;
+        let (real, mut offset) = retrieve_c_double(buf, offset)?;
         let imag;
-        (imag, new_offset) = retrieve_c_double(buf, new_offset)?;
-        Ok((
-            PyComplex::from_doubles(py, real, imag).into_any(),
-            new_offset,
-        ))
+        (imag, offset) = retrieve_c_double(buf, offset)?;
+        Ok((PyComplex::from_doubles(py, real, imag).into_any(), offset))
     }
 
     fn align_of(&self) -> usize {
