@@ -205,10 +205,6 @@ impl PyAnySerde for CarSerde {
         Ok(((&car).into_pyobject(py)?, offset))
     }
 
-    fn align_of(&self) -> usize {
-        1
-    }
-
     fn get_enum(&self) -> &crate::serdes::serde_enum::Serde {
         &self.serde_enum
     }

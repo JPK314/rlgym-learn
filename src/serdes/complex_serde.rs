@@ -47,10 +47,6 @@ impl PyAnySerde for ComplexSerde {
         Ok((PyComplex::from_doubles(py, real, imag).into_any(), offset))
     }
 
-    fn align_of(&self) -> usize {
-        1usize
-    }
-
     fn get_enum(&self) -> &Serde {
         &self.serde_enum
     }

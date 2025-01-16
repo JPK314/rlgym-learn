@@ -12,7 +12,6 @@ use super::serde_enum::{get_serde_bytes, Serde};
 #[derive(Clone)]
 pub struct TupleSerde {
     item_serdes: Vec<(Option<PyObject>, Option<Box<dyn PyAnySerde>>)>,
-    align: usize,
     serde_enum: Serde,
     serde_enum_bytes: Vec<u8>,
 }
@@ -46,19 +45,8 @@ impl TupleSerde {
                 items: item_serde_enums,
             }
         };
-        let align = item_serdes
-            .iter()
-            .map(|(_, pyany_serde_option)| {
-                pyany_serde_option
-                    .as_ref()
-                    .map(|pyany_serde| pyany_serde.align_of())
-                    .unwrap_or(1)
-            })
-            .max()
-            .unwrap_or(1);
         Ok(TupleSerde {
             item_serdes,
-            align,
             serde_enum_bytes: get_serde_bytes(&serde_enum),
             serde_enum,
         })
@@ -99,10 +87,6 @@ impl PyAnySerde for TupleSerde {
             tuple_vec.push(item);
         }
         Ok((PyTuple::new(py, tuple_vec)?.into_any(), offset))
-    }
-
-    fn align_of(&self) -> usize {
-        self.align
     }
 
     fn get_enum(&self) -> &Serde {

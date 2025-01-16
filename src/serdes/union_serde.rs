@@ -12,7 +12,6 @@ use super::serde_enum::{get_serde_bytes, Serde};
 pub struct UnionSerde {
     serde_options: Vec<(Option<PyObject>, Option<Box<dyn PyAnySerde>>)>,
     serde_choice_fn: Py<PyFunction>,
-    align: usize,
     serde_enum: Serde,
     serde_enum_bytes: Vec<u8>,
 }
@@ -24,20 +23,9 @@ impl UnionSerde {
     ) -> Self {
         // Can't determine this dynamically because can't (don't want to) send choice function through shared memory
         let serde_enum = Serde::OTHER;
-        let align = serde_options
-            .iter()
-            .map(|(_, pyany_serde_option)| {
-                pyany_serde_option
-                    .as_ref()
-                    .map(|pyany_serde| pyany_serde.align_of())
-                    .unwrap_or(1)
-            })
-            .max()
-            .unwrap_or(1);
         UnionSerde {
             serde_options,
             serde_choice_fn,
-            align,
             serde_enum_bytes: get_serde_bytes(&serde_enum),
             serde_enum,
         }
@@ -84,10 +72,6 @@ impl PyAnySerde for UnionSerde {
             })?;
         let type_serde_option = type_serde_option.as_ref().map(|v| v.bind(py));
         retrieve_python(py, buf, offset, &type_serde_option, pyany_serde_option)
-    }
-
-    fn align_of(&self) -> usize {
-        self.align
     }
 
     fn get_enum(&self) -> &Serde {

@@ -141,10 +141,6 @@ impl PyAnySerde for GameStateSerde {
         Ok((game_state.into_pyobject(py)?, offset))
     }
 
-    fn align_of(&self) -> usize {
-        size_of::<f32>()
-    }
-
     fn get_enum(&self) -> &crate::serdes::serde_enum::Serde {
         &self.serde_enum
     }

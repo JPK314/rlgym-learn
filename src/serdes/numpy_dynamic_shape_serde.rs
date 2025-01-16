@@ -1,5 +1,4 @@
 use std::marker::PhantomData;
-use std::mem::size_of;
 
 use bytemuck::{cast_slice, AnyBitPattern, NoUninit};
 use numpy::IntoPyArray;
@@ -130,10 +129,6 @@ impl<T: Element + AnyBitPattern + NoUninit> PyAnySerde for NumpyDynamicShapeSerd
     ) -> PyResult<(Bound<'py, PyAny>, usize)> {
         let (array, offset) = self.retrieve(py, buf, offset)?;
         Ok((array.into_any(), offset))
-    }
-
-    fn align_of(&self) -> usize {
-        size_of::<T>()
     }
 
     fn get_enum(&self) -> &Serde {

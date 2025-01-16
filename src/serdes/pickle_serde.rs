@@ -61,10 +61,6 @@ impl PyAnySerde for PickleSerde {
         ))
     }
 
-    fn align_of(&self) -> usize {
-        1usize
-    }
-
     fn get_enum(&self) -> &Serde {
         &self.serde_enum
     }

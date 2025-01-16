@@ -38,7 +38,6 @@ pub struct DynamicSerde {
     numpy_u64_serde: NumpyDynamicShapeSerde<u64>,
     numpy_f32_serde: NumpyDynamicShapeSerde<f32>,
     numpy_f64_serde: NumpyDynamicShapeSerde<f64>,
-    align: usize,
     serde_enum: Serde,
     serde_enum_bytes: Vec<u8>,
 }
@@ -62,26 +61,7 @@ impl DynamicSerde {
         let numpy_u64_serde = NumpyDynamicShapeSerde::<u64>::new();
         let numpy_f32_serde = NumpyDynamicShapeSerde::<f32>::new();
         let numpy_f64_serde = NumpyDynamicShapeSerde::<f64>::new();
-        let serdes: [&dyn PyAnySerde; 17] = [
-            &pickle_serde,
-            &int_serde,
-            &float_serde,
-            &complex_serde,
-            &boolean_serde,
-            &string_serde,
-            &bytes_serde,
-            &numpy_i8_serde,
-            &numpy_i16_serde,
-            &numpy_i32_serde,
-            &numpy_i64_serde,
-            &numpy_u8_serde,
-            &numpy_u16_serde,
-            &numpy_u32_serde,
-            &numpy_u64_serde,
-            &numpy_f32_serde,
-            &numpy_f64_serde,
-        ];
-        let align = serdes.iter().map(|serde| serde.align_of()).max().unwrap();
+
         Ok(DynamicSerde {
             pickle_serde,
             int_serde,
@@ -100,7 +80,6 @@ impl DynamicSerde {
             numpy_u64_serde,
             numpy_f32_serde,
             numpy_f64_serde,
-            align,
             serde_enum: Serde::DYNAMIC,
             serde_enum_bytes: get_serde_bytes(&Serde::DYNAMIC),
         })
@@ -324,10 +303,6 @@ impl PyAnySerde for DynamicSerde {
             }
         };
         Ok((obj, offset))
-    }
-
-    fn align_of(&self) -> usize {
-        self.align
     }
 
     fn get_enum(&self) -> &Serde {

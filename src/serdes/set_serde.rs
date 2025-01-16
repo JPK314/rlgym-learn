@@ -11,7 +11,6 @@ use super::serde_enum::{get_serde_bytes, Serde};
 pub struct SetSerde {
     item_type_serde_option: Option<PyObject>,
     item_pyany_serde_option: Option<Box<dyn PyAnySerde>>,
-    align: usize,
     serde_enum: Serde,
     serde_enum_bytes: Vec<u8>,
 }
@@ -21,9 +20,6 @@ impl SetSerde {
         item_type_serde_option: Option<PyObject>,
         item_pyany_serde_option: Option<Box<dyn PyAnySerde>>,
     ) -> Self {
-        let align = item_pyany_serde_option
-            .as_ref()
-            .map_or(1, |pyany_serde| pyany_serde.align_of());
         let item_serde_enum = item_pyany_serde_option
             .as_ref()
             .map_or(Serde::OTHER, |pyany_serde| pyany_serde.get_enum().clone());
@@ -33,7 +29,6 @@ impl SetSerde {
         SetSerde {
             item_type_serde_option,
             item_pyany_serde_option,
-            align,
             serde_enum_bytes: get_serde_bytes(&serde_enum),
             serde_enum,
         }
@@ -86,10 +81,6 @@ impl PyAnySerde for SetSerde {
             set.add(item)?;
         }
         Ok((set.into_any(), offset))
-    }
-
-    fn align_of(&self) -> usize {
-        self.align
     }
 
     fn get_enum(&self) -> &Serde {

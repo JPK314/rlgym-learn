@@ -206,7 +206,6 @@ pub trait PyAnySerde: DynClone + Send + Sync {
         buf: &[u8],
         offset: usize,
     ) -> PyResult<(Bound<'py, PyAny>, usize)>;
-    fn align_of(&self) -> usize;
     fn get_enum(&self) -> &Serde;
     fn get_enum_bytes(&self) -> &[u8];
 }

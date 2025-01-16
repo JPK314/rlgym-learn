@@ -14,7 +14,6 @@ pub struct TypedDictSerde {
         Py<PyString>,
         (Option<PyObject>, Option<Box<dyn PyAnySerde>>),
     )>,
-    align: usize,
     serde_enum: Serde,
     serde_enum_bytes: Vec<u8>,
 }
@@ -44,19 +43,8 @@ impl TypedDictSerde {
 
             Serde::TYPEDDICT { kv_pairs }
         };
-        let align = serde_kv_list
-            .iter()
-            .map(|(_, (_, pyany_serde_option))| {
-                pyany_serde_option
-                    .as_ref()
-                    .map(|pyany_serde| pyany_serde.align_of())
-                    .unwrap_or(1)
-            })
-            .max()
-            .unwrap_or(1);
         Ok(TypedDictSerde {
             serde_kv_list,
-            align,
             serde_enum_bytes: get_serde_bytes(&serde_enum),
             serde_enum,
         })
@@ -103,10 +91,6 @@ impl PyAnySerde for TypedDictSerde {
             PyDict::from_sequence(&kv_list.into_pyobject(py)?)?.into_any(),
             offset,
         ))
-    }
-
-    fn align_of(&self) -> usize {
-        self.align
     }
 
     fn get_enum(&self) -> &Serde {
