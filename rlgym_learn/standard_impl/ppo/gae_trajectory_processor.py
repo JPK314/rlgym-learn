@@ -13,12 +13,12 @@ from rlgym_learn_backend import (
 )
 from rlgym_learn_backend import GAETrajectoryProcessor as RustGAETrajectoryProcessor
 
-from rlgym_learn.util import WelfordRunningStat
-
-from ..batch_reward_type_numpy_converter import (
+from rlgym_learn.standard_impl import (
     BatchRewardTypeNumpyConverter,
     BatchRewardTypeSimpleNumpyConverter,
 )
+from rlgym_learn.util.running_stats import WelfordRunningStat
+
 from .trajectory_processor import TRAJECTORY_PROCESSOR_FILE, TrajectoryProcessor
 
 
@@ -76,8 +76,8 @@ class GAETrajectoryProcessor(
             agent_id_list,
             observation_list,
             action_list,
-            log_prob_list,
-            value_list,
+            log_probs,
+            value_preds,
             advantage_array,
             return_array,
             avg_reward,
@@ -106,8 +106,8 @@ class GAETrajectoryProcessor(
                 agent_id_list,
                 observation_list,
                 action_list,
-                torch.stack(log_prob_list).to(device=self.device),
-                torch.stack(value_list).to(device=self.device),
+                log_probs.to(device=self.device),
+                value_preds.to(device=self.device),
                 torch.from_numpy(advantage_array).to(device=self.device),
             ),
             trajectory_processor_data,

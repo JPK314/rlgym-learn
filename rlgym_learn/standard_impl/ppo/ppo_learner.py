@@ -136,8 +136,8 @@ class PPOLearner(
 
         if self.config.checkpoint_load_folder is not None:
             self._load_from_checkpoint()
-        self.minibatch_size = np.ceil(
-            self.config.batch_size / self.config.n_minibatches
+        self.minibatch_size = int(
+            np.ceil(self.config.batch_size / self.config.n_minibatches)
         )
 
     def _load_from_checkpoint(self):
@@ -205,7 +205,9 @@ class PPOLearner(
         n_batches = 0
         mean_clip = 0
         mean_entropy = 0
-        mean_divergence = 0
+        mean_divergence = torch.tensor(
+            0, dtype=torch.float32, device=self.config.device
+        )
         mean_val_loss = 0
 
         # Save parameters before computing any updates.
@@ -272,7 +274,7 @@ class PPOLearner(
                     with torch.no_grad():
                         log_ratio = log_probs - old_probs
                         kl = (torch.exp(log_ratio) - 1) - log_ratio
-                        kl = kl.mean().detach().cpu().item() * minibatch_ratio
+                        kl = kl.mean().detach() * minibatch_ratio
 
                         # From the stable-baselines3 implementation of PPO.
                         clip_fraction = (
@@ -325,7 +327,7 @@ class PPOLearner(
             (time.time() - t1) / n_batches,
             self.cumulative_model_updates,
             mean_entropy,
-            mean_divergence,
+            mean_divergence.cpu().item(),
             mean_val_loss,
             mean_clip,
             actor_update_magnitude,

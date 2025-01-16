@@ -4,7 +4,7 @@ import torch
 from rlgym.api import ActionType, AgentID, ObsType, RewardType
 from torch import Tensor
 
-from rlgym_learn.experience import Timestep
+from rlgym_learn.experience.timestep import Timestep
 
 from .trajectory import Trajectory
 

@@ -1,3 +1,4 @@
+use core::slice;
 use numpy::ndarray::Array0;
 use numpy::ndarray::Array1;
 use numpy::PyArrayDescr;
@@ -7,8 +8,10 @@ use pyo3::exceptions::PyNotImplementedError;
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::intern;
 use pyo3::prelude::*;
+use pyo3::IntoPyObjectExt;
 use pyo3::PyObject;
 
+use crate::common::misc::cat;
 use crate::common::numpy_dtype_enum::get_numpy_dtype;
 use crate::common::numpy_dtype_enum::NumpyDtype;
 
@@ -38,17 +41,17 @@ macro_rules! define_process_trajectories {
         paste! {
             fn [<process_trajectories_ $dtype>]<'py>(
                 py: Python<'py>,
-                trajectories: Vec<Trajectory>,
+                mut trajectories: Vec<Trajectory>,
                 batch_reward_type_numpy_converter: PyObject,
                 return_std: PyObject,
                 gamma: &PyObject,
                 lambda: &PyObject,
             ) -> PyResult<(
                 Vec<PyObject>,
-                Vec<PyObject>,
-                Vec<PyObject>,
-                Vec<PyObject>,
-                Vec<PyObject>,
+                PyObject,
+                PyObject,
+                PyObject,
+                PyObject,
                 PyObject,
                 PyObject,
                 PyObject,
@@ -64,29 +67,41 @@ macro_rules! define_process_trajectories {
                 let mut agent_id_list = Vec::with_capacity(total_experience);
                 let mut observation_list = Vec::with_capacity(total_experience);
                 let mut action_list = Vec::with_capacity(total_experience);
-                let mut log_prob_list = Vec::with_capacity(total_experience);
-                let mut value_list = Vec::with_capacity(total_experience);
+                let mut log_probs_list = Vec::with_capacity(trajectories.len());
+                let mut values_list = Vec::with_capacity(trajectories.len());
                 let mut advantage_list = Vec::with_capacity(total_experience);
                 let mut return_list = Vec::with_capacity(total_experience);
                 let mut reward_sum = 0 as $dtype;
-                for trajectory in trajectories.into_iter() {
+                for trajectory in trajectories.iter_mut() {
                     let mut cur_return = 0 as $dtype;
                     let mut next_val_pred = trajectory.final_val_pred.extract::<$dtype>(py)?;
                     let mut cur_advantage = 0 as $dtype;
                     let timesteps_rewards = batch_reward_type_numpy_converter
-                        .call_method1(intern!(py, "as_numpy"), (trajectory.reward_list,))?
+                        .call_method1(intern!(py, "as_numpy"), (&trajectory.reward_list,))?
                         .extract::<Vec<$dtype>>()?;
-                    let log_probs = trajectory.log_probs.call_method1(py, intern!(py, "unbind"), (0,))?.extract::<Vec<PyObject>>(py)?;
-                    let value_preds = trajectory.val_preds.call_method1(py, intern!(py, "unbind"), (0,))?.extract::<Vec<PyObject>>(py)?;
-                    for (obs, action, log_prob, reward, val_pred) in itertools::izip!(
-                        trajectory.obs_list,
-                        trajectory.action_list,
-                        log_probs,
+                    log_probs_list.push(&trajectory.log_probs);
+                    values_list.push(&trajectory.val_preds);
+                    let value_preds = unsafe {
+                        let ptr = trajectory
+                            .val_preds
+                            .call_method0(py, intern!(py, "data_ptr"))?
+                            .extract::<usize>(py)? as *const $dtype;
+                        let mem = slice::from_raw_parts(
+                            ptr,
+                            trajectory
+                                .val_preds
+                                .call_method0(py, intern!(py, "numel"))?
+                                .extract::<usize>(py)?,
+                        );
+                        mem
+                    };
+                    for (obs, action, reward, &val_pred) in itertools::izip!(
+                        &trajectory.obs_list,
+                        &trajectory.action_list,
                         timesteps_rewards,
                         value_preds
                     ).rev()
                     {
-                        let val_pred_float = val_pred.extract::<$dtype>(py)?;
                         reward_sum += reward;
                         let norm_reward;
                         if return_std != 1.0 {
@@ -94,25 +109,23 @@ macro_rules! define_process_trajectories {
                         } else {
                             norm_reward = reward;
                         }
-                        let delta = norm_reward + gamma * next_val_pred - val_pred_float;
-                        next_val_pred = val_pred_float;
+                        let delta = norm_reward + gamma * next_val_pred - val_pred;
+                        next_val_pred = val_pred;
                         cur_advantage = delta + gamma * lambda * cur_advantage;
                         cur_return = reward + gamma * cur_return;
                         agent_id_list.push(trajectory.agent_id.clone_ref(py));
                         observation_list.push(obs);
                         action_list.push(action);
-                        log_prob_list.push(log_prob);
-                        value_list.push(val_pred);
                         advantage_list.push(cur_advantage);
                         return_list.push(cur_return);
                     }
                 }
                 Ok((
                     agent_id_list,
-                    observation_list,
-                    action_list,
-                    log_prob_list,
-                    value_list,
+                    observation_list.into_py_any(py)?,
+                    action_list.into_py_any(py)?,
+                    cat(py, &log_probs_list[..])?.unbind(),
+                    cat(py, &values_list[..])?.unbind(),
                     Array1::from_vec(advantage_list)
                         .to_pyarray(py)
                         .into_any()
@@ -171,10 +184,10 @@ impl GAETrajectoryProcessor {
         return_std: PyObject,
     ) -> PyResult<(
         Vec<PyObject>,
-        Vec<PyObject>,
-        Vec<PyObject>,
-        Vec<PyObject>,
-        Vec<PyObject>,
+        PyObject,
+        PyObject,
+        PyObject,
+        PyObject,
         PyObject,
         PyObject,
         PyObject,
@@ -207,6 +220,98 @@ impl GAETrajectoryProcessor {
                 "GAE Trajectory Processor not implemented for dtype {:?}",
                 v
             ))),
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{
+        io::{self, Write},
+        time::SystemTime,
+    };
+
+    use super::*;
+    use crate::common::misc::initialize_python;
+
+    #[test]
+    fn it_works() -> PyResult<()> {
+        initialize_python()?;
+        Python::with_gil(|py| {
+            let numpy_converter = PyModule::import(
+                py,
+                "rlgym_learn.standard_impl.batch_reward_type_numpy_converter",
+            )?
+            .getattr("BatchRewardTypeSimpleNumpyConverter")?
+            .call0()?
+            .unbind();
+            let numpy_f32 = PyModule::import(py, "numpy")?
+                .getattr("dtype")?
+                .call1(("float32",))?
+                .downcast_into::<PyArrayDescr>()?
+                .unbind();
+            let mut processor = GAETrajectoryProcessor::new(numpy_converter)?;
+            processor.load(&DerivedGAETrajectoryProcessorConfig {
+                lambda: 0.95_f32.into_pyobject(py)?.into_any().unbind(),
+                gamma: 0.99_f32.into_pyobject(py)?.into_any().unbind(),
+                dtype: numpy_f32,
+            })?;
+
+            let iterations = 100;
+            let mut timings_sum = 0_f64;
+            for iter in 0..iterations {
+                let file_obj = PyModule::import(py, "builtins")?
+                    .getattr("open")?
+                    .call1(("trajectories.pkl", "rb"))?;
+                let trajectories = PyModule::import(py, "pickle")?
+                    .getattr("load")?
+                    .call1((file_obj,))?;
+                let trajectories = trajectories.extract::<Vec<Trajectory>>()?;
+                let one = 1_f32.into_pyobject(py)?.into_any().unbind();
+                let start = SystemTime::now();
+                processor.process_trajectories(trajectories, one)?;
+                let end = SystemTime::now();
+                let duration = end.duration_since(start).unwrap();
+                timings_sum += (duration.as_micros() as f64) / 1000000.0;
+                if iter % 10 == 0 {
+                    println!("{} iterations complete", iter,);
+                    io::stdout().flush()?;
+                }
+            }
+            println!("average: {} seconds", timings_sum / (iterations as f64));
+
+            Ok(())
+        })
+    }
+
+    #[test]
+    fn tensor_data() -> PyResult<()> {
+        initialize_python()?;
+        Python::with_gil(|py| {
+            let file_obj = PyModule::import(py, "builtins")?
+                .getattr("open")?
+                .call1(("trajectories.pkl", "rb"))?;
+            let trajectories = PyModule::import(py, "pickle")?
+                .getattr("load")?
+                .call1((file_obj,))?;
+            let trajectories = trajectories.extract::<Vec<Trajectory>>()?;
+            let trajectory = &trajectories[0];
+            let value_preds = unsafe {
+                let ptr = trajectory
+                    .val_preds
+                    .call_method0(py, intern!(py, "data_ptr"))?
+                    .extract::<usize>(py)? as *const f32;
+                let mem = slice::from_raw_parts(
+                    ptr,
+                    trajectory
+                        .log_probs
+                        .call_method0(py, intern!(py, "numel"))?
+                        .extract::<usize>(py)?,
+                );
+                mem
+            };
+            println!("{:?}", value_preds);
+            Ok(())
         })
     }
 }

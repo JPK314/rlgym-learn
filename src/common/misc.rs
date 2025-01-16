@@ -11,6 +11,7 @@ pub fn py_hash(v: &Bound<'_, PyAny>) -> PyResult<i64> {
 }
 
 static INTERNED_AS_TENSOR: GILOnceCell<PyObject> = GILOnceCell::new();
+static INTERNED_CAT: GILOnceCell<PyObject> = GILOnceCell::new();
 
 pub fn get_bytes_to_alignment<T>(addr: usize) -> usize {
     let alignment = align_of::<T>();
@@ -41,6 +42,14 @@ pub fn initialize_python() -> pyo3::PyResult<()> {
     // Once we've set the configuration we need, we can go on and manually
     // initialize PyO3.
     pyo3::prepare_freethreaded_python();
+    // Now add cwd to python path
+    Python::with_gil::<_, PyResult<_>>(|py| {
+        Ok(py
+            .import("sys")?
+            .getattr("path")?
+            .call_method1("insert", (0, std::env::current_dir()?.to_str().unwrap()))?
+            .unbind())
+    })?;
     Ok(())
 }
 
@@ -62,6 +71,13 @@ pub fn as_tensor<'py>(py: Python<'py>, obj: &Bound<'py, PyAny>) -> PyResult<Boun
         .get_or_try_init::<_, PyErr>(py, || {
             Ok(py.import("torch")?.getattr("as_tensor")?.unbind())
         })?
+        .bind(py)
+        .call1((obj,))?)
+}
+
+pub fn cat<'py>(py: Python<'py>, obj: &[&PyObject]) -> PyResult<Bound<'py, PyAny>> {
+    Ok(INTERNED_CAT
+        .get_or_try_init::<_, PyErr>(py, || Ok(py.import("torch")?.getattr("cat")?.unbind()))?
         .bind(py)
         .call1((obj,))?)
 }

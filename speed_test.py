@@ -1,3 +1,7 @@
+import os
+
+os.environ["OPENBLAS_NUM_THREADS"] = "1"
+
 from typing import Any, Dict, List, Tuple
 
 import numpy as np
@@ -5,56 +9,6 @@ from rlgym.api import AgentID, RewardFunction
 from rlgym.rocket_league.api import GameState
 from rlgym.rocket_league.common_values import CAR_MAX_SPEED
 from rlgym.rocket_league.obs_builders import DefaultObs
-
-from rlgym_learn import (
-    BaseConfigModel,
-    LearningCoordinator,
-    LearningCoordinatorConfigModel,
-    ProcessConfigModel,
-    WandbConfigModel,
-    generate_config,
-)
-from rlgym_learn.api import (
-    float_serde,
-    int_serde,
-    list_serde,
-    numpy_serde,
-    string_serde,
-    tuple_serde,
-)
-from rlgym_learn.standard_impl.ppo import (
-    BasicCritic,
-    DiscreteFF,
-    ExperienceBufferConfigModel,
-    GAETrajectoryProcessor,
-    GAETrajectoryProcessorPurePython,
-    PPOAgentController,
-    PPOAgentControllerConfigModel,
-    PPOLearnerConfigModel,
-    PPOMetricsLogger,
-)
-from rlgym_learn.util import reporting
-
-
-class ExampleLogger(PPOMetricsLogger[None]):
-
-    def collect_state_metrics(self, data: List[None]) -> Dict[str, Any]:
-        return {}
-
-    def report_metrics(
-        self,
-        agent_controller_name,
-        state_metrics,
-        agent_metrics,
-        wandb_run,
-    ):
-        report = {
-            **agent_metrics,
-            **state_metrics,
-        }
-        reporting.report_metrics(
-            agent_controller_name, report, None, wandb_run=wandb_run
-        )
 
 
 class CustomObs(DefaultObs):
@@ -107,24 +61,6 @@ class VelocityPlayerToBallReward(RewardFunction[AgentID, GameState, float]):
         return np.dot(car_to_ball, car.linear_velocity) / CAR_MAX_SPEED
 
 
-def actor_factory(
-    obs_space: Tuple[str, int], action_space: Tuple[str, int], device: str
-):
-    return DiscreteFF(obs_space[1], action_space[1], (256, 256, 256), device)
-
-
-def critic_factory(obs_space: Tuple[str, int], device: str):
-    return BasicCritic(obs_space[1], (256, 256, 256), device)
-
-
-def trajectory_processor_factory(**kwargs):
-    return GAETrajectoryProcessor(**kwargs)
-
-
-def metrics_logger_factory():
-    return ExampleLogger()
-
-
 def collect_state_metrics_fn(state: GameState, rew_dict: Dict[str, float]):
     tot_cars = 0
     lin_vel_sum = np.zeros(3)
@@ -167,7 +103,7 @@ def env_create_function():
 
     action_parser = RepeatAction(LookupTableAction(), repeats=tick_skip)
     termination_condition = GoalCondition()
-    truncation_condition = NoTouchTimeoutCondition(timeout=timeout_seconds)
+    truncation_condition = NoTouchTimeoutCondition(timeout_seconds=timeout_seconds)
 
     reward_fn = CombinedReward((TouchReward(), 1), (VelocityPlayerToBallReward(), 0.1))
 
@@ -202,9 +138,69 @@ def env_create_function():
 
 
 if __name__ == "__main__":
+    from rlgym_learn.api.serdes import (
+        float_serde,
+        int_serde,
+        list_serde,
+        numpy_serde,
+        string_serde,
+        tuple_serde,
+    )
+    from rlgym_learn.learning_coordinator import LearningCoordinator
+    from rlgym_learn.learning_coordinator_config import (
+        BaseConfigModel,
+        LearningCoordinatorConfigModel,
+        ProcessConfigModel,
+        WandbConfigModel,
+        generate_config,
+    )
+    from rlgym_learn.standard_impl.ppo import (
+        BasicCritic,
+        DiscreteFF,
+        ExperienceBufferConfigModel,
+        GAETrajectoryProcessor,
+        GAETrajectoryProcessorConfigModel,
+        GAETrajectoryProcessorPurePython,
+        PPOAgentController,
+        PPOAgentControllerConfigModel,
+        PPOLearnerConfigModel,
+        PPOMetricsLogger,
+    )
+    from rlgym_learn.util import reporting
 
-    # 32 processes
-    n_proc = 80
+    class ExampleLogger(PPOMetricsLogger[None]):
+
+        def collect_state_metrics(self, data: List[None]) -> Dict[str, Any]:
+            return {}
+
+        def report_metrics(
+            self,
+            agent_controller_name,
+            state_metrics,
+            agent_metrics,
+            wandb_run,
+        ):
+            report = {
+                **agent_metrics,
+                **state_metrics,
+            }
+            reporting.report_metrics(
+                agent_controller_name, report, None, wandb_run=wandb_run
+            )
+
+    def actor_factory(
+        obs_space: Tuple[str, int], action_space: Tuple[str, int], device: str
+    ):
+        return DiscreteFF(obs_space[1], action_space[1], (256, 256, 256), device)
+
+    def critic_factory(obs_space: Tuple[str, int], device: str):
+        return BasicCritic(obs_space[1], (256, 256, 256), device)
+
+    def metrics_logger_factory():
+        return ExampleLogger()
+
+    # 80 processes
+    n_proc = 200
 
     learner_config = PPOLearnerConfigModel(
         n_epochs=1,
@@ -216,12 +212,15 @@ if __name__ == "__main__":
         critic_lr=0.0003,
     )
     experience_buffer_config = ExperienceBufferConfigModel(
-        max_size=150_000, trajectory_processor_args={"standardize_returns": True}
+        max_size=150_000,
+        trajectory_processor_config=GAETrajectoryProcessorConfigModel(
+            standardize_returns=True
+        ),
     )
     wandb_config = WandbConfigModel(group="rlgym-learn-testing", resume=True)
     ppo_agent_controller_config = PPOAgentControllerConfigModel(
         timesteps_per_iteration=50_000,
-        save_every_ts=100_000,
+        save_every_ts=600_000,
         add_unix_timestamp=True,
         checkpoint_load_folder=None,  # "agents_checkpoints/PPO1/rlgym-learn-run-1723394601682346400/1723394622757846600",
         n_checkpoints_to_keep=5,
@@ -247,7 +246,7 @@ if __name__ == "__main__":
         "PPO1": PPOAgentController(
             actor_factory,
             critic_factory,
-            trajectory_processor_factory,
+            GAETrajectoryProcessor(),
             metrics_logger_factory,
         )
     }

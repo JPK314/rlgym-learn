@@ -6,12 +6,12 @@ import numpy as np
 import torch
 from rlgym.api import ActionType, AgentID, ObsType, RewardType
 
-from rlgym_learn.util import WelfordRunningStat
-
-from ..batch_reward_type_numpy_converter import (
+from rlgym_learn.standard_impl import (
     BatchRewardTypeNumpyConverter,
     BatchRewardTypeSimpleNumpyConverter,
 )
+from rlgym_learn.util.running_stats import WelfordRunningStat
+
 from .gae_trajectory_processor import (
     GAETrajectoryProcessorConfigModel,
     GAETrajectoryProcessorData,

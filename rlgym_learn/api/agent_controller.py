@@ -11,12 +11,11 @@ from rlgym.api import (
     StateType,
 )
 from rlgym_learn_backend import EnvActionResponse
-from torch import Tensor, as_tensor
 
-from rlgym_learn.experience import Timestep
+from rlgym_learn.experience.timestep import Timestep
+from rlgym_learn.learning_coordinator_config import BaseConfigModel, ProcessConfigModel
 
-from ..learning_coordinator_config import BaseConfigModel, ProcessConfigModel
-from .typing import AgentControllerConfig, AgentControllerData, StateMetrics
+from .typing import AgentControllerConfig, AgentControllerData, StateMetrics, Tensor
 
 
 @dataclass
@@ -66,7 +65,7 @@ class AgentController(
         :param obs_list: List of ObsTypes for which to produce actions. Parallel with agent_id_list.
         :return: Tuple of a list of chosen actions and Tensor of shape (n,), with the action list and the first (only) dimension of the tensor parallel with obs_list.
         """
-        return ([], as_tensor([]))
+        raise NotImplementedError
 
     def process_timestep_data(
         self,

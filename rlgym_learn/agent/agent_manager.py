@@ -1,7 +1,6 @@
 import os
 from typing import Any, Dict, Generic, List, Optional, Tuple
 
-import numpy as np
 from rlgym.api import (
     ActionSpaceType,
     ActionType,
@@ -13,12 +12,14 @@ from rlgym.api import (
 )
 from rlgym_learn_backend import AgentManager as RustAgentManager
 from rlgym_learn_backend import EnvAction
-from torch import Tensor
 
-from rlgym_learn.api import AgentController, DerivedAgentControllerConfig, StateMetrics
-from rlgym_learn.experience import Timestep
-
-from ..learning_coordinator_config import LearningCoordinatorConfigModel
+from rlgym_learn.api.agent_controller import (
+    AgentController,
+    DerivedAgentControllerConfig,
+)
+from rlgym_learn.api.typing import StateMetrics, Tensor
+from rlgym_learn.experience.timestep import Timestep
+from rlgym_learn.learning_coordinator_config import LearningCoordinatorConfigModel
 
 
 class AgentManager(
@@ -51,6 +52,7 @@ class AgentManager(
             ],
         ],
     ) -> None:
+
         self.agent_controllers = agent_controllers
         self.agent_controllers_list = list(agent_controllers.values())
         self.n_agent_controllers = len(agent_controllers)

@@ -74,7 +74,7 @@ class ExperienceBuffer(
         t2_len = len(t2)
         if t2_len > size:
             # t2 alone is larger than we want; copy the end
-            # TODO: do I need to clone here?
+            # This clone is needed to avoid nesting views
             t = t2[-size:].clone()
 
         elif t2_len == size:

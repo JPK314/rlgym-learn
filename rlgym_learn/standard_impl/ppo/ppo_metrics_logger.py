@@ -2,11 +2,11 @@ from typing import Any, Dict, List
 
 from wandb.wandb_run import Run
 
-from rlgym_learn.api import StateMetrics
+from rlgym_learn.api.typing import StateMetrics
+from rlgym_learn.standard_impl import MetricsLogger
 from rlgym_learn.standard_impl.ppo import PPOAgentControllerData
 from rlgym_learn.util import reporting
 
-from ..metrics_logger import MetricsLogger
 from .gae_trajectory_processor import GAETrajectoryProcessorData
 
 

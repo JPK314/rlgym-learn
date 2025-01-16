@@ -3,7 +3,7 @@ from typing import List, Tuple
 import numpy as np
 from rlgym.api import AgentID
 
-from rlgym_learn.util import WelfordRunningStat
+from rlgym_learn.util.running_stats import WelfordRunningStat
 
 from .obs_standardizer import ObsStandardizer
 

@@ -48,7 +48,6 @@ class DiscreteFF(Actor[AgentID, np.ndarray, np.ndarray]):
     def get_action(
         self, agent_id_list, obs_list, **kwargs
     ) -> Tuple[Iterable[np.ndarray], torch.Tensor]:
-        # TODO: treat output as logits instead of probs. Softmax needed in layers?
         probs = self.get_output(obs_list)
         if "deterministic" in kwargs and kwargs["deterministic"]:
             action = probs.cpu().numpy().argmax(axis=-1)

@@ -23,9 +23,10 @@ from rlgym_learn_backend import EnvProcessInterface as RustEnvProcessInterface
 from rlgym_learn_backend import recvfrom_byte_py, sendto_byte_py
 from torch import Tensor
 
-from rlgym_learn.api import RustSerde, StateMetrics, TypeSerde
+from rlgym_learn.api.serdes import RustSerde, TypeSerde
+from rlgym_learn.api.typing import StateMetrics
 from rlgym_learn.env_processing.env_process import env_process
-from rlgym_learn.experience import Timestep
+from rlgym_learn.experience.timestep import Timestep
 
 try:
     from tqdm import tqdm
@@ -304,7 +305,7 @@ class EnvProcessInterface(
                 self.shm_buffer_size,
                 self.seed + self.n_procs,
                 False,
-                None,
+                0,
                 self.recalculate_agent_id_every_step,
             ),
         )

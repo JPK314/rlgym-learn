@@ -28,10 +28,12 @@ from rlgym.api import (
     StateType,
 )
 
-from rlgym_learn.agent import AgentManager
-from rlgym_learn.api import AgentController, RustSerde, StateMetrics, TypeSerde
-from rlgym_learn.env_processing import EnvProcessInterface
-from rlgym_learn.util import KBHit
+from rlgym_learn.agent.agent_manager import AgentManager
+from rlgym_learn.api.agent_controller import AgentController
+from rlgym_learn.api.serdes import RustSerde, TypeSerde
+from rlgym_learn.api.typing import StateMetrics
+from rlgym_learn.env_processing.env_process_interface import EnvProcessInterface
+from rlgym_learn.util.kbhit import KBHit
 from rlgym_learn.util.torch_functions import get_device
 
 from .learning_coordinator_config import (
@@ -136,8 +138,8 @@ class LearningCoordinator(
             self.config.process_config.recalculate_agent_id_every_step,
         )
         (
-            self.initial_env_obs_data_dict,
-            self.initial_state_info,
+            initial_env_obs_data_dict,
+            initial_state_info,
             obs_space,
             action_space,
         ) = self.env_process_interface.init_processes(
@@ -149,6 +151,10 @@ class LearningCoordinator(
         print("Loading agent controllers...")
         self.agent_manager.set_space_types(obs_space, action_space)
         self.agent_manager.load_agent_controllers(self.config)
+        # Handle actions for observations created on process init
+        self.initial_env_actions = self.agent_manager.get_env_actions(
+            initial_env_obs_data_dict, initial_state_info
+        )
         print("Learner successfully initialized!")
         # TODO: delete and remove import
         self.prof = cProfile.Profile()
@@ -192,12 +198,8 @@ class LearningCoordinator(
             + "(a) to add an env process, (d) to delete an env process\n"
             + "(j) to increase min inference size, (l) to decrease min inference size\n"
         )
-
         # Handle actions for observations created on process init
-        env_actions = self.agent_manager.get_env_actions(
-            self.initial_env_obs_data_dict, self.initial_state_info
-        )
-        self.env_process_interface.send_env_actions(env_actions)
+        self.env_process_interface.send_env_actions(self.initial_env_actions)
 
         # Collect the desired number of timesteps from our environments.
         loop_iterations = 0

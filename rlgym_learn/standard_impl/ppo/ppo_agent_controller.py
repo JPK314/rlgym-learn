@@ -21,14 +21,18 @@ from rlgym.api import (
 from torch import device as _device
 
 import wandb
-from rlgym_learn.agent import RESET_RESPONSE, STEP_RESPONSE
-from rlgym_learn.api import AgentController, StateMetrics
-from rlgym_learn.experience import Timestep
+from rlgym_learn.agent.env_action import RESET_RESPONSE, STEP_RESPONSE
+from rlgym_learn.api.agent_controller import AgentController
+from rlgym_learn.api.typing import StateMetrics
+from rlgym_learn.experience.timestep import Timestep
+from rlgym_learn.learning_coordinator_config import WandbConfigModel
+from rlgym_learn.standard_impl import (
+    DerivedMetricsLoggerConfig,
+    MetricsLogger,
+    ObsStandardizer,
+)
 from rlgym_learn.util.torch_functions import get_device
 
-from ...learning_coordinator_config import WandbConfigModel
-from ..metrics_logger import DerivedMetricsLoggerConfig, MetricsLogger
-from ..obs_standardizer import ObsStandardizer
 from .actor import Actor
 from .critic import Critic
 from .env_trajectories import EnvTrajectories
@@ -496,6 +500,7 @@ class PPOAgentController(
             self._learn()
         if self.ts_since_last_save >= self.config.agent_controller_config.save_every_ts:
             self.save_checkpoint()
+            self.ts_since_last_save = 0
 
     def choose_env_actions(self, state_info):
         env_action_responses = {}

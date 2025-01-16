@@ -321,7 +321,7 @@ impl EnvProcessInterface {
             let state_pyany_serde_option = state_serde_option.map(|dyn_serde| dyn_serde.0.unwrap());
             let state_metrics_pyany_serde_option =
                 state_metrics_serde_option.map(|dyn_serde| dyn_serde.0.unwrap());
-            let timestep_class = PyModule::import(py, "rlgym_learn.experience")?
+            let timestep_class = PyModule::import(py, "rlgym_learn.experience.timestep")?
                 .getattr("Timestep")?
                 .unbind();
             let selector = PyModule::import(py, "selectors")?

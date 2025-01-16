@@ -8,6 +8,9 @@ edition = "2021"
 name = "rlgym_learn_backend"
 crate-type = ["cdylib"]
 
+[profile.test]
+inherits = "release"
+
 [dependencies]
 anyhow = "1.0.89"
 bytemuck = "1.17.0"

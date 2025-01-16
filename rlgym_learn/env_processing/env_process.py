@@ -17,7 +17,8 @@ from rlgym.api import (
 from rlgym_learn_backend import env_process as rust_env_process
 from rlgym_learn_backend import recvfrom_byte_py, sendto_byte_py
 
-from rlgym_learn.api import RustSerde, StateMetrics, TypeSerde
+from rlgym_learn.api.serdes import RustSerde, TypeSerde
+from rlgym_learn.api.typing import StateMetrics
 
 
 def env_process(
