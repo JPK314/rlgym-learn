@@ -120,15 +120,7 @@ def critic_factory(obs_space_type, device):
 if __name__ == "__main__":
     import numpy as np
 
-    from rlgym_learn import (
-        BaseConfigModel,
-        LearningCoordinator,
-        LearningCoordinatorConfigModel,
-        ProcessConfigModel,
-        WandbConfigModel,
-        generate_config,
-    )
-    from rlgym_learn.api import (
+    from rlgym_learn.api.serdes import (
         float_serde,
         int_serde,
         list_serde,
@@ -136,10 +128,19 @@ if __name__ == "__main__":
         string_serde,
         tuple_serde,
     )
+    from rlgym_learn.learning_coordinator import LearningCoordinator
+    from rlgym_learn.learning_coordinator_config import (
+        BaseConfigModel,
+        LearningCoordinatorConfigModel,
+        ProcessConfigModel,
+        WandbConfigModel,
+        generate_config,
+    )
     from rlgym_learn.standard_impl.ppo import (
         ExperienceBufferConfigModel,
         GAETrajectoryProcessor,
         GAETrajectoryProcessorConfigModel,
+        NumpyExperienceBuffer,
         PPOAgentController,
         PPOAgentControllerConfigModel,
         PPOLearnerConfigModel,
@@ -184,7 +185,7 @@ if __name__ == "__main__":
             "PPO1": PPOAgentController(
                 actor_factory=actor_factory,
                 critic_factory=critic_factory,
-                trajectory_processor=GAETrajectoryProcessor(),
+                experience_buffer=NumpyExperienceBuffer(GAETrajectoryProcessor()),
                 metrics_logger_factory=lambda: ExampleLogger(),
                 obs_standardizer=None,
             )

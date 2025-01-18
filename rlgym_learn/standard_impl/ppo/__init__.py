@@ -8,6 +8,7 @@ from .experience_buffer import (
     ExperienceBuffer,
     ExperienceBufferConfigModel,
 )
+from .experience_buffer_numpy import NumpyExperienceBuffer
 from .gae_trajectory_processor import (
     GAETrajectoryProcessor,
     GAETrajectoryProcessorConfigModel,

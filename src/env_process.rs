@@ -264,6 +264,7 @@ pub fn env_process(
 
         // Start main loop
         let mut metrics_bytes = Vec::new();
+        let mut has_received_env_action = false;
         loop {
             // println!("EP: Waiting for signal from EPI...");
             epi_evt
@@ -278,6 +279,7 @@ pub fn env_process(
             // println!("EP: Got signal with header {}", header);
             match header {
                 Header::EnvAction => {
+                    has_received_env_action = true;
                     let env_action;
                     (env_action, _) = retrieve_env_action(
                         py,
@@ -454,6 +456,10 @@ pub fn env_process(
                     }
                 }
                 Header::EnvShapesRequest => {
+                    if has_received_env_action {
+                        println!("This env process (proc id {:?}) received request for env shapes, but this seems abnormal. Terminating...", proc_id);
+                        break;
+                    }
                     let obs_space = env_obs_spaces(&env)?.values().get_item(0)?;
                     let action_space = env_action_spaces(&env)?.values().get_item(0)?;
                     println!("Received request for env shapes, returning:");

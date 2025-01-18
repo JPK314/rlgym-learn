@@ -1,6 +1,8 @@
 use std::cmp::max;
 use std::cmp::min;
 use std::collections::HashMap;
+use std::thread;
+use std::time::Duration;
 
 use itertools::izip;
 use itertools::Itertools;
@@ -495,6 +497,8 @@ impl EnvProcessInterface {
                 self.selector
                     .call_method1(py, intern!(py, "unregister"), (parent_end,))
             })?;
+            // This sleep seems to be needed for the shared memory to get set/read correctly
+            thread::sleep(Duration::from_millis(1));
         }
         self.proc_id_pid_idx_map.clear();
         self.pid_idx_current_agent_id_list.clear();

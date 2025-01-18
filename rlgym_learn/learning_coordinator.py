@@ -168,6 +168,7 @@ class LearningCoordinator(
         """
         try:
             self._run()
+            print("Hit timestep limit, cleaning up...")
         except Exception:
             import traceback
 

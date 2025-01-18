@@ -11,7 +11,7 @@ Description:
 import os
 import pickle
 from dataclasses import dataclass
-from typing import Any, Dict, Generic, List, Optional, Tuple
+from typing import Any, Dict, Generic, Iterable, List, Optional, Tuple
 
 import numpy as np
 import torch
@@ -227,9 +227,9 @@ class ExperienceBuffer(
         return trajectory_processor_data
 
     def _get_samples(self, indices) -> Tuple[
-        List[AgentID],
-        List[ObsType],
-        List[ActionType],
+        Iterable[AgentID],
+        Iterable[ObsType],
+        Iterable[ActionType],
         torch.Tensor,
         torch.Tensor,
         torch.Tensor,

@@ -161,6 +161,7 @@ if __name__ == "__main__":
         GAETrajectoryProcessor,
         GAETrajectoryProcessorConfigModel,
         GAETrajectoryProcessorPurePython,
+        NumpyExperienceBuffer,
         PPOAgentController,
         PPOAgentControllerConfigModel,
         PPOLearnerConfigModel,
@@ -246,7 +247,7 @@ if __name__ == "__main__":
         "PPO1": PPOAgentController(
             actor_factory,
             critic_factory,
-            GAETrajectoryProcessor(),
+            NumpyExperienceBuffer(GAETrajectoryProcessor()),
             metrics_logger_factory,
         )
     }

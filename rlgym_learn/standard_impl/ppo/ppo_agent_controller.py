@@ -123,7 +123,7 @@ class PPOAgentController(
             Actor[AgentID, ObsType, ActionType],
         ],
         critic_factory: Callable[[ObsSpaceType, _device], Critic[AgentID, ObsType]],
-        trajectory_processor: TrajectoryProcessor[
+        experience_buffer: ExperienceBuffer[
             TrajectoryProcessorConfig,
             AgentID,
             ObsType,
@@ -146,7 +146,7 @@ class PPOAgentController(
         ] = lambda agent_id_list: list(range(len(agent_id_list))),
     ):
         self.learner = PPOLearner(actor_factory, critic_factory)
-        self.experience_buffer = ExperienceBuffer(trajectory_processor)
+        self.experience_buffer = experience_buffer
         if metrics_logger_factory is not None:
             self.metrics_logger = metrics_logger_factory()
         else:
