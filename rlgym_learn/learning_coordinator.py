@@ -31,7 +31,7 @@ from rlgym.api import (
 from rlgym_learn.agent.agent_manager import AgentManager
 from rlgym_learn.api.agent_controller import AgentController
 from rlgym_learn.api.serdes import RustSerde, TypeSerde
-from rlgym_learn.api.typing import StateMetrics
+from rlgym_learn.api.typing import ActionAssociatedLearningData, StateMetrics
 from rlgym_learn.env_processing.env_process_interface import EnvProcessInterface
 from rlgym_learn.util.kbhit import KBHit
 from rlgym_learn.util.torch_functions import get_device
@@ -53,6 +53,7 @@ class LearningCoordinator(
         ObsSpaceType,
         ActionSpaceType,
         StateMetrics,
+        ActionAssociatedLearningData,
     ]
 ):
     def __init__(
@@ -82,6 +83,7 @@ class LearningCoordinator(
                 ObsSpaceType,
                 ActionSpaceType,
                 StateMetrics,
+                ActionAssociatedLearningData,
                 Any,
             ],
         ],
@@ -96,7 +98,7 @@ class LearningCoordinator(
         state_serde: Optional[Union[TypeSerde[StateType], RustSerde]] = None,
         state_metrics_serde: Optional[Union[TypeSerde[StateMetrics], RustSerde]] = None,
         collect_state_metrics_fn: Optional[
-            Callable[[StateType, Optional[Dict[AgentID, RewardType]]], StateMetrics]
+            Callable[[StateType, Dict[str, Any]], StateMetrics]
         ] = None,
         config_location: str = None,
     ):
@@ -116,7 +118,10 @@ class LearningCoordinator(
         self.device = get_device(self.config.base_config.device)
         print(f"Using device {self.device}")
 
-        self.agent_manager = AgentManager(agent_controllers)
+        self.agent_manager = AgentManager(
+            agent_controllers,
+            self.config.base_config.batched_tensor_action_associated_learning_data,
+        )
 
         self.cumulative_timesteps = 0
         self.env_process_interface = EnvProcessInterface(

@@ -11,7 +11,7 @@ use pyo3::prelude::*;
 use pyo3::IntoPyObjectExt;
 use pyo3::PyObject;
 
-use crate::common::misc::cat;
+use crate::common::misc::torch_cat;
 use crate::common::numpy_dtype_enum::get_numpy_dtype;
 use crate::common::numpy_dtype_enum::NumpyDtype;
 
@@ -124,8 +124,8 @@ macro_rules! define_process_trajectories {
                     agent_id_list,
                     observation_list.into_py_any(py)?,
                     action_list.into_py_any(py)?,
-                    cat(py, &log_probs_list[..])?.unbind(),
-                    cat(py, &values_list[..])?.unbind(),
+                    torch_cat(py, &log_probs_list[..])?.unbind(),
+                    torch_cat(py, &values_list[..])?.unbind(),
                     Array1::from_vec(advantage_list)
                         .to_pyarray(py)
                         .into_any()
@@ -220,98 +220,6 @@ impl GAETrajectoryProcessor {
                 "GAE Trajectory Processor not implemented for dtype {:?}",
                 v
             ))),
-        })
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use std::{
-        io::{self, Write},
-        time::SystemTime,
-    };
-
-    use super::*;
-    use crate::common::misc::initialize_python;
-
-    #[test]
-    fn it_works() -> PyResult<()> {
-        initialize_python()?;
-        Python::with_gil(|py| {
-            let numpy_converter = PyModule::import(
-                py,
-                "rlgym_learn.standard_impl.batch_reward_type_numpy_converter",
-            )?
-            .getattr("BatchRewardTypeSimpleNumpyConverter")?
-            .call0()?
-            .unbind();
-            let numpy_f32 = PyModule::import(py, "numpy")?
-                .getattr("dtype")?
-                .call1(("float32",))?
-                .downcast_into::<PyArrayDescr>()?
-                .unbind();
-            let mut processor = GAETrajectoryProcessor::new(numpy_converter)?;
-            processor.load(&DerivedGAETrajectoryProcessorConfig {
-                lambda: 0.95_f32.into_pyobject(py)?.into_any().unbind(),
-                gamma: 0.99_f32.into_pyobject(py)?.into_any().unbind(),
-                dtype: numpy_f32,
-            })?;
-
-            let iterations = 100;
-            let mut timings_sum = 0_f64;
-            for iter in 0..iterations {
-                let file_obj = PyModule::import(py, "builtins")?
-                    .getattr("open")?
-                    .call1(("trajectories.pkl", "rb"))?;
-                let trajectories = PyModule::import(py, "pickle")?
-                    .getattr("load")?
-                    .call1((file_obj,))?;
-                let trajectories = trajectories.extract::<Vec<Trajectory>>()?;
-                let one = 1_f32.into_pyobject(py)?.into_any().unbind();
-                let start = SystemTime::now();
-                processor.process_trajectories(trajectories, one)?;
-                let end = SystemTime::now();
-                let duration = end.duration_since(start).unwrap();
-                timings_sum += (duration.as_micros() as f64) / 1000000.0;
-                if iter % 10 == 0 {
-                    println!("{} iterations complete", iter,);
-                    io::stdout().flush()?;
-                }
-            }
-            println!("average: {} seconds", timings_sum / (iterations as f64));
-
-            Ok(())
-        })
-    }
-
-    #[test]
-    fn tensor_data() -> PyResult<()> {
-        initialize_python()?;
-        Python::with_gil(|py| {
-            let file_obj = PyModule::import(py, "builtins")?
-                .getattr("open")?
-                .call1(("trajectories.pkl", "rb"))?;
-            let trajectories = PyModule::import(py, "pickle")?
-                .getattr("load")?
-                .call1((file_obj,))?;
-            let trajectories = trajectories.extract::<Vec<Trajectory>>()?;
-            let trajectory = &trajectories[0];
-            let value_preds = unsafe {
-                let ptr = trajectory
-                    .val_preds
-                    .call_method0(py, intern!(py, "data_ptr"))?
-                    .extract::<usize>(py)? as *const f32;
-                let mem = slice::from_raw_parts(
-                    ptr,
-                    trajectory
-                        .log_probs
-                        .call_method0(py, intern!(py, "numel"))?
-                        .extract::<usize>(py)?,
-                );
-                mem
-            };
-            println!("{:?}", value_preds);
-            Ok(())
         })
     }
 }

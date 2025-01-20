@@ -40,7 +40,6 @@ impl DynPyAnySerde {
         self.0.as_ref().unwrap().get_enum_bytes().to_vec()
     }
     fn __setstate__(&mut self, state: Vec<u8>) -> PyResult<()> {
-        // println!("Setting state: {:?}", state);
         let (serde, _) = retrieve_serde(&state[..], 0)?;
         self.0 = Some(get_pyany_serde(serde)?);
         Ok(())

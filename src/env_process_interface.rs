@@ -70,7 +70,7 @@ pub struct EnvProcessInterface {
     pid_idx_prev_timestep_id_list: Vec<Vec<Option<u128>>>,
     pid_idx_current_obs_list: Vec<Vec<PyObject>>,
     pid_idx_current_action_list: Vec<Vec<PyObject>>,
-    pid_idx_current_log_probs_list: Vec<Option<PyObject>>,
+    pid_idx_current_aald_list: Vec<Option<PyObject>>,
     added_process_obs_data_kv_list: Vec<(Py<PyAny>, (Vec<PyObject>, Vec<PyObject>))>,
     added_process_state_info_kv_list: Vec<(
         Py<PyAny>,
@@ -90,7 +90,6 @@ impl EnvProcessInterface {
             (Option<PyObject>, Option<Py<PyDict>>, Option<Py<PyDict>>),
         ),
     )> {
-        // println!("EPI: Getting initial obs for some proc");
         let agent_id_type_serde_option =
             self.agent_id_type_serde_option.as_ref().map(|v| v.bind(py));
         let obs_type_serde_option = self.obs_type_serde_option.as_ref().map(|v| v.bind(py));
@@ -142,7 +141,6 @@ impl EnvProcessInterface {
 
         let py_proc_id = proc_id.into_py_any(py)?;
 
-        // println!("EPI: Exiting get_initial_obs_proc");
         Ok((
             (py_proc_id.clone_ref(py), (agent_id_list, obs_list)),
             (py_proc_id, (state_option, None, None)),
@@ -157,7 +155,6 @@ impl EnvProcessInterface {
         let mut obs_data_kv_list = Vec::with_capacity(n_procs);
         let mut state_info_kv_list = Vec::with_capacity(n_procs);
         for pid_idx in 0..n_procs {
-            // println!("EPI: Getting initial obs for pid_idx {}", pid_idx);
             let ((py_proc_id, (agent_id_list, obs_list)), state_info_kv) =
                 self.get_initial_obs_data_proc(py, pid_idx)?;
             let n_agents = agent_id_list.len();
@@ -170,7 +167,6 @@ impl EnvProcessInterface {
             obs_data_kv_list.push((py_proc_id, (agent_id_list, obs_list)));
             state_info_kv_list.push(state_info_kv);
         }
-        // println!("EPI: Done getting initial obs list");
         Ok((
             PyDict::from_sequence(&obs_data_kv_list.into_pyobject(py)?)?.unbind(),
             PyDict::from_sequence(&state_info_kv_list.into_pyobject(py)?)?.unbind(),
@@ -194,14 +190,11 @@ impl EnvProcessInterface {
             })?
         };
         let shm_slice = unsafe { &mut shmem.as_slice_mut()[used_bytes..] };
-        // println!("EPI: Sending signal with header EnvShapesRequest...");
         append_header(shm_slice, 0, Header::EnvShapesRequest);
         ep_evt
             .set(EventState::Signaled)
             .map_err(|err| InvalidStateError::new_err(err.to_string()))?;
-        // println!("EPI: Waiting for EP to signal shm is updated with env shapes data...");
         recvfrom_byte(py, parent_end)?;
-        // println!("EPI: Received signal from EP that shm is updated with env shapes data");
         let mut offset = 0;
         let obs_space;
         (obs_space, offset) = retrieve_python(
@@ -219,7 +212,6 @@ impl EnvProcessInterface {
             &action_space_type_serde_option,
             &mut self.action_space_pyany_serde_option,
         )?;
-        // println!("EPI: Done getting env shapes");
         Ok((obs_space.unbind(), action_space.unbind()))
     }
 
@@ -360,7 +352,7 @@ impl EnvProcessInterface {
                 pid_idx_prev_timestep_id_list: Vec::new(),
                 pid_idx_current_obs_list: Vec::new(),
                 pid_idx_current_action_list: Vec::new(),
-                pid_idx_current_log_probs_list: Vec::new(),
+                pid_idx_current_aald_list: Vec::new(),
                 added_process_obs_data_kv_list: Vec::new(),
                 added_process_state_info_kv_list: Vec::new(),
             })
@@ -393,7 +385,7 @@ impl EnvProcessInterface {
             for _ in 0..n_procs {
                 self.pid_idx_current_env_action_list.push(None);
                 self.pid_idx_current_action_list.push(Vec::new());
-                self.pid_idx_current_log_probs_list.push(None);
+                self.pid_idx_current_aald_list.push(None);
             }
             let (obs_space, action_space) = self.get_space_types(py)?;
 
@@ -425,7 +417,7 @@ impl EnvProcessInterface {
             self.pid_idx_current_env_action_list.push(None);
             self.pid_idx_current_action_list
                 .push(Vec::with_capacity(n_agents));
-            self.pid_idx_current_log_probs_list.push(None);
+            self.pid_idx_current_aald_list.push(None);
             self.added_process_obs_data_kv_list
                 .push((py_proc_id, (agent_id_list, obs_list)));
             self.added_process_state_info_kv_list.push(state_info_kv);
@@ -442,7 +434,6 @@ impl EnvProcessInterface {
             })?
         };
         let shm_slice = unsafe { &mut shmem.as_slice_mut()[used_bytes..] };
-        // println!("EPI: Sending signal with header Stop...");
         append_header(shm_slice, 0, Header::Stop);
         ep_evt
             .set(EventState::Signaled)
@@ -452,7 +443,7 @@ impl EnvProcessInterface {
         self.pid_idx_current_obs_list.pop();
         self.pid_idx_current_env_action_list.pop();
         self.pid_idx_current_action_list.pop();
-        self.pid_idx_current_log_probs_list.pop();
+        self.pid_idx_current_aald_list.pop();
         self.added_process_state_info_kv_list
             .retain(|(py_proc_id, _)| py_proc_id.to_string() != proc_id);
         self.min_process_steps_per_inference = min(
@@ -488,7 +479,6 @@ impl EnvProcessInterface {
                 })?
             };
             let shm_slice = unsafe { &mut shmem.as_slice_mut()[used_bytes..] };
-            // println!("EPI: Sending signal with header Stop...");
             append_header(shm_slice, 0, Header::Stop);
             ep_evt
                 .set(EventState::Signaled)
@@ -505,7 +495,7 @@ impl EnvProcessInterface {
         self.pid_idx_prev_timestep_id_list.clear();
         self.pid_idx_current_obs_list.clear();
         self.pid_idx_current_action_list.clear();
-        self.pid_idx_current_log_probs_list.clear();
+        self.pid_idx_current_aald_list.clear();
         self.added_process_state_info_kv_list.clear();
         Ok(())
     }
@@ -577,7 +567,6 @@ impl EnvProcessInterface {
             (Option<PyObject>, Option<Py<PyDict>>, Option<Py<PyDict>>),
         ),
     )> {
-        // println!("Entering collect_response for pid_idx {}", pid_idx);
         let env_action = self.pid_idx_current_env_action_list[pid_idx]
             .as_ref()
             .ok_or_else(|| {
@@ -615,7 +604,6 @@ impl EnvProcessInterface {
                 mut truncated_list_option,
             );
 
-            // println!("new_episode: {}", new_episode);
             if new_episode {
                 (n_agents, offset) = retrieve_usize(shm_slice, offset)?;
                 agent_id_list = Vec::with_capacity(n_agents);
@@ -640,7 +628,6 @@ impl EnvProcessInterface {
 
             // Populate lists
             for _ in 0..n_agents {
-                // println!("Retrieving prev info for agent {}", idx + 1);
                 if self.recalculate_agent_id_every_step || new_episode {
                     let agent_id;
                     (agent_id, offset) = retrieve_python(
@@ -717,33 +704,6 @@ impl EnvProcessInterface {
             } else {
                 metrics_option = None;
             }
-
-            // println!(
-            //     "pid_idx_prev_timestep_id_list len: {}\n
-            //     next_agent_id_list len: {}\n
-            //     pid_idx_current_obs_list len: {}\n
-            //     next_obs_list len: {}\n
-            //     pid_idx_current_action_list len: {}\n
-            //     pid_idx_current_log_prob_list len: {}\n
-            //     next_reward_list len: {}\n
-            //     next_terminated_list len: {}\n
-            //     next_truncated_list len: {}",
-            //     self.pid_idx_prev_timestep_id_list
-            //         .get(pid_idx)
-            //         .unwrap()
-            //         .len(),
-            //     next_agent_id_list.len(),
-            //     self.pid_idx_current_obs_list.get(pid_idx).unwrap().len(),
-            //     next_obs_list.len(),
-            //     self.pid_idx_current_action_list.get(pid_idx).unwrap().len(),
-            //     self.pid_idx_current_log_prob_list
-            //         .get(pid_idx)
-            //         .unwrap()
-            //         .len(),
-            //     next_reward_list.len(),
-            //     next_terminated_list.len(),
-            //     next_truncated_list.len(),
-            // );
 
             let timestep_id_list_option;
             let mut timestep_list;
@@ -853,7 +813,7 @@ impl EnvProcessInterface {
                 py_proc_id.clone_ref(py),
                 (
                     timestep_list,
-                    (&self.pid_idx_current_log_probs_list[pid_idx]).into_py_any(py)?,
+                    (&self.pid_idx_current_aald_list[pid_idx]).into_py_any(py)?,
                     metrics_option,
                     state_option.as_ref().map(|state| state.clone_ref(py)),
                 ),
@@ -863,13 +823,11 @@ impl EnvProcessInterface {
                 (state_option, terminated_dict_option, truncated_dict_option),
             );
 
-            // println!("Exiting collect_response");
             Ok((n_timesteps, obs_data_kv, timestep_data_kv, state_info_kv))
         })
     }
 
     fn send_env_actions(&mut self, env_actions: HashMap<String, EnvAction>) -> PyResult<()> {
-        // println!("EPI: Entering send_actions");
         Python::with_gil(|py| {
             let action_type_serde_option = self
                 .action_type_serde_option
@@ -896,7 +854,7 @@ impl EnvProcessInterface {
 
                 if let EnvAction::STEP {
                     ref action_list,
-                    ref log_probs,
+                    ref action_associated_learning_data,
                 } = env_action
                 {
                     let current_action_list = &mut self.pid_idx_current_action_list[pid_idx];
@@ -908,9 +866,10 @@ impl EnvProcessInterface {
                             .map(|action| action.unbind())
                             .collect_vec(),
                     );
-                    self.pid_idx_current_log_probs_list[pid_idx] = Some(log_probs.clone_ref(py));
+                    self.pid_idx_current_aald_list[pid_idx] =
+                        Some(action_associated_learning_data.clone_ref(py));
                 } else {
-                    self.pid_idx_current_log_probs_list[pid_idx] = None;
+                    self.pid_idx_current_aald_list[pid_idx] = None;
                 }
 
                 let offset = append_header(shm_slice, 0, Header::EnvAction);

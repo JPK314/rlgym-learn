@@ -123,7 +123,6 @@ if __name__ == "__main__":
     from rlgym_learn.api.serdes import (
         float_serde,
         int_serde,
-        list_serde,
         numpy_serde,
         string_serde,
         tuple_serde,

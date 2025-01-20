@@ -18,6 +18,7 @@ from rlgym.api import (
     RewardType,
     StateType,
 )
+from rlgym_learn_backend import EnvActionResponse, EnvActionResponseType
 from torch import device as _device
 
 import wandb
@@ -101,6 +102,7 @@ class PPOAgentController(
         ObsSpaceType,
         ActionSpaceType,
         StateMetrics,
+        torch.Tensor,
         PPOAgentControllerData[TrajectoryProcessorData],
     ],
     Generic[
@@ -403,7 +405,7 @@ class PPOAgentController(
             self.wandb_run_id = self.config.agent_controller_config.wandb_config.id
         else:
             self.wandb_run_id = None
-        # TODO: is this working?
+
         agent_wandb_config = {
             key: value
             for (key, value) in self.config.__dict__.items()
@@ -449,6 +451,9 @@ class PPOAgentController(
     @torch.no_grad
     def get_actions(self, agent_id_list, obs_list):
         action_list, log_probs = self.learner.actor.get_action(agent_id_list, obs_list)
+        if log_probs.dim() == 0:
+            # This can happen if the input is a single element
+            log_probs = log_probs.unsqueeze(0)
         return (action_list, log_probs)
 
     def standardize_timestep_observations(
@@ -483,7 +488,8 @@ class PPOAgentController(
             if env_timesteps:
                 if env_id not in self.current_env_trajectories:
                     self.current_env_trajectories[env_id] = EnvTrajectories(
-                        [timestep.agent_id for timestep in env_timesteps]
+                        [timestep.agent_id for timestep in env_timesteps],
+                        self.agent_choice_fn,
                     )
                 timesteps_added += self.current_env_trajectories[env_id].add_steps(
                     env_timesteps, env_log_probs
@@ -512,12 +518,25 @@ class PPOAgentController(
             done = all(self.current_env_trajectories[env_id].dones.values())
             if done:
                 env_action_responses[env_id] = RESET_RESPONSE
-                self.current_trajectories += self.current_env_trajectories.pop(
-                    env_id
-                ).get_trajectories()
             else:
                 env_action_responses[env_id] = STEP_RESPONSE
         return env_action_responses
+
+    def process_env_actions(self, env_actions):
+        for env_id, env_action in env_actions.items():
+            # this is a getter so we only want to do it once
+            enum_type = env_action.enum_type
+            if enum_type == EnvActionResponseType.STEP:
+                pass
+            elif enum_type == EnvActionResponseType.RESET:
+                env_trajectories = self.current_env_trajectories.pop(env_id)
+                env_trajectories.finalize()
+                self.current_trajectories += env_trajectories.get_trajectories()
+            elif enum_type == EnvActionResponseType.SET_STATE:
+                # Can get the desired_state using env_action.desired_state and the prev_timestep_id_dict using env_action.prev_timestep_id_dict, but I'll leave that to you
+                raise NotImplementedError
+            else:
+                raise ValueError
 
     def _learn(self):
         env_trajectories_list = list(self.current_env_trajectories.values())

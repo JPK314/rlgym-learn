@@ -204,7 +204,6 @@ pub fn append_bytes(buf: &mut [u8], offset: usize, bytes: &[u8]) -> PyResult<usi
     let bytes_len = bytes.len();
     let start = append_usize(buf, offset, bytes_len);
     let end = start + bytes.len();
-    // println!("Appending {} bytes", bytes.len());
     buf[start..end].copy_from_slice(bytes);
     Ok(end)
 }
@@ -212,7 +211,6 @@ pub fn append_bytes(buf: &mut [u8], offset: usize, bytes: &[u8]) -> PyResult<usi
 pub fn retrieve_bytes(slice: &[u8], offset: usize) -> PyResult<(&[u8], usize)> {
     let (len, start) = retrieve_usize(slice, offset)?;
     let end = start + len;
-    // println!("Retrieving {} bytes", len);
     Ok((&slice[start..end], end))
 }
 
@@ -225,7 +223,6 @@ pub fn append_python<'py>(
 ) -> PyResult<usize> {
     let mut offset = offset;
     if let Some(type_serde) = type_serde_option {
-        // println!("Entering append via typeserde flow");
         offset = append_bool(buf, offset, true);
         offset = append_bytes(
             buf,
@@ -235,9 +232,7 @@ pub fn append_python<'py>(
                 .downcast::<PyBytes>()?
                 .as_bytes(),
         )?;
-        // println!("Exiting append via typeserde flow");
     } else {
-        // println!("Appending python bytes via pyany serde");
         offset = append_bool(buf, offset, false);
         let serde_enum_bytes;
         if let Some(pyany_serde) = pyany_serde_option {
@@ -253,7 +248,6 @@ pub fn append_python<'py>(
             offset = new_pyany_serde.append(buf, end, &obj)?;
             *pyany_serde_option = Some(new_pyany_serde);
         }
-        // println!("Exiting append via pyany serde flow");
     }
     return Ok(offset);
 }
@@ -285,23 +279,19 @@ pub fn retrieve_python<'py>(
     let (is_type_serde, mut offset) = retrieve_bool(buf, offset)?;
     let obj;
     if is_type_serde {
-        // println!("Entering retrieve via typeserde flow");
         let type_serde = type_serde_option.ok_or(InvalidStateError::new_err(
             "serialization indicated python TypeSerde used, but no such TypeSerde is present here",
         ))?;
         let obj_bytes;
         (obj_bytes, offset) = retrieve_bytes(buf, offset)?;
         obj = type_serde.call_method1(intern!(py, "from_bytes"), (PyBytes::new(py, obj_bytes),))?;
-        // println!("Exiting retrieve via typeserde flow");
     } else {
-        // println!("Entering retrieve via pyany serde flow");
         if let Some(pyany_serde) = pyany_serde_option {
             offset += pyany_serde.get_enum_bytes().len();
             (obj, offset) = pyany_serde.retrieve(py, buf, offset)?;
         } else {
             let serde;
             (serde, offset) = retrieve_serde(buf, offset)?;
-            // println!("Retrieved serde: {:?}", serde);
             let mut new_pyany_serde = get_pyany_serde(serde)?;
             (obj, offset) = new_pyany_serde.retrieve(py, buf, offset)?;
             *pyany_serde_option = Some(new_pyany_serde)

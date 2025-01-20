@@ -15,12 +15,55 @@ pub enum EnvActionResponse {
 }
 
 #[allow(non_camel_case_types)]
+#[pyclass(eq, eq_int)]
+#[derive(Clone, Debug, PartialEq)]
+pub enum EnvActionResponseType {
+    STEP,
+    RESET,
+    SET_STATE,
+}
+
+#[pymethods]
+impl EnvActionResponse {
+    #[getter]
+    fn enum_type(&self) -> EnvActionResponseType {
+        match self {
+            EnvActionResponse::STEP() => EnvActionResponseType::STEP,
+            EnvActionResponse::RESET() => EnvActionResponseType::RESET,
+            EnvActionResponse::SET_STATE(_, _) => EnvActionResponseType::SET_STATE,
+        }
+    }
+
+    #[getter]
+    fn desired_state(&self) -> PyResult<Option<PyObject>> {
+        Python::with_gil(|py| {
+            if let EnvActionResponse::SET_STATE(desired_state, _) = self {
+                Ok(Some(desired_state.clone_ref(py)))
+            } else {
+                Ok(None)
+            }
+        })
+    }
+
+    #[getter]
+    fn prev_timestep_id_dict(&self) -> PyResult<Option<PyObject>> {
+        Python::with_gil(|py| {
+            if let EnvActionResponse::SET_STATE(_, prev_timestep_id_dict) = self {
+                Ok(prev_timestep_id_dict.as_ref().map(|v| v.clone_ref(py)))
+            } else {
+                Ok(None)
+            }
+        })
+    }
+}
+
+#[allow(non_camel_case_types)]
 #[pyclass]
 #[derive(Clone, Debug)]
 pub enum EnvAction {
     STEP {
         action_list: Py<PyList>,
-        log_probs: PyObject,
+        action_associated_learning_data: PyObject,
     },
     RESET {},
     SET_STATE {
@@ -103,7 +146,8 @@ pub fn retrieve_env_action<'py>(
             Ok((
                 EnvAction::STEP {
                     action_list: pyo3::types::PyList::new(py, action_list)?.unbind(),
-                    log_probs: pyo3::types::PyNone::get(py).into_py_any(py)?,
+                    action_associated_learning_data: pyo3::types::PyNone::get(py)
+                        .into_py_any(py)?,
                 },
                 offset,
             ))

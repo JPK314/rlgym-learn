@@ -129,7 +129,6 @@ pub fn detect_python_type<'py>(v: &Bound<'py, PyAny>) -> PyResult<PythonType> {
     if v.is_exact_instance_of::<PyBytes>() {
         return Ok(PythonType::BYTES);
     }
-    // TODO: does any of this shit work?
     if check_numpy!(v, i8) {
         return Ok(PythonType::NUMPY {
             dtype: NumpyDtype::INT8,
@@ -193,4 +192,64 @@ pub fn detect_python_type<'py>(v: &Bound<'py, PyAny>) -> PyResult<PythonType> {
         return Ok(PythonType::DICT);
     }
     return Ok(PythonType::OTHER);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::common::misc::initialize_python;
+    use pyo3::{ffi::c_str, PyResult, Python};
+
+    #[test]
+    fn test_detect_python_dtype() -> PyResult<()> {
+        initialize_python()?;
+        Python::with_gil(|py| {
+            let locals = PyDict::new(py);
+            py.run(
+                c_str!(
+                    r#"
+import numpy as np
+arr_i8 = np.array([1,2], dtype=np.int8)
+arr_u8 = np.array([1,2], dtype=np.uint8)
+arr_i16 = np.array([1,2], dtype=np.int16)
+arr_f32 = np.array([1,2], dtype=np.float32)
+arr_f64 = np.array([1,2], dtype=np.float64)
+"#
+                ),
+                None,
+                Some(&locals),
+            )?;
+            assert_eq!(
+                PythonType::NUMPY {
+                    dtype: NumpyDtype::INT8
+                },
+                detect_python_type(&locals.get_item("arr_i8")?.unwrap())?
+            );
+            assert_eq!(
+                PythonType::NUMPY {
+                    dtype: NumpyDtype::UINT8
+                },
+                detect_python_type(&locals.get_item("arr_u8")?.unwrap())?
+            );
+            assert_eq!(
+                PythonType::NUMPY {
+                    dtype: NumpyDtype::INT16
+                },
+                detect_python_type(&locals.get_item("arr_i16")?.unwrap())?
+            );
+            assert_eq!(
+                PythonType::NUMPY {
+                    dtype: NumpyDtype::FLOAT32
+                },
+                detect_python_type(&locals.get_item("arr_f32")?.unwrap())?
+            );
+            assert_eq!(
+                PythonType::NUMPY {
+                    dtype: NumpyDtype::FLOAT64
+                },
+                detect_python_type(&locals.get_item("arr_f64")?.unwrap())?
+            );
+            Ok(())
+        })
+    }
 }

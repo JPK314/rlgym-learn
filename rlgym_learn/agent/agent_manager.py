@@ -13,13 +13,10 @@ from rlgym.api import (
 from rlgym_learn_backend import AgentManager as RustAgentManager
 from rlgym_learn_backend import EnvAction
 
-from rlgym_learn.api.agent_controller import (
-    AgentController,
-    DerivedAgentControllerConfig,
-)
-from rlgym_learn.api.typing import StateMetrics, Tensor
-from rlgym_learn.experience.timestep import Timestep
-from rlgym_learn.learning_coordinator_config import LearningCoordinatorConfigModel
+from ..api.agent_controller import AgentController, DerivedAgentControllerConfig
+from ..api.typing import ActionAssociatedLearningData, StateMetrics
+from ..experience.timestep import Timestep
+from ..learning_coordinator_config import LearningCoordinatorConfigModel
 
 
 class AgentManager(
@@ -32,6 +29,7 @@ class AgentManager(
         ObsSpaceType,
         ActionSpaceType,
         StateMetrics,
+        ActionAssociatedLearningData,
     ]
 ):
     def __init__(
@@ -48,15 +46,19 @@ class AgentManager(
                 ObsSpaceType,
                 ActionSpaceType,
                 StateMetrics,
+                ActionAssociatedLearningData,
                 Any,
             ],
         ],
+        batched_tensor_action_associated_learning_data: bool,
     ) -> None:
 
         self.agent_controllers = agent_controllers
         self.agent_controllers_list = list(agent_controllers.values())
         self.n_agent_controllers = len(agent_controllers)
-        self.rust_agent_manager = RustAgentManager(agent_controllers)
+        self.rust_agent_manager = RustAgentManager(
+            self.agent_controllers_list, batched_tensor_action_associated_learning_data
+        )
         assert (
             self.n_agent_controllers > 0
         ), "There must be at least one agent controller!"
@@ -67,7 +69,7 @@ class AgentManager(
             str,
             Tuple[
                 List[Timestep],
-                Optional[Tensor],
+                Optional[ActionAssociatedLearningData],
                 Optional[StateMetrics],
                 Optional[StateType],
             ],

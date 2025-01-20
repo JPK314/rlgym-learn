@@ -21,10 +21,9 @@ from rlgym.api import (
 from rlgym_learn_backend import EnvAction
 from rlgym_learn_backend import EnvProcessInterface as RustEnvProcessInterface
 from rlgym_learn_backend import recvfrom_byte_py, sendto_byte_py
-from torch import Tensor
 
 from rlgym_learn.api.serdes import RustSerde, TypeSerde
-from rlgym_learn.api.typing import StateMetrics
+from rlgym_learn.api.typing import ActionAssociatedLearningData, StateMetrics
 from rlgym_learn.env_processing.env_process import env_process
 from rlgym_learn.experience.timestep import Timestep
 
@@ -47,6 +46,7 @@ class EnvProcessInterface(
         ObsSpaceType,
         ActionSpaceType,
         StateMetrics,
+        ActionAssociatedLearningData,
     ]
 ):
     def __init__(
@@ -371,7 +371,7 @@ class EnvProcessInterface(
             str,
             Tuple[
                 List[Timestep],
-                Optional[Tensor],
+                Optional[ActionAssociatedLearningData],
                 Optional[StateMetrics],
                 Optional[StateType],
             ],

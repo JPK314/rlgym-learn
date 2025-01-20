@@ -42,7 +42,11 @@ fn env_render<'py>(env: &'py Bound<'py, PyAny>) -> PyResult<()> {
 }
 
 fn env_state<'py>(env: &'py Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
-    Ok(env.getattr(intern!(env.py(), "state"))?.downcast_into()?)
+    env.getattr(intern!(env.py(), "state"))
+}
+
+fn env_shared_info<'py>(env: &'py Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+    env.getattr(intern!(env.py(), "shared_info"))
 }
 
 fn env_obs_spaces<'py>(env: &'py Bound<'py, PyAny>) -> PyResult<Bound<'py, PyDict>> {
@@ -208,7 +212,6 @@ pub fn env_process(
         let collect_state_metrics_fn_option = collect_state_metrics_fn_option.as_ref();
 
         // Startup complete
-        // println!("EP: Initialized for proc_id {}", flink.clone());
         sync_with_epi(py, &child_end, &parent_sockname)?;
 
         let reset_obs = env_reset(&env)?;
@@ -256,17 +259,12 @@ pub fn env_process(
                 &mut state_pyany_serde_option,
             )?;
         }
-        // println!(
-        //     "EP: Sending ready message for reading initial obs for proc_id {}",
-        //     flink.clone()
-        // );
         sendto_byte(py, &child_end, &parent_sockname)?;
 
         // Start main loop
         let mut metrics_bytes = Vec::new();
         let mut has_received_env_action = false;
         loop {
-            // println!("EP: Waiting for signal from EPI...");
             epi_evt
                 .wait(Timeout::Infinite)
                 .map_err(|err| InvalidStateError::new_err(err.to_string()))?;
@@ -276,7 +274,6 @@ pub fn env_process(
             offset = 0;
             let header;
             (header, offset) = retrieve_header(shm_slice, offset)?;
-            // println!("EP: Got signal with header {}", header);
             match header {
                 Header::EnvAction => {
                     has_received_env_action = true;
@@ -339,7 +336,7 @@ pub fn env_process(
                     if should_collect_state_metrics {
                         let result = collect_state_metrics_fn_option
                             .unwrap()
-                            .call1(py, (env_state(&env)?, &rew_dict_option))?
+                            .call1(py, (env_state(&env)?, env_shared_info(&env)?))?
                             .into_bound(py);
                         swap_offset = append_python(
                             swap_space,
@@ -374,7 +371,6 @@ pub fn env_process(
                         n_agents = obs_dict.len();
                     }
 
-                    // println!("Writing env step message");
                     // Write env step message
                     offset = 0;
                     if new_episode {
@@ -488,7 +484,6 @@ pub fn env_process(
                     break;
                 }
             }
-            // println!("EP: Finished processing {}", header);
         }
         Ok(())
     })
