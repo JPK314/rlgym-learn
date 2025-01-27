@@ -2,6 +2,8 @@
 name = "rlgym-learn-backend"
 version = "0.1.0"
 edition = "2021"
+description = "Backend for the more expensive parts of the rlgym-learn python module"
+license="Apache-2.0"
 exclude = [
     "rlgym_learn",
     "rlgym_learn_backend",
