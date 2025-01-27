@@ -1,6 +1,5 @@
 use pyo3::prelude::*;
 use pyo3::types::PyBytes;
-use pyo3::Bound;
 
 use crate::communication::{append_bytes, retrieve_bytes};
 
@@ -52,17 +51,13 @@ impl PyAnySerde for PickleSerde {
         buf: &[u8],
         offset: usize,
     ) -> PyResult<(Bound<'py, PyAny>, usize)> {
-        let (bytes, new_offset) = retrieve_bytes(buf, offset)?;
+        let (bytes, offset) = retrieve_bytes(buf, offset)?;
         Ok((
             self.pickle_loads
                 .bind(py)
                 .call1((PyBytes::new(py, bytes),))?,
-            new_offset,
+            offset,
         ))
-    }
-
-    fn align_of(&self) -> usize {
-        1usize
     }
 
     fn get_enum(&self) -> &Serde {

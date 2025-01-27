@@ -1,19 +1,19 @@
 use std::collections::HashMap;
 
-use itertools::{izip, Itertools};
+use itertools::Itertools;
 use pyo3::exceptions::PyAssertionError;
 use pyo3::types::{PyDict, PyList};
 use pyo3::{intern, prelude::*};
 use pyo3::{IntoPyObjectExt, PyObject};
 
-use crate::common::misc::{as_tensor, tensor_slice_1d};
+use crate::common::misc::{tensor_slice_1d, torch_empty};
 use crate::env_action::{EnvAction, EnvActionResponse};
 
 fn get_actions<'py>(
     agent_controller: &Bound<'py, PyAny>,
     agent_id_list: &Vec<&PyObject>,
     obs_list: &Vec<&PyObject>,
-) -> PyResult<(Vec<Option<PyObject>>, PyObject)> {
+) -> PyResult<(Vec<Option<Bound<'py, PyAny>>>, Bound<'py, PyAny>)> {
     Ok(agent_controller
         .call_method1(
             intern!(agent_controller.py(), "get_actions"),
@@ -37,7 +37,7 @@ fn choose_agents<'py>(
 fn choose_env_actions<'py>(
     agent_controller: &Bound<'py, PyAny>,
     state_info: &HashMap<String, PyObject>,
-) -> PyResult<HashMap<String, Option<EnvActionResponse>>> {
+) -> PyResult<HashMap<String, Bound<'py, PyAny>>> {
     Ok(agent_controller
         .call_method1(
             intern!(agent_controller.py(), "choose_env_actions"),
@@ -46,9 +46,26 @@ fn choose_env_actions<'py>(
         .extract()?)
 }
 
+fn process_env_actions<'py>(
+    agent_controller: &Bound<'py, PyAny>,
+    env_actions: &Bound<'py, PyDict>,
+) -> PyResult<()> {
+    agent_controller.call_method1(
+        intern!(agent_controller.py(), "process_env_actions"),
+        (env_actions,),
+    )?;
+    Ok(())
+}
+
+enum ActionAssociatedLearningData<'py> {
+    BatchedTensor(Bound<'py, PyAny>),
+    List(Vec<Option<Bound<'py, PyAny>>>),
+}
+
 #[pyclass(module = "rlgym_learn_backend")]
 pub struct AgentManager {
-    agent_controllers: HashMap<String, PyObject>,
+    agent_controllers: Vec<PyObject>,
+    batched_tensor_action_associated_learning_data: bool,
 }
 
 impl AgentManager {
@@ -57,25 +74,26 @@ impl AgentManager {
         py: Python<'py>,
         agent_id_list: Vec<PyObject>,
         obs_list: Vec<PyObject>,
-    ) -> PyResult<(Vec<Option<PyObject>>, PyObject, bool)> {
-        let mut obs_idx_has_action_map = vec![false; obs_list.len()];
-        let mut action_list = vec![None; obs_list.len()];
-        let mut log_prob_list = vec![None; obs_list.len()];
+    ) -> PyResult<(
+        Vec<Option<Bound<'py, PyAny>>>,
+        ActionAssociatedLearningData<'py>,
+    )> {
+        let obs_len = obs_list.len();
+        let mut obs_list_idx_has_action_map = vec![false; obs_len];
+        let mut action_list = vec![None; obs_len];
 
         let mut new_agent_id_list = agent_id_list;
         let mut new_obs_list = obs_list;
-        let mut new_obs_list_idx_has_action_map = obs_idx_has_action_map.clone();
+        let mut new_obs_list_idx_has_action_map = obs_list_idx_has_action_map.clone();
         let mut first_agent_controller = true;
-        let mut may_early_return = false;
+        let mut action_associated_learning_data_option = None;
         // Agent controllers have priority based on their position in the list
-        for (_, py_agent_controller) in self.agent_controllers.iter() {
+        for py_agent_controller in self.agent_controllers.iter() {
             let relevant_action_map_indices: Vec<usize>;
             if first_agent_controller {
-                relevant_action_map_indices = (0..obs_idx_has_action_map.len()).collect();
-                first_agent_controller = false;
-                may_early_return = true;
+                relevant_action_map_indices = (0..obs_list_idx_has_action_map.len()).collect();
             } else {
-                relevant_action_map_indices = obs_idx_has_action_map
+                relevant_action_map_indices = obs_list_idx_has_action_map
                     .iter()
                     .enumerate()
                     .filter(|(_, &v)| !v)
@@ -109,60 +127,91 @@ impl AgentManager {
                 .iter()
                 .map(|&idx| new_obs_list.get(idx).unwrap())
                 .collect();
-            let (agent_controller_action_list, agent_controller_log_probs) = get_actions(
+            let (agent_controller_action_list, agent_controller_aald) = get_actions(
                 &agent_controller,
                 &agent_controller_agent_id_list,
                 &agent_controller_obs_list,
             )?;
-            let agent_controller_log_probs = agent_controller_log_probs.call_method1(
-                py,
-                intern!(py, "to"),
-                (intern!(py, "cpu"),),
-            )?;
-            if may_early_return {
+            if first_agent_controller {
                 if agent_controller_indices.len() == new_obs_list.len() {
-                    return Ok((
-                        agent_controller_action_list,
-                        agent_controller_log_probs,
-                        true,
-                    ));
+                    action_list = agent_controller_action_list;
+                    if self.batched_tensor_action_associated_learning_data {
+                        let agent_controller_aald = agent_controller_aald
+                            .call_method1(intern!(py, "to"), (intern!(py, "cpu"),))?;
+                        action_associated_learning_data_option = Some(
+                            ActionAssociatedLearningData::BatchedTensor(agent_controller_aald),
+                        );
+                    } else {
+                        action_associated_learning_data_option = Some(
+                            ActionAssociatedLearningData::List(agent_controller_aald.extract()?),
+                        )
+                    }
+                    break;
+                } else {
+                    if self.batched_tensor_action_associated_learning_data {
+                        let mut shape = agent_controller_aald
+                            .getattr(intern!(py, "shape"))?
+                            .extract::<Vec<i64>>()?;
+                        shape[0] = obs_len as i64;
+                        action_associated_learning_data_option =
+                            Some(ActionAssociatedLearningData::BatchedTensor(torch_empty(
+                                &shape.into_pyobject(py)?,
+                                &agent_controller_aald.getattr(intern!(py, "dtype"))?,
+                            )?));
+                    } else {
+                        action_associated_learning_data_option =
+                            Some(ActionAssociatedLearningData::List(vec![None; obs_len]))
+                    }
                 }
-                may_early_return = false;
             }
-            let agent_controller_log_probs = agent_controller_log_probs.into_bound(py);
-            let agent_controller_log_prob_list = agent_controller_log_probs
-                .call_method1(intern!(py, "unbind"), (0,))?
-                .extract::<Vec<PyObject>>()?;
-            for (&idx, action, log_prob) in izip!(
-                &agent_controller_indices,
-                agent_controller_action_list,
-                agent_controller_log_prob_list
-            ) {
-                obs_idx_has_action_map[relevant_action_map_indices[idx]] = true;
+            let relevant_obs_list_idxs = agent_controller_indices
+                .iter()
+                .map(|idx| relevant_action_map_indices[*idx])
+                .collect::<Vec<_>>();
+            match action_associated_learning_data_option.as_mut().unwrap() {
+                ActionAssociatedLearningData::BatchedTensor(tensor) => {
+                    tensor.call_method1(
+                        intern!(py, "__setitem__"),
+                        (relevant_obs_list_idxs, agent_controller_aald),
+                    )?;
+                }
+                ActionAssociatedLearningData::List(list) => {
+                    let agent_controller_aald_list = agent_controller_aald.extract::<Vec<_>>()?;
+                    for (idx, aald) in agent_controller_aald_list.into_iter().enumerate() {
+                        list[relevant_obs_list_idxs[idx]] = aald;
+                    }
+                }
+            }
+            for (&idx, action) in agent_controller_indices
+                .iter()
+                .zip(agent_controller_action_list)
+            {
+                obs_list_idx_has_action_map[relevant_action_map_indices[idx]] = true;
                 new_obs_list_idx_has_action_map[idx] = true;
                 action_list[relevant_action_map_indices[idx]] = action;
-                log_prob_list[relevant_action_map_indices[idx]] = Some(log_prob.into_bound(py));
             }
-            if obs_idx_has_action_map.iter().all(|&x| x) {
+            if obs_list_idx_has_action_map.iter().all(|&x| x) {
                 break;
             }
+            first_agent_controller = false;
         }
 
-        Ok((action_list, log_prob_list.into_py_any(py)?, false))
+        Ok((action_list, action_associated_learning_data_option.unwrap()))
     }
 }
 
 #[pymethods]
 impl AgentManager {
     #[new]
-    fn new(agent_controllers: HashMap<String, PyObject>) -> Self {
-        AgentManager { agent_controllers }
+    fn new(
+        agent_controllers: Vec<PyObject>,
+        batched_tensor_action_associated_learning_data: bool,
+    ) -> Self {
+        AgentManager {
+            agent_controllers,
+            batched_tensor_action_associated_learning_data,
+        }
     }
-
-    // Returns: PyTuple of (
-    //     List[ActionType],
-    //     List[Tensor]
-    // )
 
     fn get_env_actions(
         &self,
@@ -170,22 +219,15 @@ impl AgentManager {
         state_info: HashMap<String, PyObject>,
     ) -> PyResult<Py<PyDict>> {
         Python::with_gil::<_, PyResult<Py<PyDict>>>(|py| {
+            // Get env action responses from agent controllers
             let mut state_info = state_info;
             let mut env_action_responses = HashMap::with_capacity(state_info.len());
-            for (_, py_agent_controller) in self.agent_controllers.iter() {
+            for py_agent_controller in self.agent_controllers.iter() {
                 let agent_controller = py_agent_controller.bind(py);
                 let mut agent_controller_env_action_responses =
                     choose_env_actions(agent_controller, &state_info)?;
-                // println!(
-                //     "agent_controller_env_action_responses: {:?}",
-                //     agent_controller_env_action_responses
-                // );
-                agent_controller_env_action_responses.retain(|_, v| v.is_some());
-                env_action_responses.extend(
-                    agent_controller_env_action_responses
-                        .drain()
-                        .map(|(k, v)| (k, v.unwrap())),
-                );
+                agent_controller_env_action_responses.retain(|_, v| !v.is_none());
+                env_action_responses.extend(agent_controller_env_action_responses.drain());
                 state_info.retain(|env_id, _| !env_action_responses.contains_key(env_id));
                 if state_info.is_empty() {
                     break;
@@ -196,6 +238,20 @@ impl AgentManager {
                     "Some environments did not have env actions chosen by any agent controller",
                 ));
             }
+
+            // Inform agent controllers about env actions that will be used based on env action responses
+            let env_action_responses_pydict = PyDict::from_sequence(
+                &env_action_responses
+                    .iter()
+                    .collect::<Vec<_>>()
+                    .into_pyobject(py)?,
+            )?;
+            for py_agent_controller in self.agent_controllers.iter() {
+                let agent_controller = py_agent_controller.bind(py);
+                process_env_actions(agent_controller, &env_action_responses_pydict)?;
+            }
+
+            // Derive env actions using the env action responses
             let mut env_actions = Vec::with_capacity(env_obs_data_dict.len());
             let mut env_agent_id_list_list = Vec::with_capacity(env_obs_data_dict.len());
             let mut env_obs_list_list = Vec::with_capacity(env_obs_data_dict.len());
@@ -203,7 +259,7 @@ impl AgentManager {
             let mut total_len = 0;
             let mut should_get_actions = false;
             for (env_id, env_action_response) in env_action_responses.into_iter() {
-                match env_action_response {
+                match env_action_response.extract::<EnvActionResponse>()? {
                     EnvActionResponse::STEP() => {
                         should_get_actions = true;
                         let Some((env_agent_id_list, env_obs_list)) =
@@ -237,25 +293,21 @@ impl AgentManager {
             if should_get_actions {
                 let agent_id_list = env_agent_id_list_list.into_iter().flatten().collect_vec();
                 let obs_list = env_obs_list_list.into_iter().flatten().collect_vec();
-                let (action_list, py_log_probs, is_log_prob_tensor) =
+                let (action_list, action_associated_learning_data) =
                     self.get_actions(py, agent_id_list, obs_list)?;
-                let log_probs = py_log_probs.into_bound(py);
                 for (env_id, start, stop) in env_id_list_range_list.into_iter() {
                     env_actions.push((
                         env_id,
                         EnvAction::STEP {
                             action_list: PyList::new(py, &action_list[start..stop])?.unbind(),
-                            log_probs: if is_log_prob_tensor {
-                                tensor_slice_1d(py, &log_probs, start, stop)?.unbind()
-                            } else {
-                                as_tensor(
-                                    py,
-                                    &log_probs
-                                        .extract::<Bound<'_, PyList>>()?
-                                        .get_slice(start, stop)
-                                        .into_any(),
-                                )?
-                                .unbind()
+                            action_associated_learning_data: match &action_associated_learning_data
+                            {
+                                ActionAssociatedLearningData::BatchedTensor(tensor) => {
+                                    tensor_slice_1d(py, &tensor, start, stop)?.unbind()
+                                }
+                                ActionAssociatedLearningData::List(list) => {
+                                    list[start..stop].into_py_any(py)?
+                                }
                             },
                         },
                     ))

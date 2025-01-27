@@ -1,31 +1,36 @@
-from dataclasses import dataclass
-from typing import List, Tuple
+import json
+import os
+from typing import List
 
 import numpy as np
 import torch
 from rlgym.api import ActionType, AgentID, ObsType, RewardType
 
-from rlgym_learn.util import WelfordRunningStat
-
-from ..batch_reward_type_numpy_converter import (
+from rlgym_learn.standard_impl import (
     BatchRewardTypeNumpyConverter,
     BatchRewardTypeSimpleNumpyConverter,
 )
-from .gae_trajectory_processor import GAETrajectoryProcessorData
-from .trajectory_processor import TrajectoryProcessor
+from rlgym_learn.util.running_stats import WelfordRunningStat
+
+from .gae_trajectory_processor import (
+    GAETrajectoryProcessorConfigModel,
+    GAETrajectoryProcessorData,
+)
+from .trajectory_processor import TRAJECTORY_PROCESSOR_FILE, TrajectoryProcessor
 
 
 class GAETrajectoryProcessorPurePython(
     TrajectoryProcessor[
-        AgentID, ObsType, ActionType, RewardType, GAETrajectoryProcessorData
+        GAETrajectoryProcessorConfigModel,
+        AgentID,
+        ObsType,
+        ActionType,
+        RewardType,
+        GAETrajectoryProcessorData,
     ]
 ):
     def __init__(
         self,
-        gamma=0.99,
-        lmbda=0.95,
-        standardize_returns=True,
-        max_returns_per_stats_increment=150,
         batch_reward_type_numpy_converter: BatchRewardTypeNumpyConverter[
             RewardType
         ] = BatchRewardTypeSimpleNumpyConverter(),
@@ -35,18 +40,8 @@ class GAETrajectoryProcessorPurePython(
         :param lmbda: Lambda hyper-parameter.
         :param return_std: Standard deviation of the returns (used for reward normalization).
         """
-        self.gamma = gamma
-        self.lmbda = lmbda
         self.return_stats = WelfordRunningStat(1)
-        self.standardize_returns = standardize_returns
-        self.max_returns_per_stats_increment = max_returns_per_stats_increment
         self.batch_reward_type_numpy_converter = batch_reward_type_numpy_converter
-
-    def set_dtype(self, dtype):
-        super().set_dtype(dtype)
-        self.norm_reward_min = np.array(-10, dtype=dtype)
-        self.norm_reward_max = np.array(10, dtype=dtype)
-        self.batch_reward_type_numpy_converter.set_dtype(dtype)
 
     def process_trajectories(self, trajectories):
         return_std = (
@@ -139,18 +134,49 @@ class GAETrajectoryProcessorPurePython(
             trajectory_processor_data,
         )
 
-    def state_dict(self) -> dict:
-        return {
+    def validate_config(self, config_obj):
+        return GAETrajectoryProcessorConfigModel.model_validate(config_obj)
+
+    def load(self, config):
+        self.gamma = config.trajectory_processor_config.gamma
+        self.lmbda = config.trajectory_processor_config.lmbda
+        self.standardize_returns = (
+            config.trajectory_processor_config.standardize_returns
+        )
+        self.max_returns_per_stats_increment = (
+            config.trajectory_processor_config.max_returns_per_stats_increment
+        )
+        self.dtype = config.dtype
+        self.device = config.device
+        self.checkpoint_load_folder = config.checkpoint_load_folder
+        if self.checkpoint_load_folder is not None:
+            self._load_from_checkpoint()
+        self.norm_reward_min = np.array(-10, dtype=self.dtype)
+        self.norm_reward_max = np.array(10, dtype=self.dtype)
+        self.batch_reward_type_numpy_converter.set_dtype(self.dtype)
+
+    def _load_from_checkpoint(self):
+        with open(
+            os.path.join(self.checkpoint_load_folder, TRAJECTORY_PROCESSOR_FILE),
+            "rt",
+        ) as f:
+            state = json.load(f)
+        self.gamma = state["gamma"]
+        self.lmbda = state["lambda"]
+        self.standardize_returns = state["standardize_returns"]
+        self.max_returns_per_stats_increment = state["max_returns_per_stats_increment"]
+        self.return_stats.load_state_dict(state["return_running_stats"])
+
+    def save_checkpoint(self, folder_path):
+        state = {
             "gamma": self.gamma,
             "lambda": self.lmbda,
             "standardize_returns": self.standardize_returns,
             "max_returns_per_stats_increment": self.max_returns_per_stats_increment,
             "return_running_stats": self.return_stats.state_dict(),
         }
-
-    def load_state_dict(self, state: dict):
-        self.gamma = state["gamma"]
-        self.lmbda = state["lambda"]
-        self.standardize_returns = state["standardize_returns"]
-        self.max_returns_per_stats_increment = state["max_returns_per_stats_increment"]
-        self.return_stats.load_state_dict(state["return_running_stats"])
+        with open(
+            os.path.join(folder_path, TRAJECTORY_PROCESSOR_FILE),
+            "wt",
+        ) as f:
+            json.dump(state, f, indent=4)

@@ -1,12 +1,15 @@
 use numpy::{PyArray1, PyArrayMethods};
-use pyo3::{types::PyAnyMethods, IntoPyObject, PyObject, PyResult, Python};
+use pyo3::{types::PyAnyMethods, IntoPyObject, PyResult, Python};
 
 use crate::{
-    append_n_vec_elements, append_python_option_update_serde,
-    communication::{append_bool, append_f32, retrieve_bool, retrieve_f32},
-    retrieve_n_vec_elements, retrieve_python_option_update_serde,
+    append_n_vec_elements,
+    communication::{
+        append_bool, append_f32, append_python_option, retrieve_bool, retrieve_f32,
+        retrieve_python_option,
+    },
+    retrieve_n_vec_elements,
     serdes::{
-        pyany_serde::PyAnySerde,
+        pyany_serde::{PyAnySerde, PythonSerde},
         serde_enum::{get_serde_bytes, Serde},
     },
 };
@@ -18,21 +21,16 @@ pub struct CarSerde {
     serde_enum: Serde,
     serde_enum_bytes: Vec<u8>,
     physics_object_serde: PhysicsObjectSerde,
-    agent_id_type_serde_option: Option<PyObject>,
-    agent_id_pyany_serde_option: Option<Box<dyn PyAnySerde>>,
+    agent_id_serde_option: Option<PythonSerde>,
 }
 
 impl CarSerde {
-    pub fn new(
-        agent_id_type_serde_option: Option<PyObject>,
-        agent_id_pyany_serde_option: Option<Box<dyn PyAnySerde>>,
-    ) -> Self {
+    pub fn new(agent_id_serde_option: Option<PythonSerde>) -> Self {
         CarSerde {
             serde_enum: Serde::OTHER,
             serde_enum_bytes: get_serde_bytes(&Serde::OTHER),
             physics_object_serde: PhysicsObjectSerde::new(),
-            agent_id_type_serde_option,
-            agent_id_pyany_serde_option,
+            agent_id_serde_option,
         }
     }
 
@@ -43,24 +41,24 @@ impl CarSerde {
         offset: usize,
         car: &Car,
     ) -> PyResult<usize> {
-        let agent_id_type_serde_option =
-            self.agent_id_type_serde_option.as_ref().map(|v| v.bind(py));
-        let mut agent_id_pyany_serde_option = self.agent_id_pyany_serde_option.take();
+        let mut agent_id_serde_option = self
+            .agent_id_serde_option
+            .take()
+            .map(|serde| serde.into_bound(py));
 
         let flip_torque = car.flip_torque.bind(py).to_vec()?;
         buf[offset] = car.team_num;
         buf[offset + 1] = car.hitbox_type;
         buf[offset + 2] = car.ball_touches;
         let mut offset = offset + 3;
-        offset = append_python_option_update_serde!(
+        offset = append_python_option(
             buf,
             offset,
             &car.bump_victim_id
                 .as_ref()
                 .map(|agent_id| agent_id.bind(py)),
-            &agent_id_type_serde_option,
-            agent_id_pyany_serde_option
-        );
+            &mut agent_id_serde_option,
+        )?;
         offset = append_f32(buf, offset, car.demo_respawn_timer);
         offset = append_bool(buf, offset, car.on_ground);
         offset = append_f32(buf, offset, car.supersonic_time);
@@ -85,7 +83,7 @@ impl CarSerde {
         offset = self
             .physics_object_serde
             .append(py, buf, offset, &car._inverted_physics)?;
-        self.agent_id_pyany_serde_option = agent_id_pyany_serde_option;
+        self.agent_id_serde_option = agent_id_serde_option.map(|serde| serde.unbind());
         Ok(offset)
     }
 
@@ -95,9 +93,10 @@ impl CarSerde {
         buf: &[u8],
         offset: usize,
     ) -> PyResult<(Car, usize)> {
-        let agent_id_type_serde_option =
-            self.agent_id_type_serde_option.as_ref().map(|v| v.bind(py));
-        let mut agent_id_pyany_serde_option = self.agent_id_pyany_serde_option.take();
+        let mut agent_id_serde_option = self
+            .agent_id_serde_option
+            .take()
+            .map(|serde| serde.into_bound(py));
 
         let team_num = buf[offset];
         let hitbox_type = buf[offset + 1];
@@ -126,13 +125,8 @@ impl CarSerde {
             physics,
             _inverted_physics,
         );
-        (bump_victim_id, offset) = retrieve_python_option_update_serde!(
-            py,
-            buf,
-            offset,
-            &agent_id_type_serde_option,
-            agent_id_pyany_serde_option
-        );
+        (bump_victim_id, offset) =
+            retrieve_python_option(py, buf, offset, &mut agent_id_serde_option)?;
         (demo_respawn_timer, offset) = retrieve_f32(buf, offset)?;
         (on_ground, offset) = retrieve_bool(buf, offset)?;
         (supersonic_time, offset) = retrieve_f32(buf, offset)?;
@@ -153,7 +147,7 @@ impl CarSerde {
         (autoflip_direction, offset) = retrieve_f32(buf, offset)?;
         (physics, offset) = self.physics_object_serde.retrieve(py, buf, offset)?;
         (_inverted_physics, offset) = self.physics_object_serde.retrieve(py, buf, offset)?;
-        self.agent_id_pyany_serde_option = agent_id_pyany_serde_option;
+        self.agent_id_serde_option = agent_id_serde_option.map(|serde| serde.unbind());
         Ok((
             Car {
                 team_num,
@@ -204,10 +198,6 @@ impl PyAnySerde for CarSerde {
     ) -> PyResult<(pyo3::Bound<'py, pyo3::PyAny>, usize)> {
         let (car, offset) = self.retrieve(py, buf, offset)?;
         Ok(((&car).into_pyobject(py)?, offset))
-    }
-
-    fn align_of(&self) -> usize {
-        1
     }
 
     fn get_enum(&self) -> &crate::serdes::serde_enum::Serde {

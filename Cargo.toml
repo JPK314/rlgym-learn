@@ -2,11 +2,26 @@
 name = "rlgym-learn-backend"
 version = "0.1.0"
 edition = "2021"
+description = "Backend for the more expensive parts of the rlgym-learn python module"
+license="Apache-2.0"
+exclude = [
+    "rlgym_learn",
+    "rlgym_learn_backend",
+    "multi_agent_controller_test.py",
+    "quick_start_guide.py",
+    "requirements.txt",
+    "setup.py",
+    "speed_test.py",
+    "wandb_test.py"
+]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [lib]
 name = "rlgym_learn_backend"
 crate-type = ["cdylib"]
+
+[profile.test]
+inherits = "release"
 
 [dependencies]
 anyhow = "1.0.89"

@@ -138,14 +138,7 @@ def env_create_function():
 
 
 if __name__ == "__main__":
-    from rlgym_learn import (
-        BaseConfigModel,
-        LearningCoordinator,
-        LearningCoordinatorConfigModel,
-        ProcessConfigModel,
-        generate_config,
-    )
-    from rlgym_learn.api import (
+    from rlgym_learn.api.serdes import (
         float_serde,
         int_serde,
         list_serde,
@@ -153,10 +146,15 @@ if __name__ == "__main__":
         string_serde,
         tuple_serde,
     )
-    from rlgym_learn.standard_impl import (
-        WandbMetricsLogger,
-        WandbMetricsLoggerConfigModel,
+    from rlgym_learn.learning_coordinator import LearningCoordinator
+    from rlgym_learn.learning_coordinator_config import (
+        BaseConfigModel,
+        LearningCoordinatorConfigModel,
+        ProcessConfigModel,
+        WandbConfigModel,
+        generate_config,
     )
+    from rlgym_learn.standard_impl import WandbMetricsLogger
     from rlgym_learn.standard_impl.ppo import (
         BasicCritic,
         DiscreteFF,
@@ -170,7 +168,6 @@ if __name__ == "__main__":
         PPOLearnerConfigModel,
         PPOMetricsLogger,
     )
-    from rlgym_learn.util import reporting
 
     def actor_factory(
         obs_space: Tuple[str, int], action_space: Tuple[str, int], device: str
@@ -181,7 +178,7 @@ if __name__ == "__main__":
         return BasicCritic(obs_space[1], (256, 256, 256), device)
 
     # 80 processes
-    n_proc = 10
+    n_proc = 200
 
     learner_config = PPOLearnerConfigModel(
         n_epochs=1,
@@ -198,8 +195,8 @@ if __name__ == "__main__":
             standardize_returns=True
         ),
     )
-    wandb_config = WandbMetricsLoggerConfigModel(
-        group="rlgym-learn-testing", resume=True
+    wandb_config = WandbConfigModel(
+        group="rlgym-learn-testing", additional_wandb_config={"abc": "def"}
     )
     ppo_agent_controller_config = PPOAgentControllerConfigModel(
         timesteps_per_iteration=50_000,
@@ -209,10 +206,10 @@ if __name__ == "__main__":
         n_checkpoints_to_keep=5,
         random_seed=123,
         device="auto",
-        log_to_wandb=False,
+        log_to_wandb=True,
         learner_config=learner_config,
         experience_buffer_config=experience_buffer_config,
-        metrics_logger_config=wandb_config,
+        wandb_config=wandb_config,
     )
 
     generate_config(
@@ -230,7 +227,7 @@ if __name__ == "__main__":
             actor_factory,
             critic_factory,
             NumpyExperienceBuffer(GAETrajectoryProcessor()),
-            metrics_logger=WandbMetricsLogger(PPOMetricsLogger()),
+            WandbMetricsLogger(inner_metrics_logger=PPOMetricsLogger()),
         )
     }
 

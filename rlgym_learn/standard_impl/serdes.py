@@ -1,18 +1,16 @@
 import struct
-from typing import Generic, Iterable, List, Tuple, Type, TypeVar, Union
+from typing import Generic, Iterable, List, Tuple, TypeVar, Union
 
 import numpy as np
-from rlgym.api import RewardType
 from rlgym_learn_backend import RocketLeaguePyAnySerdeFactory
 
-from rlgym_learn.api import RustSerde, TypeSerde
+from rlgym_learn.api.serdes import RustSerde, TypeSerde
 
 FLOAT_SIZE = struct.calcsize("f")
 INTEGER_SIZE = struct.calcsize("I")
 BOOL_SIZE = struct.calcsize("?")
 
 
-# TODO: use comm_consts
 class NumpyDynamicShapeSerde(TypeSerde[np.ndarray]):
     def __init__(self, dtype: np.dtype):
         self.dtype = dtype

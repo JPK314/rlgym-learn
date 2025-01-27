@@ -2,7 +2,6 @@ from dataclasses import dataclass
 from typing import Generic, Optional
 
 from rlgym.api import ActionType, AgentID, ObsType, RewardType
-from torch import Tensor
 
 
 @dataclass

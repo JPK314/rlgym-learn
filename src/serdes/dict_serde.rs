@@ -1,56 +1,42 @@
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
-use pyo3::Bound;
-use std::cmp::max;
 
-use crate::communication::{append_usize, retrieve_usize};
-use crate::{append_python_update_serde, retrieve_python_update_serde};
+use crate::communication::{append_python, append_usize, retrieve_python, retrieve_usize};
 
-use super::pyany_serde::PyAnySerde;
+use super::pyany_serde::{PyAnySerde, PythonSerde};
 use super::serde_enum::{get_serde_bytes, Serde};
 
 #[derive(Clone)]
 pub struct DictSerde {
-    key_type_serde_option: Option<PyObject>,
-    key_pyany_serde_option: Option<Box<dyn PyAnySerde>>,
-    value_type_serde_option: Option<PyObject>,
-    value_pyany_serde_option: Option<Box<dyn PyAnySerde>>,
-    align: usize,
+    key_serde_option: Option<PythonSerde>,
+    value_serde_option: Option<PythonSerde>,
     serde_enum: Serde,
     serde_enum_bytes: Vec<u8>,
 }
 
 impl DictSerde {
-    pub fn new<'py>(
-        key_type_serde_option: Option<PyObject>,
-        key_pyany_serde_option: Option<Box<dyn PyAnySerde>>,
-        value_type_serde_option: Option<PyObject>,
-        value_pyany_serde_option: Option<Box<dyn PyAnySerde>>,
+    pub fn new(
+        key_serde_option: Option<PythonSerde>,
+        value_serde_option: Option<PythonSerde>,
     ) -> Self {
-        let align = max(
-            key_pyany_serde_option
-                .as_ref()
-                .map_or(1, |pyany_serde| pyany_serde.align_of()),
-            value_pyany_serde_option
-                .as_ref()
-                .map_or(1, |pyany_serde| pyany_serde.align_of()),
-        );
-        let key_serde_enum = key_pyany_serde_option
-            .as_ref()
-            .map_or(Serde::OTHER, |pyany_serde| pyany_serde.get_enum().clone());
-        let value_serde_enum = value_pyany_serde_option
-            .as_ref()
-            .map_or(Serde::OTHER, |pyany_serde| pyany_serde.get_enum().clone());
+        let key_serde_enum = if let Some(PythonSerde::PyAnySerde(pyany_serde)) = &key_serde_option {
+            pyany_serde.get_enum().clone()
+        } else {
+            Serde::OTHER
+        };
+        let value_serde_enum =
+            if let Some(PythonSerde::PyAnySerde(pyany_serde)) = &value_serde_option {
+                pyany_serde.get_enum().clone()
+            } else {
+                Serde::OTHER
+            };
         let serde_enum = Serde::DICT {
             keys: Box::new(key_serde_enum),
             values: Box::new(value_serde_enum),
         };
         DictSerde {
-            key_type_serde_option,
-            key_pyany_serde_option,
-            value_type_serde_option,
-            value_pyany_serde_option,
-            align,
+            key_serde_option,
+            value_serde_option,
             serde_enum_bytes: get_serde_bytes(&serde_enum),
             serde_enum,
         }
@@ -66,38 +52,20 @@ impl PyAnySerde for DictSerde {
     ) -> PyResult<usize> {
         let dict = obj.downcast::<PyDict>()?;
         let mut offset = append_usize(buf, offset, dict.len());
-        Python::with_gil::<_, PyResult<()>>(|py| {
-            let key_type_serde_option = self
-                .key_type_serde_option
-                .as_ref()
-                .map(|type_serde| type_serde.bind(py));
-            let value_type_serde_option = self
-                .value_type_serde_option
-                .as_ref()
-                .map(|type_serde| type_serde.bind(py));
-
-            let mut key_pyany_serde_option = self.key_pyany_serde_option.take();
-            let mut value_pyany_serde_option = self.key_pyany_serde_option.take();
-            for (key, value) in dict.iter() {
-                offset = append_python_update_serde!(
-                    buf,
-                    offset,
-                    &key,
-                    &key_type_serde_option,
-                    key_pyany_serde_option
-                );
-                offset = append_python_update_serde!(
-                    buf,
-                    offset,
-                    &value,
-                    &value_type_serde_option,
-                    value_pyany_serde_option
-                );
-            }
-            self.key_pyany_serde_option = key_pyany_serde_option;
-            self.value_pyany_serde_option = value_pyany_serde_option;
-            Ok(())
-        })?;
+        let mut key_serde_option = self
+            .key_serde_option
+            .take()
+            .map(|serde| serde.into_bound(obj.py()));
+        let mut value_serde_option = self
+            .value_serde_option
+            .take()
+            .map(|serde| serde.into_bound(obj.py()));
+        for (key, value) in dict.iter() {
+            offset = append_python(buf, offset, &key, &mut key_serde_option)?;
+            offset = append_python(buf, offset, &value, &mut value_serde_option)?;
+        }
+        self.key_serde_option = key_serde_option.map(|serde| serde.unbind());
+        self.value_serde_option = value_serde_option.map(|serde| serde.unbind());
         Ok(offset)
     }
 
@@ -107,44 +75,26 @@ impl PyAnySerde for DictSerde {
         buf: &[u8],
         offset: usize,
     ) -> PyResult<(Bound<'py, PyAny>, usize)> {
-        let key_type_serde_option = self
-            .key_type_serde_option
-            .as_ref()
-            .map(|type_serde| type_serde.bind(py));
-        let value_type_serde_option = self
-            .value_type_serde_option
-            .as_ref()
-            .map(|type_serde| type_serde.bind(py));
-
-        let mut key_pyany_serde_option = self.key_pyany_serde_option.take();
-        let mut value_pyany_serde_option = self.key_pyany_serde_option.take();
-
         let dict = PyDict::new(py);
         let (n_items, mut offset) = retrieve_usize(buf, offset)?;
+        let mut key_serde_option = self
+            .key_serde_option
+            .take()
+            .map(|serde| serde.into_bound(py));
+        let mut value_serde_option = self
+            .value_serde_option
+            .take()
+            .map(|serde| serde.into_bound(py));
         for _ in 0..n_items {
             let key;
-            (key, offset) = retrieve_python_update_serde!(
-                py,
-                buf,
-                offset,
-                &key_type_serde_option,
-                key_pyany_serde_option
-            );
+            (key, offset) = retrieve_python(py, buf, offset, &mut key_serde_option)?;
             let value;
-            (value, offset) = retrieve_python_update_serde!(
-                py,
-                buf,
-                offset,
-                &value_type_serde_option,
-                value_pyany_serde_option
-            );
+            (value, offset) = retrieve_python(py, buf, offset, &mut value_serde_option)?;
             dict.set_item(key, value)?;
         }
+        self.key_serde_option = key_serde_option.map(|serde| serde.unbind());
+        self.value_serde_option = value_serde_option.map(|serde| serde.unbind());
         Ok((dict.into_any(), offset))
-    }
-
-    fn align_of(&self) -> usize {
-        self.align
     }
 
     fn get_enum(&self) -> &Serde {

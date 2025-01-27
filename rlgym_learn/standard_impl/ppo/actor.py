@@ -6,7 +6,6 @@ from rlgym.api import ActionType, AgentID, ObsType
 from torch import Tensor
 
 
-# TODO: maybe add ActionParser to constructor?
 class Actor(nn.Module, Generic[AgentID, ObsType, ActionType]):
     def __init__(self):
         super().__init__()
@@ -19,7 +18,7 @@ class Actor(nn.Module, Generic[AgentID, ObsType, ActionType]):
         Function to get an action and the log of its probability from the policy given an observation.
         :param agent_id_list: List of AgentIDs for which to produce actions. AgentIDs may not be unique here. Parallel with obs_list.
         :param obs_list: List of ObsTypes for which to produce actions. Parallel with agent_id_list.
-        :return: Tuple of a list of chosen actions and Tensor with shape (n,), with the action list and the first (only) dimension of the tensor parallel with obs_list.
+        :return: Tuple of a list of chosen actions and Tensor with shape (n,) of log probs (float32), with the action list and the first (only) dimension of the tensor parallel with obs_list.
         """
         raise NotImplementedError
 

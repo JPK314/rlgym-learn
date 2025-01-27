@@ -1,20 +1,8 @@
-"""
-File: learner.py
-Author: Jonathan Keegan
-
-Description:
-The primary algorithm file. The Learner object coordinates timesteps from the workers 
-and sends them to PPO, keeps track of the misc. variables and statistics for logging,
-reports to wandb and the console, and handles checkpointing.
-"""
-
 import cProfile
 import os
-import random
-from typing import Any, Callable, Dict, Generic, Optional, Union
+from collections.abc import Callable
+from typing import Any, Dict, Generic, Optional, Union
 
-import numpy as np
-import torch
 from rlgym.api import (
     ActionSpaceType,
     ActionType,
@@ -27,16 +15,20 @@ from rlgym.api import (
     StateType,
 )
 
-from rlgym_learn.agent import AgentManager
-from rlgym_learn.api import AgentController, RustSerde, StateMetrics, TypeSerde
-from rlgym_learn.env_processing import EnvProcessInterface
-from rlgym_learn.util import KBHit
-from rlgym_learn.util.torch_functions import get_device
-
+from .agent import AgentManager
+from .api import (
+    ActionAssociatedLearningData,
+    AgentController,
+    RustSerde,
+    StateMetrics,
+    TypeSerde,
+)
+from .env_processing import EnvProcessInterface
 from .learning_coordinator_config import (
     DEFAULT_CONFIG_FILENAME,
     LearningCoordinatorConfigModel,
 )
+from .util import KBHit
 
 
 class LearningCoordinator(
@@ -50,6 +42,7 @@ class LearningCoordinator(
         ObsSpaceType,
         ActionSpaceType,
         StateMetrics,
+        ActionAssociatedLearningData,
     ]
 ):
     def __init__(
@@ -79,6 +72,7 @@ class LearningCoordinator(
                 ObsSpaceType,
                 ActionSpaceType,
                 StateMetrics,
+                ActionAssociatedLearningData,
                 Any,
             ],
         ],
@@ -93,7 +87,7 @@ class LearningCoordinator(
         state_serde: Optional[Union[TypeSerde[StateType], RustSerde]] = None,
         state_metrics_serde: Optional[Union[TypeSerde[StateMetrics], RustSerde]] = None,
         collect_state_metrics_fn: Optional[
-            Callable[[StateType, Optional[Dict[AgentID, RewardType]]], StateMetrics]
+            Callable[[StateType, Dict[str, Any]], StateMetrics]
         ] = None,
         config_location: str = None,
     ):
@@ -106,14 +100,10 @@ class LearningCoordinator(
         with open(config_location, "rt") as f:
             self.config = LearningCoordinatorConfigModel.model_validate_json(f.read())
 
-        torch.manual_seed(self.config.base_config.random_seed)
-        np.random.seed(self.config.base_config.random_seed)
-        random.seed(self.config.base_config.random_seed)
-
-        self.device = get_device(self.config.base_config.device)
-        print(f"Using device {self.device}")
-
-        self.agent_manager = AgentManager(agent_controllers)
+        self.agent_manager = AgentManager(
+            agent_controllers,
+            self.config.base_config.batched_tensor_action_associated_learning_data,
+        )
 
         self.cumulative_timesteps = 0
         self.env_process_interface = EnvProcessInterface(
@@ -135,8 +125,8 @@ class LearningCoordinator(
             self.config.process_config.recalculate_agent_id_every_step,
         )
         (
-            self.initial_env_obs_data_dict,
-            self.initial_state_info,
+            initial_env_obs_data_dict,
+            initial_state_info,
             obs_space,
             action_space,
         ) = self.env_process_interface.init_processes(
@@ -147,8 +137,11 @@ class LearningCoordinator(
         )
         print("Loading agent controllers...")
         self.agent_manager.set_space_types(obs_space, action_space)
-        self.agent_manager.set_device(self.device)
         self.agent_manager.load_agent_controllers(self.config)
+        # Handle actions for observations created on process init
+        self.initial_env_actions = self.agent_manager.get_env_actions(
+            initial_env_obs_data_dict, initial_state_info
+        )
         print("Learner successfully initialized!")
         # TODO: delete and remove import
         self.prof = cProfile.Profile()
@@ -192,12 +185,8 @@ class LearningCoordinator(
             + "(a) to add an env process, (d) to delete an env process\n"
             + "(j) to increase min inference size, (l) to decrease min inference size\n"
         )
-
         # Handle actions for observations created on process init
-        env_actions = self.agent_manager.get_env_actions(
-            self.initial_env_obs_data_dict, self.initial_state_info
-        )
-        self.env_process_interface.send_env_actions(env_actions)
+        self.env_process_interface.send_env_actions(self.initial_env_actions)
 
         # Collect the desired number of timesteps from our environments.
         loop_iterations = 0
@@ -213,9 +202,14 @@ class LearningCoordinator(
             )
             loop_iterations += 1
             if loop_iterations % 50 == 0:
-                self.process_kbhit(kb)
+                if self.process_kbhit(kb):
+                    break
+        if self.cumulative_timesteps >= self.config.base_config.timestep_limit:
+            print("Hit timestep limit, cleaning up...")
+        else:
+            print("Quitting and cleaning up...")
 
-    def process_kbhit(self, kb: KBHit):
+    def process_kbhit(self, kb: KBHit) -> bool:
         # Check if keyboard press
         # p: pause, any key to resume
         # c: checkpoint
@@ -231,7 +225,7 @@ class LearningCoordinator(
             if c in ("c", "q"):
                 self.agent_manager.save_agent_controllers()
             if c == "q":
-                return
+                return True
             if c in ("c", "p"):
                 print("Resuming...\n")
             if c == "a":
@@ -256,6 +250,7 @@ class LearningCoordinator(
                 print(
                     f"Min process steps per inference decreased to {min_process_steps_per_inference} ({(100 * min_process_steps_per_inference / self.env_process_interface.n_procs):.2f}% of processes)"
                 )
+            return False
 
     def save(self):
         self.agent_manager.save_agent_controllers()

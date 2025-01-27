@@ -1,6 +1,5 @@
 use pyo3::prelude::*;
 use pyo3::types::PyBytes;
-use pyo3::Bound;
 
 use crate::communication::{append_bytes, retrieve_bytes};
 
@@ -38,12 +37,8 @@ impl PyAnySerde for BytesSerde {
         buf: &[u8],
         offset: usize,
     ) -> PyResult<(Bound<'py, PyAny>, usize)> {
-        let (obj_bytes, new_offset) = retrieve_bytes(buf, offset)?;
-        Ok((PyBytes::new(py, obj_bytes).into_any(), new_offset))
-    }
-
-    fn align_of(&self) -> usize {
-        1usize
+        let (obj_bytes, offset) = retrieve_bytes(buf, offset)?;
+        Ok((PyBytes::new(py, obj_bytes).into_any(), offset))
     }
 
     fn get_enum(&self) -> &Serde {

@@ -1,7 +1,6 @@
 import os
-from typing import Any, Dict, Generic, Iterable, List, Optional, Tuple
+from typing import Any, Dict, Generic, List, Optional, Tuple
 
-import numpy as np
 from rlgym.api import (
     ActionSpaceType,
     ActionType,
@@ -13,11 +12,14 @@ from rlgym.api import (
 )
 from rlgym_learn_backend import AgentManager as RustAgentManager
 from rlgym_learn_backend import EnvAction
-from torch import Tensor, as_tensor
 
-from rlgym_learn.api import AgentController, DerivedAgentControllerConfig, StateMetrics
-from rlgym_learn.experience import Timestep
-
+from ..api import (
+    ActionAssociatedLearningData,
+    AgentController,
+    DerivedAgentControllerConfig,
+    StateMetrics,
+)
+from ..experience import Timestep
 from ..learning_coordinator_config import LearningCoordinatorConfigModel
 
 
@@ -31,6 +33,7 @@ class AgentManager(
         ObsSpaceType,
         ActionSpaceType,
         StateMetrics,
+        ActionAssociatedLearningData,
     ]
 ):
     def __init__(
@@ -47,14 +50,19 @@ class AgentManager(
                 ObsSpaceType,
                 ActionSpaceType,
                 StateMetrics,
+                ActionAssociatedLearningData,
                 Any,
             ],
         ],
+        batched_tensor_action_associated_learning_data: bool,
     ) -> None:
+
         self.agent_controllers = agent_controllers
         self.agent_controllers_list = list(agent_controllers.values())
         self.n_agent_controllers = len(agent_controllers)
-        self.rust_agent_manager = RustAgentManager(agent_controllers)
+        self.rust_agent_manager = RustAgentManager(
+            self.agent_controllers_list, batched_tensor_action_associated_learning_data
+        )
         assert (
             self.n_agent_controllers > 0
         ), "There must be at least one agent controller!"
@@ -65,7 +73,7 @@ class AgentManager(
             str,
             Tuple[
                 List[Timestep],
-                Optional[Tensor],
+                Optional[ActionAssociatedLearningData],
                 Optional[StateMetrics],
                 Optional[StateType],
             ],
@@ -98,10 +106,6 @@ class AgentManager(
         for agent_controller in self.agent_controllers_list:
             agent_controller.set_space_types(obs_space, action_space)
 
-    def set_device(self, device: str):
-        for agent_controller in self.agent_controllers_list:
-            agent_controller.set_device(device)
-
     def load_agent_controllers(
         self,
         learner_config: LearningCoordinatorConfigModel,
@@ -121,7 +125,7 @@ class AgentManager(
                     process_config=learner_config.process_config,
                     save_folder=os.path.join(
                         learner_config.agent_controllers_save_folder,
-                        str(agent_controller_name),
+                        agent_controller_name,
                     ),
                 )
             )
@@ -133,12 +137,3 @@ class AgentManager(
     def cleanup(self):
         for agent_controller in self.agent_controllers_list:
             agent_controller.cleanup()
-
-    # TODO: what's the point of this again?
-    def is_learning(self):
-        return any(
-            [
-                agent_controller.is_learning()
-                for agent_controller in self.agent_controllers_list
-            ]
-        )

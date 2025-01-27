@@ -1,10 +1,9 @@
-from __future__ import annotations
-
 from abc import abstractmethod
-from enum import Enum
-from typing import Generic, List, TypeVar, Union
+from collections.abc import Callable
+from typing import Any, Dict, Generic, List, TypeVar, Union
 
 import numpy as np
+from rlgym_learn_backend import DynPyAnySerde as RustSerde
 from rlgym_learn_backend import PyAnySerdeFactory
 
 T = TypeVar("T")
@@ -29,7 +28,6 @@ class TypeSerde(Generic[T]):
 
 
 # If you can, you should use these Rust-native serdes. They will be faster than the Python TypeSerde abstraction.
-RustSerde = TypeVar("RustSerde")
 
 
 def bool_serde() -> RustSerde:
@@ -47,17 +45,7 @@ def complex_serde() -> RustSerde:
 def dict_serde(
     key_serde: Union[TypeSerde, RustSerde], value_serde: Union[TypeSerde, RustSerde]
 ) -> RustSerde:
-    key_type_serde = None
-    value_type_serde = None
-    if isinstance(key_serde, TypeSerde):
-        key_type_serde = key_serde
-        key_serde = None
-    if isinstance(value_serde, TypeSerde):
-        value_type_serde = value_serde
-        value_serde = None
-    return PyAnySerdeFactory.dict_serde(
-        key_type_serde, key_serde, value_type_serde, value_serde
-    )
+    return PyAnySerdeFactory.dict_serde(key_serde, value_serde)
 
 
 def dynamic_serde() -> RustSerde:
@@ -72,8 +60,7 @@ def int_serde() -> RustSerde:
     return PyAnySerdeFactory.int_serde()
 
 
-# TODO: add option for TypeSerde
-def list_serde(items_serde: RustSerde) -> RustSerde:
+def list_serde(items_serde: Union[TypeSerde, RustSerde]) -> RustSerde:
     return PyAnySerdeFactory.list_serde(items_serde)
 
 
@@ -81,12 +68,15 @@ def numpy_serde(dtype: np.dtype):
     return PyAnySerdeFactory.numpy_dynamic_shape_serde(np.dtype(dtype))
 
 
+def option_serde(value_serde: Union[TypeSerde, RustSerde]) -> RustSerde:
+    return PyAnySerdeFactory.option_serde(value_serde)
+
+
 def pickle_serde() -> RustSerde:
     return PyAnySerdeFactory.pickle_serde()
 
 
-# TODO: add option for TypeSerde
-def set_serde(items_serde: RustSerde) -> RustSerde:
+def set_serde(items_serde: Union[TypeSerde, RustSerde]) -> RustSerde:
     return PyAnySerdeFactory.set_serde(items_serde)
 
 
@@ -94,6 +84,16 @@ def string_serde() -> RustSerde:
     return PyAnySerdeFactory.string_serde()
 
 
-# TODO: add option for TypeSerde
-def tuple_serde(*item_serdes: List[RustSerde]):
+def tuple_serde(*item_serdes: List[Union[TypeSerde, RustSerde]]):
     return PyAnySerdeFactory.tuple_serde(item_serdes)
+
+
+def typed_dict_serde(serde_dict: Dict[str, Union[TypeSerde, RustSerde]]):
+    return PyAnySerdeFactory.typed_dict_serde(serde_dict)
+
+
+def union_serde(
+    serde_options: List[Union[TypeSerde, RustSerde]],
+    serde_choice_fn: Callable[[Any], int],
+):
+    return PyAnySerdeFactory.union_serde(serde_options, serde_choice_fn)

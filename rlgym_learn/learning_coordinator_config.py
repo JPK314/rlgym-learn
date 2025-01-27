@@ -25,16 +25,8 @@ class BaseConfigModel(BaseModel):
     shm_buffer_size: int = 8192
     flinks_folder: str = "shmem_flinks"
     timestep_limit: int = 5_000_000_000
+    batched_tensor_action_associated_learning_data: bool = True
     send_state_to_agent_controllers: bool = False
-
-
-class WandbConfigModel(BaseModel):
-    project: str = "rlgym-learn"
-    group: str = "unnamed-runs"
-    run: str = "rlgym-learn-run"
-    id: Optional[str] = None
-    resume: bool = False
-    additional_wandb_config: Dict[str, Any] = Field(default_factory=dict)
 
 
 class LearningCoordinatorConfigModel(BaseModel):
@@ -45,7 +37,7 @@ class LearningCoordinatorConfigModel(BaseModel):
 
     @model_validator(mode="before")
     @classmethod
-    def set_agent_coordinators_config(cls, data):
+    def set_agent_controllers_config(cls, data):
         if isinstance(data, LearningCoordinatorConfigModel):
             agent_controllers_config = {}
             for k, v in data.agent_controllers_config.items():

@@ -1,7 +1,6 @@
 from dataclasses import dataclass
-from typing import Generic, Iterable, List, Optional, Tuple
+from typing import Generic, List
 
-import torch
 from rlgym.api import ActionType, AgentID, ObsType, RewardType
 from torch import Tensor
 

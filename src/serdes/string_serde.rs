@@ -1,7 +1,6 @@
 use core::str;
 use pyo3::prelude::*;
 use pyo3::types::PyString;
-use pyo3::Bound;
 
 use crate::communication::{append_bytes, retrieve_bytes};
 
@@ -43,15 +42,11 @@ impl PyAnySerde for StringSerde {
         buf: &[u8],
         offset: usize,
     ) -> PyResult<(Bound<'py, PyAny>, usize)> {
-        let (obj_bytes, new_offset) = retrieve_bytes(buf, offset)?;
+        let (obj_bytes, offset) = retrieve_bytes(buf, offset)?;
         Ok((
             PyString::new(py, str::from_utf8(obj_bytes)?).into_any(),
-            new_offset,
+            offset,
         ))
-    }
-
-    fn align_of(&self) -> usize {
-        1usize
     }
 
     fn get_enum(&self) -> &Serde {

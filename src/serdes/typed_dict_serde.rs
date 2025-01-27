@@ -1,5 +1,5 @@
 use pyo3::prelude::*;
-use pyo3::types::PyTuple;
+use pyo3::types::{PyDict, PyString};
 
 use crate::communication::{append_python, retrieve_python};
 
@@ -7,52 +7,56 @@ use super::pyany_serde::{PyAnySerde, PythonSerde};
 use super::serde_enum::{get_serde_bytes, Serde};
 
 #[derive(Clone)]
-pub struct TupleSerde {
-    item_serdes: Vec<Option<PythonSerde>>,
+pub struct TypedDictSerde {
+    serde_kv_list: Vec<(Py<PyString>, Option<PythonSerde>)>,
     serde_enum: Serde,
     serde_enum_bytes: Vec<u8>,
 }
 
-impl TupleSerde {
-    pub fn new(item_serdes: Vec<Option<PythonSerde>>) -> PyResult<Self> {
-        let mut item_serde_enums_option = Some(Vec::with_capacity(item_serdes.len()));
-        for serde_option in item_serdes.iter() {
+impl TypedDictSerde {
+    pub fn new(serde_kv_list: Vec<(Py<PyString>, Option<PythonSerde>)>) -> PyResult<Self> {
+        let mut kv_pairs_option = Some(Vec::with_capacity(serde_kv_list.len()));
+        for (key, serde_option) in serde_kv_list.iter() {
             if let Some(PythonSerde::PyAnySerde(pyany_serde)) = serde_option {
-                item_serde_enums_option
+                kv_pairs_option
                     .as_mut()
                     .unwrap()
-                    .push(pyany_serde.get_enum().clone())
+                    .push((key.to_string(), pyany_serde.get_enum().clone()))
             } else {
-                item_serde_enums_option = None;
+                kv_pairs_option = None;
                 break;
             }
         }
-        let serde_enum = if let Some(items) = item_serde_enums_option {
-            Serde::TUPLE { items }
+        let serde_enum = if let Some(kv_pairs) = kv_pairs_option {
+            Serde::TYPEDDICT { kv_pairs }
         } else {
             Serde::OTHER
         };
-        Ok(TupleSerde {
-            item_serdes,
+        Ok(TypedDictSerde {
+            serde_kv_list,
             serde_enum_bytes: get_serde_bytes(&serde_enum),
             serde_enum,
         })
     }
 }
 
-impl PyAnySerde for TupleSerde {
+impl PyAnySerde for TypedDictSerde {
     fn append<'py>(
         &mut self,
         buf: &mut [u8],
         offset: usize,
         obj: &Bound<'py, PyAny>,
     ) -> PyResult<usize> {
-        let tuple = obj.downcast::<PyTuple>()?;
         let mut offset = offset;
-        for (serde_option, item) in self.item_serdes.iter_mut().zip(tuple.iter()) {
+        for (key, serde_option) in self.serde_kv_list.iter_mut() {
             let mut bound_serde_option =
                 serde_option.take().map(|serde| serde.into_bound(obj.py()));
-            offset = append_python(buf, offset, &item, &mut bound_serde_option)?;
+            offset = append_python(
+                buf,
+                offset,
+                &obj.get_item(key.bind(obj.py()))?,
+                &mut bound_serde_option,
+            )?;
             *serde_option = bound_serde_option.map(|serde| serde.unbind());
         }
         Ok(offset)
@@ -64,16 +68,19 @@ impl PyAnySerde for TupleSerde {
         buf: &[u8],
         offset: usize,
     ) -> PyResult<(Bound<'py, PyAny>, usize)> {
-        let mut tuple_vec = Vec::with_capacity(self.item_serdes.len());
+        let mut kv_list = Vec::with_capacity(self.serde_kv_list.len());
         let mut offset = offset;
-        for serde_option in self.item_serdes.iter_mut() {
+        for (key, serde_option) in self.serde_kv_list.iter_mut() {
             let mut bound_serde_option = serde_option.take().map(|serde| serde.into_bound(py));
             let item;
             (item, offset) = retrieve_python(py, buf, offset, &mut bound_serde_option)?;
-            tuple_vec.push(item);
+            kv_list.push((key.clone_ref(py), item));
             *serde_option = bound_serde_option.map(|serde| serde.unbind());
         }
-        Ok((PyTuple::new(py, tuple_vec)?.into_any(), offset))
+        Ok((
+            PyDict::from_sequence(&kv_list.into_pyobject(py)?)?.into_any(),
+            offset,
+        ))
     }
 
     fn get_enum(&self) -> &Serde {

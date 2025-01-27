@@ -3,6 +3,5 @@ from .learning_coordinator_config import (
     BaseConfigModel,
     LearningCoordinatorConfigModel,
     ProcessConfigModel,
-    WandbConfigModel,
     generate_config,
 )

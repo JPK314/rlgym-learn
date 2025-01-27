@@ -3,8 +3,8 @@ use std::mem::align_of;
 use pyo3::{
     intern,
     sync::GILOnceCell,
-    types::{PyAnyMethods, PyBytes},
-    Bound, IntoPyObjectExt, PyAny, PyErr, PyObject, PyResult, Python,
+    types::{PyAnyMethods, PyDict},
+    Bound, IntoPyObject, PyAny, PyErr, PyObject, PyResult, Python,
 };
 use which;
 
@@ -13,31 +13,8 @@ pub fn py_hash(v: &Bound<'_, PyAny>) -> PyResult<i64> {
         .extract::<i64>()
 }
 
-static INTERNED_INT_1: GILOnceCell<PyObject> = GILOnceCell::new();
-static INTERNED_BYTES_0: GILOnceCell<PyObject> = GILOnceCell::new();
-static INTERNED_AS_TENSOR: GILOnceCell<PyObject> = GILOnceCell::new();
-
-pub fn recvfrom_byte<'py>(py: Python<'py>, socket: &PyObject) -> PyResult<()> {
-    socket.call_method1(
-        py,
-        intern!(py, "recvfrom"),
-        (INTERNED_INT_1.get_or_init(py, || 1_i64.into_py_any(py).unwrap()),),
-    )?;
-    Ok(())
-}
-
-pub fn sendto_byte<'py>(py: Python<'py>, socket: &PyObject, address: &PyObject) -> PyResult<()> {
-    socket.call_method1(
-        py,
-        intern!(py, "sendto"),
-        (
-            INTERNED_BYTES_0
-                .get_or_init(py, || PyBytes::new(py, &vec![0_u8][..]).into_any().unbind()),
-            address,
-        ),
-    )?;
-    Ok(())
-}
+static INTERNED_CAT: GILOnceCell<PyObject> = GILOnceCell::new();
+static INTERNED_EMPTY: GILOnceCell<PyObject> = GILOnceCell::new();
 
 pub fn get_bytes_to_alignment<T>(addr: usize) -> usize {
     let alignment = align_of::<T>();
@@ -68,6 +45,14 @@ pub fn initialize_python() -> pyo3::PyResult<()> {
     // Once we've set the configuration we need, we can go on and manually
     // initialize PyO3.
     pyo3::prepare_freethreaded_python();
+    // Now add cwd to python path
+    Python::with_gil::<_, PyResult<_>>(|py| {
+        Ok(py
+            .import("sys")?
+            .getattr("path")?
+            .call_method1("insert", (0, std::env::current_dir()?.to_str().unwrap()))?
+            .unbind())
+    })?;
     Ok(())
 }
 
@@ -84,11 +69,25 @@ pub fn tensor_slice_1d<'py>(
     Ok(tensor.call_method1(intern!(py, "narrow"), (0, start, stop - start))?)
 }
 
-pub fn as_tensor<'py>(py: Python<'py>, obj: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
-    Ok(INTERNED_AS_TENSOR
-        .get_or_try_init::<_, PyErr>(py, || {
-            Ok(py.import("torch")?.getattr("as_tensor")?.unbind())
-        })?
+pub fn torch_cat<'py>(py: Python<'py>, obj: &[&PyObject]) -> PyResult<Bound<'py, PyAny>> {
+    Ok(INTERNED_CAT
+        .get_or_try_init::<_, PyErr>(py, || Ok(py.import("torch")?.getattr("cat")?.unbind()))?
         .bind(py)
         .call1((obj,))?)
+}
+
+pub fn torch_empty<'py>(
+    shape: &Bound<'py, PyAny>,
+    dtype: &Bound<'py, PyAny>,
+) -> PyResult<Bound<'py, PyAny>> {
+    let py = shape.py();
+    Ok(INTERNED_EMPTY
+        .get_or_try_init::<_, PyErr>(py, || Ok(py.import("torch")?.getattr("empty")?.unbind()))?
+        .bind(py)
+        .call(
+            (shape,),
+            Some(&PyDict::from_sequence(
+                &vec![(intern!(py, "dtype"), dtype)].into_pyobject(py)?,
+            )?),
+        )?)
 }

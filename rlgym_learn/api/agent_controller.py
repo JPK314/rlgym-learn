@@ -11,12 +11,17 @@ from rlgym.api import (
     StateType,
 )
 from rlgym_learn_backend import EnvActionResponse
-from torch import Tensor, as_tensor, device
 
-from rlgym_learn.experience import Timestep
-
+from ..experience import Timestep
 from ..learning_coordinator_config import BaseConfigModel, ProcessConfigModel
-from .typing import AgentControllerConfig, AgentControllerData, StateMetrics
+from .typing import (
+    ActionAssociatedLearningData,
+    AgentControllerConfig,
+    AgentControllerData,
+    StateMetrics,
+)
+
+# TODO: make abstract
 
 
 @dataclass
@@ -39,6 +44,7 @@ class AgentController(
         ObsSpaceType,
         ActionSpaceType,
         StateMetrics,
+        ActionAssociatedLearningData,
         AgentControllerData,
     ]
 ):
@@ -59,14 +65,16 @@ class AgentController(
         self,
         agent_id_list: List[AgentID],
         obs_list: List[ObsType],
-    ) -> Tuple[Iterable[ActionType], Tensor]:
+    ) -> Tuple[Iterable[ActionType], ActionAssociatedLearningData]:
         """
         Function to get an action and the log of its probability from the policy given an observation.
         :param agent_id_list: List of AgentIDs for which to produce actions. AgentIDs may not be unique here. Parallel with obs_list.
         :param obs_list: List of ObsTypes for which to produce actions. Parallel with agent_id_list.
-        :return: Tuple of a list of chosen actions and Tensor of shape (n,), with the action list and the first (only) dimension of the tensor parallel with obs_list.
+        :return: Tuple of a list of chosen actions and action associated learning data.
+
+        If base_config.batched_tensor_action_associated_learning_data is true, the action associated learning data should be a tensor with the first dimension parallel with the action list. Otherwise, the action associated learning data should be a list parallel with the action list.
         """
-        return ([], as_tensor([]))
+        raise NotImplementedError
 
     def process_timestep_data(
         self,
@@ -74,7 +82,7 @@ class AgentController(
             str,
             Tuple[
                 List[Timestep],
-                Optional[Tensor],
+                Optional[ActionAssociatedLearningData],
                 Optional[StateMetrics],
                 Optional[StateType],
             ],
@@ -82,11 +90,17 @@ class AgentController(
     ):
         """
         Function to handle processing of timesteps.
-        :param timestep_data: Dictionary with environment ids as keys and tuples of
-        timesteps from the environment (the order of agent ids in this list is fixed until a reset or set_state env action is taken)
-        log probs for the timesteps from the environment (parallel to the timestep list, and None if no timesteps exist for the environment),
-        StateMetrics for the state (if calculated in the env process),
-        and the state (if send_state_to_agent_controllers is true in BaseConfig)
+        :param timestep_data: Dictionary with environment ids as keys and tuples of:
+
+        timesteps from the environment (the order of agent ids in this list is fixed until a reset or set_state env action is taken),
+
+        action associated learning data (parallel to the timestep list, and None if no timesteps exist for the environment),
+
+        StateMetrics for the state (if collected in the env process),
+
+        and the state (if send_state_to_agent_controllers is true in BaseConfig).
+
+        Do not modify this dict as it will be passed by reference to other agent controllers.
         """
         pass
 
@@ -111,15 +125,20 @@ class AgentController(
         """
         return {}
 
+    def process_env_actions(self, env_actions: Dict[str, EnvActionResponse]):
+        """
+        Function to process the env actions that will be used by environments.
+        :param env_actions: Dictionary with environment ids as keys and EnvActionResponse as values. These will not be None, and all environment ids which the agent manager is currently getting actions for will be present in the dictionary. Note that if there are multiple agent controllers, there may be more entries than were present in the state_info dict received in choose_env_actions.
+
+        It may cause undefined behavior to modify this dict.
+        """
+        pass
+
     def set_space_types(self, obs_space: ObsSpaceType, action_space: ActionSpaceType):
         pass
 
-    # TODO: is this needed?
-    def set_device(self, device: device):
-        pass
-
-    def validate_config(self, config_obj: Any) -> AgentControllerConfig:
-        pass
+    def validate_config(self, config_obj: Dict[str, Any]) -> AgentControllerConfig:
+        raise NotImplementedError
 
     def load(self, config: DerivedAgentControllerConfig[AgentControllerConfig]):
         """
@@ -137,12 +156,5 @@ class AgentController(
     def cleanup(self):
         """
         Function to clean up any memory still in use when shutting down.
-        """
-        pass
-
-    def is_learning(self) -> bool:
-        """
-        Function to determine if the agent is still learning.
-        :return: True if agent is still learning, false otherwise
         """
         pass

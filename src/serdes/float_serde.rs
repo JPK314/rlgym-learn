@@ -1,5 +1,4 @@
 use pyo3::prelude::*;
-use pyo3::Bound;
 
 use crate::communication::{append_f64, retrieve_f64};
 
@@ -37,12 +36,8 @@ impl PyAnySerde for FloatSerde {
         buf: &[u8],
         offset: usize,
     ) -> PyResult<(Bound<'py, PyAny>, usize)> {
-        let (val, new_offset) = retrieve_f64(buf, offset)?;
-        Ok((val.into_pyobject(py)?.into_any(), new_offset))
-    }
-
-    fn align_of(&self) -> usize {
-        1usize
+        let (val, offset) = retrieve_f64(buf, offset)?;
+        Ok((val.into_pyobject(py)?.into_any(), offset))
     }
 
     fn get_enum(&self) -> &Serde {

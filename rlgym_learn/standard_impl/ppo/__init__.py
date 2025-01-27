@@ -8,7 +8,12 @@ from .experience_buffer import (
     ExperienceBuffer,
     ExperienceBufferConfigModel,
 )
-from .gae_trajectory_processor import GAETrajectoryProcessor, GAETrajectoryProcessorData
+from .experience_buffer_numpy import NumpyExperienceBuffer
+from .gae_trajectory_processor import (
+    GAETrajectoryProcessor,
+    GAETrajectoryProcessorConfigModel,
+    GAETrajectoryProcessorData,
+)
 from .gae_trajectory_processor_pure_python import GAETrajectoryProcessorPurePython
 from .multi_discrete_actor import MultiDiscreteFF
 from .ppo_agent_controller import (

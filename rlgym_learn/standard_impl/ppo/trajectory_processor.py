@@ -1,21 +1,35 @@
 from abc import abstractmethod
-from typing import Dict, Generic, List, Tuple, TypeVar
+from dataclasses import dataclass
+from typing import Any, Dict, Generic, List, Optional, Tuple, TypeVar
 
 from rlgym.api import ActionType, AgentID, ObsType, RewardType
-from torch import Tensor, device, dtype, float32, float64
+from torch import Tensor
 
 from .trajectory import Trajectory
 
+TrajectoryProcessorConfig = TypeVar("TrajectoryProcessorConfig")
 TrajectoryProcessorData = TypeVar("TrajectoryProcessorData")
 
-dtype_mapping: Dict[str, dtype] = {
-    "float32": float32,
-    "float64": float64,
-}
+TRAJECTORY_PROCESSOR_FILE = "trajectory_processor.json"
+
+
+@dataclass
+class DerivedTrajectoryProcessorConfig(Generic[TrajectoryProcessorConfig]):
+    trajectory_processor_config: TrajectoryProcessorConfig
+    dtype: str
+    device: str
+    checkpoint_load_folder: Optional[str] = None
 
 
 class TrajectoryProcessor(
-    Generic[AgentID, ObsType, ActionType, RewardType, TrajectoryProcessorData]
+    Generic[
+        TrajectoryProcessorConfig,
+        AgentID,
+        ObsType,
+        ActionType,
+        RewardType,
+        TrajectoryProcessorData,
+    ]
 ):
     @abstractmethod
     def process_trajectories(
@@ -34,17 +48,12 @@ class TrajectoryProcessor(
         """
         raise NotImplementedError
 
-    def set_dtype(self, dtype: str):
-        dtype = dtype.lower()
-        assert dtype in dtype_mapping, "dtype must be float32 or float64"
-        self.dtype = dtype_mapping[dtype]
-        self.numpy_dtype = dtype
+    @abstractmethod
+    def validate_config(self, config_obj: Dict[str, Any]) -> TrajectoryProcessorConfig:
+        raise NotImplementedError
 
-    def set_device(self, device: device):
-        self.device = device
+    def load(self, config: DerivedTrajectoryProcessorConfig[TrajectoryProcessorConfig]):
+        pass
 
-    def state_dict(self) -> dict:
-        return {}
-
-    def load_state_dict(self, state: dict):
+    def save_checkpoint(self, folder_path):
         pass
