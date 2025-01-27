@@ -7,13 +7,7 @@ name: CI
 
 on:
   push:
-    branches:
-      - main
-      - master
-    tags:
-      - '*'
-  pull_request:
-  workflow_dispatch:
+    tags: [ 'v*.*.*' ]
 
 permissions:
   contents: read
@@ -117,8 +111,6 @@ jobs:
     strategy:
       matrix:
         platform:
-          - runner: macos-12
-            target: x86_64
           - runner: macos-14
             target: aarch64
     steps:
