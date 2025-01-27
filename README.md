@@ -29,6 +29,5 @@ This project was built using Matthew Allen's wonderful [RLGym-PPO](https://githu
 
 ## Disclaimer
 This framework is designed to be usable in every situation you might use the RLGym API in. However, there are a couple assumptions on the usage of RLGym which are baked into the functionality of this framework. These are pretty niche, but are listed below just in case:
-1. The AgentID hash must not change until the next environment reset() call once it is returned from reset().
-2. The AgentID hash must fit into a signed 64 bit integer.
-3. The obs space type and action space type should not change after the associated configuration objects' associated get_x_type functions have been called, and they should be the same across all agents and all envs.
+1. The AgentID hash must fit into a signed 64 bit integer.
+2. The obs space type and action space type should not change after the associated configuration objects' associated get_x_type functions have been called, and they should be the same across all agents and all envs.
