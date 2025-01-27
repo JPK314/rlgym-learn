@@ -155,7 +155,7 @@ pub struct GAETrajectoryProcessor {
 #[pymethods]
 impl GAETrajectoryProcessor {
     #[new]
-    fn new(batch_reward_type_numpy_converter: PyObject) -> PyResult<Self> {
+    pub fn new(batch_reward_type_numpy_converter: PyObject) -> PyResult<Self> {
         Ok(GAETrajectoryProcessor {
             gamma: None,
             lambda: None,
@@ -164,7 +164,7 @@ impl GAETrajectoryProcessor {
         })
     }
 
-    fn load(&mut self, config: &DerivedGAETrajectoryProcessorConfig) -> PyResult<()> {
+    pub fn load(&mut self, config: &DerivedGAETrajectoryProcessorConfig) -> PyResult<()> {
         Python::with_gil(|py| {
             self.gamma = Some(config.gamma.clone_ref(py));
             self.lambda = Some(config.lambda.clone_ref(py));
@@ -178,7 +178,7 @@ impl GAETrajectoryProcessor {
         })
     }
 
-    fn process_trajectories(
+    pub fn process_trajectories(
         &self,
         trajectories: Vec<Trajectory>,
         return_std: PyObject,

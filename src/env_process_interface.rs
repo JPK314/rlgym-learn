@@ -513,7 +513,7 @@ impl EnvProcessInterface {
         send_state_to_agent_controllers,
         should_collect_state_metrics,
         ))]
-    fn new(
+    pub fn new(
         agent_id_serde_option: Option<PythonSerde>,
         action_serde_option: Option<PythonSerde>,
         obs_serde_option: Option<PythonSerde>,
@@ -605,7 +605,7 @@ impl EnvProcessInterface {
         })
     }
 
-    fn add_process(
+    pub fn add_process(
         &mut self,
         proc_package_def: (PyObject, PyObject, PyObject, String),
     ) -> PyResult<()> {
@@ -632,7 +632,7 @@ impl EnvProcessInterface {
         })
     }
 
-    fn delete_process(&mut self) -> PyResult<()> {
+    pub fn delete_process(&mut self) -> PyResult<()> {
         let (parent_end, mut shmem, proc_id) = self.proc_packages.pop().unwrap();
         self.proc_id_pid_idx_map.remove(&proc_id);
         let (ep_evt, used_bytes) = unsafe {
@@ -664,7 +664,7 @@ impl EnvProcessInterface {
         })
     }
 
-    fn increase_min_process_steps_per_inference(&mut self) -> usize {
+    pub fn increase_min_process_steps_per_inference(&mut self) -> usize {
         self.min_process_steps_per_inference = min(
             self.min_process_steps_per_inference + 1,
             self.proc_packages.len().try_into().unwrap(),
@@ -672,12 +672,12 @@ impl EnvProcessInterface {
         self.min_process_steps_per_inference
     }
 
-    fn decrease_min_process_steps_per_inference(&mut self) -> usize {
+    pub fn decrease_min_process_steps_per_inference(&mut self) -> usize {
         self.min_process_steps_per_inference = max(self.min_process_steps_per_inference - 1, 1);
         self.min_process_steps_per_inference
     }
 
-    fn cleanup(&mut self) -> PyResult<()> {
+    pub fn cleanup(&mut self) -> PyResult<()> {
         while let Some(proc_package) = self.proc_packages.pop() {
             let (parent_end, mut shmem, _) = proc_package;
             let (ep_evt, used_bytes) = unsafe {
@@ -713,7 +713,7 @@ impl EnvProcessInterface {
     // Dict of timesteps, state metrics, and state by proc id
     // Dict of state, terminated dict, and truncated dict by proc id
     // )
-    fn collect_step_data(&mut self) -> PyResult<(usize, Py<PyDict>, Py<PyDict>, Py<PyDict>)> {
+    pub fn collect_step_data(&mut self) -> PyResult<(usize, Py<PyDict>, Py<PyDict>, Py<PyDict>)> {
         let mut n_process_steps_collected = 0;
         let mut total_timesteps_collected = 0;
         let mut obs_data_kv_list = Vec::with_capacity(self.min_process_steps_per_inference);
@@ -755,7 +755,7 @@ impl EnvProcessInterface {
         })
     }
 
-    fn send_env_actions(&mut self, env_actions: HashMap<String, EnvAction>) -> PyResult<()> {
+    pub fn send_env_actions(&mut self, env_actions: HashMap<String, EnvAction>) -> PyResult<()> {
         Python::with_gil(|py| {
             let mut action_serde_option = self
                 .action_serde_option

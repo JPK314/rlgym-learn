@@ -203,7 +203,7 @@ impl AgentManager {
 #[pymethods]
 impl AgentManager {
     #[new]
-    fn new(
+    pub fn new(
         agent_controllers: Vec<PyObject>,
         batched_tensor_action_associated_learning_data: bool,
     ) -> Self {
@@ -213,7 +213,7 @@ impl AgentManager {
         }
     }
 
-    fn get_env_actions(
+    pub fn get_env_actions(
         &self,
         mut env_obs_data_dict: HashMap<String, (Vec<PyObject>, Vec<PyObject>)>,
         state_info: HashMap<String, PyObject>,
