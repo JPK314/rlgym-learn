@@ -181,7 +181,9 @@ class PPOLearner(
             os.path.join(folder_path, CRITIC_OPTIMIZER_FILE),
         )
         with open(os.path.join(folder_path, MISC_STATE), "wt") as f:
-            json.dump({"cumulative_model_updates": self.cumulative_model_updates}, f)
+            json.dump(
+                {"cumulative_model_updates": self.cumulative_model_updates}, f, indent=4
+            )
 
     def learn(
         self,

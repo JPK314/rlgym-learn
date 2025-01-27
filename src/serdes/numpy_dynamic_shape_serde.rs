@@ -5,7 +5,6 @@ use numpy::IntoPyArray;
 use numpy::{ndarray::ArrayD, Element, PyArrayDyn, PyArrayMethods, PyUntypedArrayMethods};
 use pyo3::exceptions::asyncio::InvalidStateError;
 use pyo3::prelude::*;
-use pyo3::Bound;
 
 use crate::common::misc::get_bytes_to_alignment;
 use crate::common::numpy_dtype_enum::NumpyDtype;

@@ -45,17 +45,7 @@ def complex_serde() -> RustSerde:
 def dict_serde(
     key_serde: Union[TypeSerde, RustSerde], value_serde: Union[TypeSerde, RustSerde]
 ) -> RustSerde:
-    key_type_serde = None
-    value_type_serde = None
-    if isinstance(key_serde, TypeSerde):
-        key_type_serde = key_serde
-        key_serde = None
-    if isinstance(value_serde, TypeSerde):
-        value_type_serde = value_serde
-        value_serde = None
-    return PyAnySerdeFactory.dict_serde(
-        key_type_serde, key_serde, value_type_serde, value_serde
-    )
+    return PyAnySerdeFactory.dict_serde(key_serde, value_serde)
 
 
 def dynamic_serde() -> RustSerde:
@@ -71,11 +61,7 @@ def int_serde() -> RustSerde:
 
 
 def list_serde(items_serde: Union[TypeSerde, RustSerde]) -> RustSerde:
-    items_type_serde = None
-    if isinstance(items_serde, TypeSerde):
-        items_type_serde = items_serde
-        items_serde = None
-    return PyAnySerdeFactory.list_serde(items_type_serde, items_serde)
+    return PyAnySerdeFactory.list_serde(items_serde)
 
 
 def numpy_serde(dtype: np.dtype):
@@ -83,11 +69,7 @@ def numpy_serde(dtype: np.dtype):
 
 
 def option_serde(value_serde: Union[TypeSerde, RustSerde]) -> RustSerde:
-    value_type_serde = None
-    if isinstance(value_serde, TypeSerde):
-        value_type_serde = value_serde
-        value_serde = None
-    return PyAnySerdeFactory.option_serde(value_type_serde, value_serde)
+    return PyAnySerdeFactory.option_serde(value_serde)
 
 
 def pickle_serde() -> RustSerde:
@@ -95,11 +77,7 @@ def pickle_serde() -> RustSerde:
 
 
 def set_serde(items_serde: Union[TypeSerde, RustSerde]) -> RustSerde:
-    items_type_serde = None
-    if isinstance(items_serde, TypeSerde):
-        items_type_serde = items_serde
-        items_serde = None
-    return PyAnySerdeFactory.set_serde(items_type_serde, items_serde)
+    return PyAnySerdeFactory.set_serde(items_serde)
 
 
 def string_serde() -> RustSerde:
@@ -107,36 +85,15 @@ def string_serde() -> RustSerde:
 
 
 def tuple_serde(*item_serdes: List[Union[TypeSerde, RustSerde]]):
-    new_item_serdes = []
-    for item_serde in item_serdes:
-        item_type_serde = None
-        if isinstance(item_serde, TypeSerde):
-            item_type_serde = item_serde
-            item_serde = None
-        new_item_serdes.append((item_type_serde, item_serde))
-    return PyAnySerdeFactory.tuple_serde(new_item_serdes)
+    return PyAnySerdeFactory.tuple_serde(item_serdes)
 
 
 def typed_dict_serde(serde_dict: Dict[str, Union[TypeSerde, RustSerde]]):
-    new_serde_dict = {}
-    for key, serde in serde_dict.items():
-        type_serde = None
-        if isinstance(serde, TypeSerde):
-            type_serde = serde
-            serde = None
-        new_serde_dict[key] = (type_serde, serde)
-    return PyAnySerdeFactory.typed_dict_serde(new_serde_dict)
+    return PyAnySerdeFactory.typed_dict_serde(serde_dict)
 
 
 def union_serde(
     serde_options: List[Union[TypeSerde, RustSerde]],
     serde_choice_fn: Callable[[Any], int],
 ):
-    new_serde_options = []
-    for option_serde in serde_options:
-        option_type_serde = None
-        if isinstance(option_serde, TypeSerde):
-            option_type_serde = option_serde
-            option_serde = None
-        new_serde_options.append((option_type_serde, option_serde))
-    return PyAnySerdeFactory.union_serde(new_serde_options, serde_choice_fn)
+    return PyAnySerdeFactory.union_serde(serde_options, serde_choice_fn)

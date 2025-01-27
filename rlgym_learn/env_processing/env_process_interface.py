@@ -22,10 +22,9 @@ from rlgym_learn_backend import EnvAction
 from rlgym_learn_backend import EnvProcessInterface as RustEnvProcessInterface
 from rlgym_learn_backend import recvfrom_byte_py, sendto_byte_py
 
-from rlgym_learn.api.serdes import RustSerde, TypeSerde
-from rlgym_learn.api.typing import ActionAssociatedLearningData, StateMetrics
-from rlgym_learn.env_processing.env_process import env_process
-from rlgym_learn.experience.timestep import Timestep
+from ..api import ActionAssociatedLearningData, RustSerde, StateMetrics, TypeSerde
+from ..experience import Timestep
+from .env_process import env_process
 
 try:
     from tqdm import tqdm
@@ -99,71 +98,23 @@ class EnvProcessInterface(
         self.recalculate_agent_id_every_step = recalculate_agent_id_every_step
         self.n_procs = 0
 
-        agent_id_type_serde = None
-        action_type_serde = None
-        obs_type_serde = None
-        reward_type_serde = None
-        obs_space_type_serde = None
-        action_space_type_serde = None
-        state_type_serde = None
-        state_metrics_type_serde = None
-
-        if isinstance(agent_id_serde, TypeSerde):
-            agent_id_type_serde = agent_id_serde
-            agent_id_serde = None
-        if isinstance(action_serde, TypeSerde):
-            action_type_serde = action_serde
-            action_serde = None
-        if isinstance(obs_serde, TypeSerde):
-            obs_type_serde = obs_serde
-            obs_serde = None
-        if isinstance(reward_serde, TypeSerde):
-            reward_type_serde = reward_serde
-            reward_serde = None
-        if isinstance(obs_space_serde, TypeSerde):
-            obs_space_type_serde = obs_space_serde
-            obs_space_serde = None
-        if isinstance(action_space_serde, TypeSerde):
-            action_space_type_serde = action_space_serde
-            action_space_serde = None
-
-        # If we are not sending the state to the agent controllers, we don't care about the serde for the state
-        if not send_state_to_agent_controllers:
-            state_serde = None
-        elif isinstance(state_serde, TypeSerde):
-            state_type_serde = state_serde
-            state_serde = None
-
-        # If there is no collect state metrics fn, we don't need to hold onto any serdes for state metrics
-        if collect_state_metrics_fn is None:
-            state_metrics_serde = None
-        elif isinstance(state_metrics_serde, TypeSerde):
-            state_metrics_type_serde = state_metrics_serde
-            state_metrics_serde = None
-
         os.makedirs(flinks_folder, exist_ok=True)
 
+        should_collect_state_metrics = collect_state_metrics_fn is not None
         self.rust_env_process_interface = RustEnvProcessInterface(
-            agent_id_type_serde,
             agent_id_serde,
-            action_type_serde,
             action_serde,
-            obs_type_serde,
             obs_serde,
-            reward_type_serde,
             reward_serde,
-            obs_space_type_serde,
             obs_space_serde,
-            action_space_type_serde,
             action_space_serde,
-            state_type_serde,
             state_serde,
-            state_metrics_type_serde,
             state_metrics_serde,
             self.recalculate_agent_id_every_step,
             flinks_folder,
             min_process_steps_per_inference,
-            send_state_to_agent_controllers,
+            self.send_state_to_agent_controllers,
+            should_collect_state_metrics,
         )
 
     def init_processes(

@@ -1,13 +1,3 @@
-"""
-File: experience_buffer.py
-Author: Matthew Allen
-
-Description:
-    A buffer containing the experience to be learned from on this iteration. The buffer may be added to, removed from,
-    and shuffled. When the maximum specified size of the buffer is exceeded, the least recent entries will be removed in
-    a FIFO fashion.
-"""
-
 import os
 import pickle
 from dataclasses import dataclass

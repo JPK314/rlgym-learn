@@ -27,10 +27,10 @@ pub struct DerivedGAETrajectoryProcessorConfig {
 #[pymethods]
 impl DerivedGAETrajectoryProcessorConfig {
     #[new]
-    fn new(gamma: PyObject, lambda: PyObject, dtype: Py<PyArrayDescr>) -> Self {
+    fn new(gamma: PyObject, lmbda: PyObject, dtype: Py<PyArrayDescr>) -> Self {
         DerivedGAETrajectoryProcessorConfig {
             gamma,
-            lambda,
+            lambda: lmbda,
             dtype,
         }
     }

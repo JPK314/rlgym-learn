@@ -2,7 +2,7 @@ use pyo3::{prelude::*, types::PyList, IntoPyObjectExt};
 
 use crate::{
     communication::{append_python, retrieve_python},
-    serdes::pyany_serde::PyAnySerde,
+    serdes::pyany_serde::BoundPythonSerde,
 };
 
 #[allow(non_camel_case_types)]
@@ -72,15 +72,13 @@ pub enum EnvAction {
     },
 }
 
-pub fn append_env_action<'py>(
+pub fn append_env_action_new<'py>(
     py: Python<'py>,
     buf: &mut [u8],
     offset: usize,
     env_action: &EnvAction,
-    action_type_serde_option: &Option<&Bound<'py, PyAny>>,
-    action_pyany_serde_option: &mut Option<Box<dyn PyAnySerde>>,
-    state_type_serde_option: &Option<&Bound<'py, PyAny>>,
-    state_pyany_serde_option: &mut Option<Box<dyn PyAnySerde>>,
+    action_serde_option: &mut Option<BoundPythonSerde<'py>>,
+    state_serde_option: &mut Option<BoundPythonSerde<'py>>,
 ) -> PyResult<usize> {
     let mut offset = offset;
     match env_action {
@@ -89,13 +87,7 @@ pub fn append_env_action<'py>(
             offset += 1;
             let action_list = action_list.bind(py);
             for action in action_list.iter() {
-                offset = append_python(
-                    buf,
-                    offset,
-                    &action,
-                    action_type_serde_option,
-                    action_pyany_serde_option,
-                )?;
+                offset = append_python(buf, offset, &action, action_serde_option)?;
             }
         }
         EnvAction::RESET {} => {
@@ -105,27 +97,19 @@ pub fn append_env_action<'py>(
         EnvAction::SET_STATE { desired_state, .. } => {
             buf[offset] = 2;
             offset += 1;
-            offset = append_python(
-                buf,
-                offset,
-                desired_state.bind(py),
-                state_type_serde_option,
-                state_pyany_serde_option,
-            )?;
+            offset = append_python(buf, offset, desired_state.bind(py), state_serde_option)?;
         }
     }
     Ok(offset)
 }
 
-pub fn retrieve_env_action<'py>(
+pub fn retrieve_env_action_new<'py>(
     py: Python<'py>,
     buf: &mut [u8],
     offset: usize,
     n_actions: usize,
-    action_type_serde_option: &Option<&Bound<'py, PyAny>>,
-    action_pyany_serde_option: &mut Option<Box<dyn PyAnySerde>>,
-    state_type_serde_option: &Option<&Bound<'py, PyAny>>,
-    state_pyany_serde_option: &mut Option<Box<dyn PyAnySerde>>,
+    action_serde_option: &mut Option<BoundPythonSerde<'py>>,
+    state_serde_option: &mut Option<BoundPythonSerde<'py>>,
 ) -> PyResult<(EnvAction, usize)> {
     let env_action_type = buf[offset];
     let mut offset = offset + 1;
@@ -134,13 +118,7 @@ pub fn retrieve_env_action<'py>(
             let mut action_list = Vec::with_capacity(n_actions);
             for _ in 0..n_actions {
                 let action;
-                (action, offset) = retrieve_python(
-                    py,
-                    buf,
-                    offset,
-                    action_type_serde_option,
-                    action_pyany_serde_option,
-                )?;
+                (action, offset) = retrieve_python(py, buf, offset, action_serde_option)?;
                 action_list.push(action);
             }
             Ok((
@@ -155,13 +133,7 @@ pub fn retrieve_env_action<'py>(
         1 => Ok((EnvAction::RESET {}, offset)),
         2 => {
             let state;
-            (state, offset) = retrieve_python(
-                py,
-                buf,
-                offset,
-                state_type_serde_option,
-                state_pyany_serde_option,
-            )?;
+            (state, offset) = retrieve_python(py, buf, offset, state_serde_option)?;
             Ok((
                 EnvAction::SET_STATE {
                     desired_state: state.unbind(),

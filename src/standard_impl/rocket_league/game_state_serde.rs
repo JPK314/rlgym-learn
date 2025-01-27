@@ -3,7 +3,7 @@ use crate::{
     serdes::{
         dict_serde::DictSerde,
         numpy_dynamic_shape_serde::NumpyDynamicShapeSerde,
-        pyany_serde::PyAnySerde,
+        pyany_serde::{PyAnySerde, PythonSerde},
         serde_enum::{get_serde_bytes, Serde},
     },
 };
@@ -25,28 +25,20 @@ pub struct GameStateSerde {
 }
 
 impl GameStateSerde {
-    pub fn new(
-        agent_id_type_serde_option: Option<PyObject>,
-        agent_id_pyany_serde_option: Option<Box<dyn PyAnySerde>>,
-    ) -> Self {
-        Python::with_gil(|py| GameStateSerde {
+    pub fn new(agent_id_serde_option: Option<PythonSerde>) -> Self {
+        GameStateSerde {
             serde_enum: Serde::OTHER,
             serde_enum_bytes: get_serde_bytes(&Serde::OTHER),
             game_config_serde: GameConfigSerde::new(),
             cars_dict_serde: DictSerde::new(
-                agent_id_type_serde_option
-                    .as_ref()
-                    .map(|type_serde| type_serde.clone_ref(py)),
-                agent_id_pyany_serde_option.clone(),
-                None,
-                Some(Box::new(CarSerde::new(
-                    agent_id_type_serde_option,
-                    agent_id_pyany_serde_option,
-                ))),
+                agent_id_serde_option.clone(),
+                Some(PythonSerde::PyAnySerde(Box::new(CarSerde::new(
+                    agent_id_serde_option,
+                )))),
             ),
             physics_object_serde: PhysicsObjectSerde::new(),
             numpy_dynamic_shape_serde: NumpyDynamicShapeSerde::<f32>::new(),
-        })
+        }
     }
 
     pub fn append<'py>(

@@ -1,6 +1,6 @@
 from abc import abstractmethod
 from dataclasses import dataclass
-from typing import Any, Generic, List, Optional, Tuple, TypeVar
+from typing import Any, Dict, Generic, List, Optional, Tuple, TypeVar
 
 from rlgym.api import ActionType, AgentID, ObsType, RewardType
 from torch import Tensor
@@ -48,7 +48,8 @@ class TrajectoryProcessor(
         """
         raise NotImplementedError
 
-    def validate_config(self, config_obj: Any) -> TrajectoryProcessorConfig:
+    @abstractmethod
+    def validate_config(self, config_obj: Dict[str, Any]) -> TrajectoryProcessorConfig:
         raise NotImplementedError
 
     def load(self, config: DerivedTrajectoryProcessorConfig[TrajectoryProcessorConfig]):

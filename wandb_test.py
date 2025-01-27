@@ -154,6 +154,7 @@ if __name__ == "__main__":
         WandbConfigModel,
         generate_config,
     )
+    from rlgym_learn.standard_impl import WandbMetricsLogger
     from rlgym_learn.standard_impl.ppo import (
         BasicCritic,
         DiscreteFF,
@@ -167,27 +168,6 @@ if __name__ == "__main__":
         PPOLearnerConfigModel,
         PPOMetricsLogger,
     )
-    from rlgym_learn.util import reporting
-
-    class ExampleLogger(PPOMetricsLogger[None]):
-
-        def collect_state_metrics(self, data: List[None]) -> Dict[str, Any]:
-            return {}
-
-        def report_metrics(
-            self,
-            agent_controller_name,
-            state_metrics,
-            agent_metrics,
-            wandb_run,
-        ):
-            report = {
-                **agent_metrics,
-                **state_metrics,
-            }
-            reporting.report_metrics(
-                agent_controller_name, report, None, wandb_run=wandb_run
-            )
 
     def actor_factory(
         obs_space: Tuple[str, int], action_space: Tuple[str, int], device: str
@@ -196,9 +176,6 @@ if __name__ == "__main__":
 
     def critic_factory(obs_space: Tuple[str, int], device: str):
         return BasicCritic(obs_space[1], (256, 256, 256), device)
-
-    def metrics_logger_factory():
-        return ExampleLogger()
 
     # 80 processes
     n_proc = 200
@@ -250,7 +227,7 @@ if __name__ == "__main__":
             actor_factory,
             critic_factory,
             NumpyExperienceBuffer(GAETrajectoryProcessor()),
-            metrics_logger_factory,
+            WandbMetricsLogger(inner_metrics_logger=PPOMetricsLogger()),
         )
     }
 

@@ -17,8 +17,7 @@ from rlgym.api import (
 from rlgym_learn_backend import env_process as rust_env_process
 from rlgym_learn_backend import recvfrom_byte_py, sendto_byte_py
 
-from rlgym_learn.api.serdes import RustSerde, TypeSerde
-from rlgym_learn.api.typing import StateMetrics
+from ..api import RustSerde, StateMetrics, TypeSerde
 
 
 def env_process(
@@ -62,40 +61,6 @@ def env_process(
     sendto_byte_py(child_end, parent_sockname)
     recvfrom_byte_py(child_end)
 
-    agent_id_type_serde = None
-    action_type_serde = None
-    obs_type_serde = None
-    reward_type_serde = None
-    obs_space_type_serde = None
-    action_space_type_serde = None
-    state_type_serde = None
-    state_metrics_type_serde = None
-
-    if isinstance(agent_id_serde, TypeSerde):
-        agent_id_type_serde = agent_id_serde
-        agent_id_serde = None
-    if isinstance(action_serde, TypeSerde):
-        action_type_serde = action_serde
-        action_serde = None
-    if isinstance(obs_serde, TypeSerde):
-        obs_type_serde = obs_serde
-        obs_serde = None
-    if isinstance(reward_serde, TypeSerde):
-        reward_type_serde = reward_serde
-        reward_serde = None
-    if isinstance(obs_space_serde, TypeSerde):
-        obs_space_type_serde = obs_space_serde
-        obs_space_serde = None
-    if isinstance(action_space_serde, TypeSerde):
-        action_space_type_serde = action_space_serde
-        action_space_serde = None
-    if isinstance(state_serde, TypeSerde):
-        state_type_serde = state_serde
-        state_serde = None
-    if isinstance(state_metrics_serde, TypeSerde):
-        state_metrics_type_serde = state_metrics_serde
-        state_metrics_serde = None
-
     rust_env_process(
         proc_id,
         child_end,
@@ -103,21 +68,13 @@ def env_process(
         build_env_fn,
         flinks_folder,
         shm_buffer_size,
-        agent_id_type_serde,
         agent_id_serde,
-        action_type_serde,
         action_serde,
-        obs_type_serde,
         obs_serde,
-        reward_type_serde,
         reward_serde,
-        obs_space_type_serde,
         obs_space_serde,
-        action_space_type_serde,
         action_space_serde,
-        state_type_serde,
         state_serde,
-        state_metrics_type_serde,
         state_metrics_serde,
         collect_state_metrics_fn,
         send_state_to_agent_controllers,

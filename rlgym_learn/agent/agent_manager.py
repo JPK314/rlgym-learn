@@ -13,9 +13,13 @@ from rlgym.api import (
 from rlgym_learn_backend import AgentManager as RustAgentManager
 from rlgym_learn_backend import EnvAction
 
-from ..api.agent_controller import AgentController, DerivedAgentControllerConfig
-from ..api.typing import ActionAssociatedLearningData, StateMetrics
-from ..experience.timestep import Timestep
+from ..api import (
+    ActionAssociatedLearningData,
+    AgentController,
+    DerivedAgentControllerConfig,
+    StateMetrics,
+)
+from ..experience import Timestep
 from ..learning_coordinator_config import LearningCoordinatorConfigModel
 
 

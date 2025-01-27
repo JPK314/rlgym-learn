@@ -1,5 +1,4 @@
 use pyo3::prelude::*;
-use pyo3::Bound;
 
 use crate::communication::{append_f64, retrieve_f64};
 

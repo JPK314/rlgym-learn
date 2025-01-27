@@ -1,31 +1,11 @@
-"""
-File: experience_buffer.py
-Author: Matthew Allen
-
-Description:
-    A buffer containing the experience to be learned from on this iteration. The buffer may be added to, removed from,
-    and shuffled. When the maximum specified size of the buffer is exceeded, the least recent entries will be removed in
-    a FIFO fashion.
-"""
-
-import os
-import pickle
-from dataclasses import dataclass
-from typing import Any, Dict, Generic, List, Optional, Tuple
+from typing import List, Optional
 
 import numpy as np
 import torch
-from pydantic import BaseModel, Field, model_validator
-from rlgym.api import ActionType, AgentID, ObsType, RewardType
+from rlgym.api import AgentID, RewardType
 
 from .experience_buffer import ExperienceBuffer
-from .trajectory import Trajectory
-from .trajectory_processor import (
-    DerivedTrajectoryProcessorConfig,
-    TrajectoryProcessor,
-    TrajectoryProcessorConfig,
-    TrajectoryProcessorData,
-)
+from .trajectory_processor import TrajectoryProcessorConfig, TrajectoryProcessorData
 
 
 class NumpyExperienceBuffer(

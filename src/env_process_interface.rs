@@ -12,7 +12,6 @@ use pyo3::prelude::*;
 use pyo3::sync::GILOnceCell;
 use pyo3::types::PyDict;
 use pyo3::IntoPyObjectExt;
-use pyo3::PyObject;
 use raw_sync::events::Event;
 use raw_sync::events::EventInit;
 use raw_sync::events::EventState;
@@ -20,13 +19,13 @@ use shared_memory::Shmem;
 use shared_memory::ShmemConf;
 
 use crate::common::misc::clone_list;
+use crate::communication::retrieve_python;
 use crate::communication::{
-    append_header, get_flink, recvfrom_byte, retrieve_bool, retrieve_python, retrieve_usize,
-    sendto_byte, Header,
+    append_header, get_flink, recvfrom_byte, retrieve_bool, retrieve_usize, sendto_byte, Header,
 };
-use crate::env_action::append_env_action;
+use crate::env_action::append_env_action_new;
 use crate::env_action::EnvAction;
-use crate::serdes::pyany_serde::{DynPyAnySerde, PyAnySerde};
+use crate::serdes::pyany_serde::PythonSerde;
 
 fn sync_with_env_process<'py>(
     py: Python<'py>,
@@ -41,27 +40,20 @@ static SELECTORS_EVENT_READ: GILOnceCell<u8> = GILOnceCell::new();
 
 #[pyclass(module = "rlgym_learn_backend", unsendable)]
 pub struct EnvProcessInterface {
-    agent_id_type_serde_option: Option<PyObject>,
-    agent_id_pyany_serde_option: Option<Box<dyn PyAnySerde>>,
-    action_type_serde_option: Option<PyObject>,
-    action_pyany_serde_option: Option<Box<dyn PyAnySerde>>,
-    obs_type_serde_option: Option<PyObject>,
-    obs_pyany_serde_option: Option<Box<dyn PyAnySerde>>,
-    reward_type_serde_option: Option<PyObject>,
-    reward_pyany_serde_option: Option<Box<dyn PyAnySerde>>,
-    obs_space_type_serde_option: Option<PyObject>,
-    obs_space_pyany_serde_option: Option<Box<dyn PyAnySerde>>,
-    action_space_type_serde_option: Option<PyObject>,
-    action_space_pyany_serde_option: Option<Box<dyn PyAnySerde>>,
-    state_type_serde_option: Option<PyObject>,
-    state_pyany_serde_option: Option<Box<dyn PyAnySerde>>,
-    state_metrics_type_serde_option: Option<PyObject>,
-    state_metrics_pyany_serde_option: Option<Box<dyn PyAnySerde>>,
+    agent_id_serde_option: Option<PythonSerde>,
+    action_serde_option: Option<PythonSerde>,
+    obs_serde_option: Option<PythonSerde>,
+    reward_serde_option: Option<PythonSerde>,
+    obs_space_serde_option: Option<PythonSerde>,
+    action_space_serde_option: Option<PythonSerde>,
+    state_serde_option: Option<PythonSerde>,
+    state_metrics_serde_option: Option<PythonSerde>,
     recalculate_agent_id_every_step: bool,
     flinks_folder: String,
     proc_packages: Vec<(PyObject, Shmem, String)>,
     min_process_steps_per_inference: usize,
     send_state_to_agent_controllers: bool,
+    should_collect_state_metrics: bool,
     selector: PyObject,
     timestep_class: PyObject,
     proc_id_pid_idx_map: HashMap<String, usize>,
@@ -90,9 +82,14 @@ impl EnvProcessInterface {
             (Option<PyObject>, Option<Py<PyDict>>, Option<Py<PyDict>>),
         ),
     )> {
-        let agent_id_type_serde_option =
-            self.agent_id_type_serde_option.as_ref().map(|v| v.bind(py));
-        let obs_type_serde_option = self.obs_type_serde_option.as_ref().map(|v| v.bind(py));
+        let mut agent_id_serde_option = self
+            .agent_id_serde_option
+            .take()
+            .map(|serde| serde.into_bound(py));
+        let mut obs_serde_option = self
+            .obs_serde_option
+            .take()
+            .map(|serde| serde.into_bound(py));
 
         let (parent_end, shmem, proc_id) = self.proc_packages.get(pid_idx).unwrap();
         let shm_slice = unsafe { &shmem.as_slice()[Event::size_of(None)..] };
@@ -105,42 +102,30 @@ impl EnvProcessInterface {
         let mut agent_id;
         let mut obs;
         for _ in 0..n_agents {
-            (agent_id, offset) = retrieve_python(
-                py,
-                shm_slice,
-                offset,
-                &agent_id_type_serde_option,
-                &mut self.agent_id_pyany_serde_option,
-            )?;
+            (agent_id, offset) =
+                retrieve_python(py, shm_slice, offset, &mut agent_id_serde_option)?;
             agent_id_list.push(agent_id.unbind());
-            (obs, offset) = retrieve_python(
-                py,
-                shm_slice,
-                offset,
-                &obs_type_serde_option,
-                &mut self.obs_pyany_serde_option,
-            )?;
+            (obs, offset) = retrieve_python(py, shm_slice, offset, &mut obs_serde_option)?;
             obs_list.push(obs.unbind());
         }
 
         let state_option;
         if self.send_state_to_agent_controllers {
-            let state_type_serde_option = self.state_type_serde_option.as_mut().map(|v| v.bind(py));
+            let mut state_serde_option = self
+                .state_serde_option
+                .take()
+                .map(|serde| serde.into_bound(py));
             let state;
-            (state, _) = retrieve_python(
-                py,
-                shm_slice,
-                offset,
-                &state_type_serde_option,
-                &mut self.state_pyany_serde_option,
-            )?;
+            (state, _) = retrieve_python(py, shm_slice, offset, &mut state_serde_option)?;
             state_option = Some(state.unbind());
+            self.state_serde_option = state_serde_option.map(|serde| serde.unbind());
         } else {
             state_option = None;
         }
 
         let py_proc_id = proc_id.into_py_any(py)?;
-
+        self.agent_id_serde_option = agent_id_serde_option.map(|serde| serde.unbind());
+        self.obs_serde_option = obs_serde_option.map(|serde| serde.unbind());
         Ok((
             (py_proc_id.clone_ref(py), (agent_id_list, obs_list)),
             (py_proc_id, (state_option, None, None)),
@@ -174,14 +159,14 @@ impl EnvProcessInterface {
     }
 
     fn get_space_types<'py>(&mut self, py: Python<'py>) -> PyResult<(PyObject, PyObject)> {
-        let obs_space_type_serde_option = self
-            .obs_space_type_serde_option
-            .as_mut()
-            .map(|v| v.bind(py));
-        let action_space_type_serde_option = self
-            .action_space_type_serde_option
-            .as_mut()
-            .map(|v| v.bind(py));
+        let mut obs_space_serde_option = self
+            .obs_space_serde_option
+            .take()
+            .map(|serde| serde.into_bound(py));
+        let mut action_space_serde_option = self
+            .action_space_serde_option
+            .take()
+            .map(|serde| serde.into_bound(py));
 
         let (parent_end, shmem, _) = self.proc_packages.get_mut(0).unwrap();
         let (ep_evt, used_bytes) = unsafe {
@@ -197,21 +182,12 @@ impl EnvProcessInterface {
         recvfrom_byte(py, parent_end)?;
         let mut offset = 0;
         let obs_space;
-        (obs_space, offset) = retrieve_python(
-            py,
-            shm_slice,
-            offset,
-            &obs_space_type_serde_option,
-            &mut self.obs_space_pyany_serde_option,
-        )?;
+        (obs_space, offset) = retrieve_python(py, shm_slice, offset, &mut obs_space_serde_option)?;
         let action_space;
-        (action_space, _) = retrieve_python(
-            py,
-            shm_slice,
-            offset,
-            &action_space_type_serde_option,
-            &mut self.action_space_pyany_serde_option,
-        )?;
+        (action_space, _) = retrieve_python(py, shm_slice, offset, &mut action_space_serde_option)?;
+
+        self.obs_space_serde_option = obs_space_serde_option.map(|serde| serde.unbind());
+        self.action_space_serde_option = action_space_serde_option.map(|serde| serde.unbind());
         Ok((obs_space.unbind(), action_space.unbind()))
     }
 
@@ -251,70 +227,308 @@ impl EnvProcessInterface {
 
         Ok(())
     }
+
+    // Returns number of timesteps collected, plus three kv pairs: the keys are all the proc id,
+    // and the values are (agent id list, obs list),
+    // (timestep list, optional state metrics, optional state),
+    // and (optional state, optional terminated dict, optional truncated dict) respectively
+    fn collect_response(
+        &mut self,
+        pid_idx: usize,
+    ) -> PyResult<(
+        usize,
+        (PyObject, (Vec<PyObject>, Vec<PyObject>)),
+        (
+            PyObject,
+            (Vec<PyObject>, PyObject, Option<PyObject>, Option<PyObject>),
+        ),
+        (
+            PyObject,
+            (Option<PyObject>, Option<Py<PyDict>>, Option<Py<PyDict>>),
+        ),
+    )> {
+        let env_action = self.pid_idx_current_env_action_list[pid_idx]
+            .as_ref()
+            .ok_or_else(|| {
+                InvalidStateError::new_err(
+                    "Tried to collect response from env which doesn't have an env action yet",
+                )
+            })?;
+        let is_step_action = matches!(env_action, EnvAction::STEP { .. });
+        let new_episode = !is_step_action;
+        let (_, shmem, proc_id) = self.proc_packages.get(pid_idx).unwrap();
+        let evt_used_bytes = Event::size_of(None);
+        let shm_slice = unsafe { &shmem.as_slice()[evt_used_bytes..] };
+        let mut offset = 0;
+        Python::with_gil(|py| {
+            let current_agent_id_list = self
+                .pid_idx_current_agent_id_list
+                .get_mut(pid_idx)
+                .unwrap()
+                .take()
+                .unwrap();
+
+            let mut agent_id_serde_option = self
+                .agent_id_serde_option
+                .take()
+                .map(|serde| serde.into_bound(py));
+            let mut obs_serde_option = self
+                .obs_serde_option
+                .take()
+                .map(|serde| serde.into_bound(py));
+            let mut reward_serde_option = self
+                .reward_serde_option
+                .take()
+                .map(|serde| serde.into_bound(py));
+
+            // Get n_agents for incoming data and instantiate lists
+            let n_agents;
+            let (
+                mut agent_id_list,
+                mut obs_list,
+                mut reward_list_option,
+                mut terminated_list_option,
+                mut truncated_list_option,
+            );
+
+            if new_episode {
+                (n_agents, offset) = retrieve_usize(shm_slice, offset)?;
+                agent_id_list = Vec::with_capacity(n_agents);
+            } else {
+                n_agents = current_agent_id_list.len();
+                if self.recalculate_agent_id_every_step {
+                    agent_id_list = Vec::with_capacity(n_agents);
+                } else {
+                    agent_id_list = current_agent_id_list;
+                }
+            }
+            obs_list = Vec::with_capacity(n_agents);
+            if is_step_action {
+                reward_list_option = Some(Vec::with_capacity(n_agents));
+                terminated_list_option = Some(Vec::with_capacity(n_agents));
+                truncated_list_option = Some(Vec::with_capacity(n_agents));
+            } else {
+                reward_list_option = None;
+                terminated_list_option = None;
+                truncated_list_option = None;
+            }
+
+            // Populate lists
+            for _ in 0..n_agents {
+                if self.recalculate_agent_id_every_step || new_episode {
+                    let agent_id;
+                    (agent_id, offset) =
+                        retrieve_python(py, shm_slice, offset, &mut agent_id_serde_option)?;
+                    agent_id_list.push(agent_id.unbind());
+                }
+                let obs;
+                (obs, offset) = retrieve_python(py, shm_slice, offset, &mut obs_serde_option)?;
+                obs_list.push(obs.unbind());
+                if is_step_action {
+                    let reward;
+                    (reward, offset) =
+                        retrieve_python(py, shm_slice, offset, &mut reward_serde_option)?;
+                    reward_list_option.as_mut().unwrap().push(reward.unbind());
+                    let terminated;
+                    (terminated, offset) = retrieve_bool(shm_slice, offset)?;
+                    terminated_list_option.as_mut().unwrap().push(terminated);
+                    let truncated;
+                    (truncated, offset) = retrieve_bool(shm_slice, offset)?;
+                    truncated_list_option.as_mut().unwrap().push(truncated);
+                }
+            }
+
+            let state_option;
+            if self.send_state_to_agent_controllers {
+                let mut state_serde_option = self
+                    .state_serde_option
+                    .take()
+                    .map(|serde| serde.into_bound(py));
+                let state;
+                (state, offset) = retrieve_python(py, shm_slice, offset, &mut state_serde_option)?;
+                state_option = Some(state.unbind());
+                self.state_serde_option = state_serde_option.map(|serde| serde.unbind());
+            } else {
+                state_option = None;
+            }
+
+            let metrics_option;
+            if self.should_collect_state_metrics {
+                let mut state_metrics_serde_option = self
+                    .state_metrics_serde_option
+                    .take()
+                    .map(|serde| serde.into_bound(py));
+                let state_metrics;
+                (state_metrics, offset) =
+                    retrieve_python(py, shm_slice, offset, &mut state_metrics_serde_option)?;
+                metrics_option = Some(state_metrics.unbind());
+                self.state_metrics_serde_option =
+                    state_metrics_serde_option.map(|serde| serde.unbind());
+            } else {
+                metrics_option = None;
+            }
+
+            let timestep_id_list_option;
+            let mut timestep_list;
+            if is_step_action {
+                let timestep_class = self.timestep_class.bind(py);
+                let mut timestep_id_list = Vec::with_capacity(n_agents);
+                timestep_list = Vec::with_capacity(n_agents);
+                for (
+                    prev_timestep_id,
+                    agent_id,
+                    obs,
+                    next_obs,
+                    action,
+                    reward,
+                    &terminated,
+                    &truncated,
+                ) in izip!(
+                    self.pid_idx_prev_timestep_id_list.get(pid_idx).unwrap(),
+                    &agent_id_list,
+                    self.pid_idx_current_obs_list.get(pid_idx).unwrap(),
+                    &obs_list,
+                    &self.pid_idx_current_action_list[pid_idx],
+                    reward_list_option.as_ref().unwrap(),
+                    terminated_list_option.as_ref().unwrap(),
+                    truncated_list_option.as_ref().unwrap()
+                ) {
+                    let timestep_id = fastrand::u128(..);
+                    timestep_id_list.push(Some(timestep_id));
+                    timestep_list.push(
+                        timestep_class
+                            .call1((
+                                proc_id.into_py_any(py)?,
+                                timestep_id,
+                                *prev_timestep_id,
+                                agent_id.clone_ref(py),
+                                obs,
+                                next_obs,
+                                action,
+                                reward,
+                                terminated,
+                                truncated,
+                            ))?
+                            .unbind(),
+                    );
+                }
+                timestep_id_list_option = Some(timestep_id_list);
+            } else {
+                timestep_id_list_option = None;
+                timestep_list = Vec::new();
+            }
+            let n_timesteps = timestep_list.len();
+
+            let terminated_dict_option;
+            let truncated_dict_option;
+            if new_episode {
+                terminated_dict_option = None;
+                truncated_dict_option = None;
+            } else {
+                let mut terminated_kv_list = Vec::with_capacity(n_agents);
+                let mut truncated_kv_list = Vec::with_capacity(n_agents);
+                for (agent_id, terminated, truncated) in izip!(
+                    &agent_id_list,
+                    terminated_list_option.unwrap(),
+                    truncated_list_option.unwrap()
+                ) {
+                    terminated_kv_list.push((agent_id.clone_ref(py), terminated));
+                    truncated_kv_list.push((agent_id.clone_ref(py), truncated));
+                }
+                terminated_dict_option =
+                    Some(PyDict::from_sequence(&terminated_kv_list.into_pyobject(py)?)?.unbind());
+                truncated_dict_option =
+                    Some(PyDict::from_sequence(&truncated_kv_list.into_pyobject(py)?)?.unbind());
+            }
+
+            // Set prev_timestep_id_list for proc
+            let prev_timestep_id_list = &mut self.pid_idx_prev_timestep_id_list[pid_idx];
+            if is_step_action {
+                prev_timestep_id_list.clear();
+                prev_timestep_id_list.append(&mut timestep_id_list_option.unwrap());
+            } else if let EnvAction::SET_STATE {
+                prev_timestep_id_dict_option: Some(prev_timestep_id_dict),
+                ..
+            } = env_action
+            {
+                let prev_timestep_id_dict = prev_timestep_id_dict.downcast_bound::<PyDict>(py)?;
+                prev_timestep_id_list.clear();
+                for agent_id in agent_id_list.iter() {
+                    let agent_id = agent_id.bind(py);
+                    prev_timestep_id_list.push(
+                        prev_timestep_id_dict
+                            .get_item(agent_id)?
+                            .map_or(Ok(None), |prev_timestep_id| {
+                                prev_timestep_id.extract::<Option<u128>>()
+                            })?,
+                    );
+                }
+            } else {
+                prev_timestep_id_list.clear();
+                prev_timestep_id_list.append(&mut vec![None; n_agents]);
+            }
+            self.pid_idx_current_agent_id_list[pid_idx] = Some(clone_list(py, &agent_id_list));
+            self.pid_idx_current_obs_list[pid_idx] = clone_list(py, &obs_list);
+
+            let py_proc_id = proc_id.into_py_any(py)?;
+            let obs_data_kv = (py_proc_id.clone_ref(py), (agent_id_list, obs_list));
+            let timestep_data_kv = (
+                py_proc_id.clone_ref(py),
+                (
+                    timestep_list,
+                    (&self.pid_idx_current_aald_list[pid_idx]).into_py_any(py)?,
+                    metrics_option,
+                    state_option.as_ref().map(|state| state.clone_ref(py)),
+                ),
+            );
+            let state_info_kv = (
+                py_proc_id,
+                (state_option, terminated_dict_option, truncated_dict_option),
+            );
+
+            self.agent_id_serde_option = agent_id_serde_option.map(|serde| serde.unbind());
+            self.obs_serde_option = obs_serde_option.map(|serde| serde.unbind());
+            self.reward_serde_option = reward_serde_option.map(|serde| serde.unbind());
+
+            Ok((n_timesteps, obs_data_kv, timestep_data_kv, state_info_kv))
+        })
+    }
 }
 
 #[pymethods]
 impl EnvProcessInterface {
     #[new]
     #[pyo3(signature = (
-        agent_id_type_serde_option,
         agent_id_serde_option,
-        action_type_serde_option,
         action_serde_option,
-        obs_type_serde_option,
         obs_serde_option,
-        reward_type_serde_option,
         reward_serde_option,
-        obs_space_type_serde_option,
         obs_space_serde_option,
-        action_space_type_serde_option,
         action_space_serde_option,
-        state_type_serde_option,
         state_serde_option,
-        state_metrics_type_serde_option,
         state_metrics_serde_option,
         recalculate_agent_id_every_step,
-        flinks_folder_option,
+        flinks_folder,
         min_process_steps_per_inference,
         send_state_to_agent_controllers,
+        should_collect_state_metrics,
         ))]
     fn new(
-        agent_id_type_serde_option: Option<PyObject>,
-        agent_id_serde_option: Option<DynPyAnySerde>,
-        action_type_serde_option: Option<PyObject>,
-        action_serde_option: Option<DynPyAnySerde>,
-        obs_type_serde_option: Option<PyObject>,
-        obs_serde_option: Option<DynPyAnySerde>,
-        reward_type_serde_option: Option<PyObject>,
-        reward_serde_option: Option<DynPyAnySerde>,
-        obs_space_type_serde_option: Option<PyObject>,
-        obs_space_serde_option: Option<DynPyAnySerde>,
-        action_space_type_serde_option: Option<PyObject>,
-        action_space_serde_option: Option<DynPyAnySerde>,
-        state_type_serde_option: Option<PyObject>,
-        state_serde_option: Option<DynPyAnySerde>,
-        state_metrics_type_serde_option: Option<PyObject>,
-        state_metrics_serde_option: Option<DynPyAnySerde>,
+        agent_id_serde_option: Option<PythonSerde>,
+        action_serde_option: Option<PythonSerde>,
+        obs_serde_option: Option<PythonSerde>,
+        reward_serde_option: Option<PythonSerde>,
+        obs_space_serde_option: Option<PythonSerde>,
+        action_space_serde_option: Option<PythonSerde>,
+        state_serde_option: Option<PythonSerde>,
+        state_metrics_serde_option: Option<PythonSerde>,
         recalculate_agent_id_every_step: bool,
-        flinks_folder_option: Option<String>,
+        flinks_folder: String,
         min_process_steps_per_inference: usize,
         send_state_to_agent_controllers: bool,
+        should_collect_state_metrics: bool,
     ) -> PyResult<Self> {
         Python::with_gil::<_, PyResult<Self>>(|py| {
-            let agent_id_pyany_serde_option =
-                agent_id_serde_option.map(|dyn_serde| dyn_serde.0.unwrap());
-            let action_pyany_serde_option =
-                action_serde_option.map(|dyn_serde| dyn_serde.0.unwrap());
-            let obs_pyany_serde_option = obs_serde_option.map(|dyn_serde| dyn_serde.0.unwrap());
-            let reward_pyany_serde_option =
-                reward_serde_option.map(|dyn_serde| dyn_serde.0.unwrap());
-            let obs_space_pyany_serde_option =
-                obs_space_serde_option.map(|dyn_serde| dyn_serde.0.unwrap());
-            let action_space_pyany_serde_option =
-                action_space_serde_option.map(|dyn_serde| dyn_serde.0.unwrap());
-            let state_pyany_serde_option = state_serde_option.map(|dyn_serde| dyn_serde.0.unwrap());
-            let state_metrics_pyany_serde_option =
-                state_metrics_serde_option.map(|dyn_serde| dyn_serde.0.unwrap());
             let timestep_class = PyModule::import(py, "rlgym_learn.experience.timestep")?
                 .getattr("Timestep")?
                 .unbind();
@@ -323,27 +537,20 @@ impl EnvProcessInterface {
                 .call0()?
                 .unbind();
             Ok(EnvProcessInterface {
-                agent_id_type_serde_option,
-                agent_id_pyany_serde_option,
-                action_type_serde_option,
-                action_pyany_serde_option,
-                obs_type_serde_option,
-                obs_pyany_serde_option,
-                reward_type_serde_option,
-                reward_pyany_serde_option,
-                obs_space_type_serde_option,
-                obs_space_pyany_serde_option,
-                action_space_type_serde_option,
-                action_space_pyany_serde_option,
-                state_type_serde_option,
-                state_pyany_serde_option,
-                state_metrics_type_serde_option,
-                state_metrics_pyany_serde_option,
+                agent_id_serde_option,
+                action_serde_option,
+                obs_serde_option,
+                reward_serde_option,
+                obs_space_serde_option,
+                action_space_serde_option,
+                state_serde_option,
+                state_metrics_serde_option,
                 recalculate_agent_id_every_step,
-                flinks_folder: flinks_folder_option.unwrap_or("shmem_flinks".to_string()),
+                flinks_folder,
                 proc_packages: Vec::new(),
                 min_process_steps_per_inference,
                 send_state_to_agent_controllers,
+                should_collect_state_metrics,
                 selector,
                 timestep_class,
                 proc_id_pid_idx_map: HashMap::new(),
@@ -548,295 +755,16 @@ impl EnvProcessInterface {
         })
     }
 
-    // Returns number of timesteps collected, plus three kv pairs: the keys are all the proc id,
-    // and the values are (agent id list, obs list),
-    // (timestep list, optional state metrics, optional state),
-    // and (optional state, optional terminated dict, optional truncated dict) respectively
-    fn collect_response(
-        &mut self,
-        pid_idx: usize,
-    ) -> PyResult<(
-        usize,
-        (PyObject, (Vec<PyObject>, Vec<PyObject>)),
-        (
-            PyObject,
-            (Vec<PyObject>, PyObject, Option<PyObject>, Option<PyObject>),
-        ),
-        (
-            PyObject,
-            (Option<PyObject>, Option<Py<PyDict>>, Option<Py<PyDict>>),
-        ),
-    )> {
-        let env_action = self.pid_idx_current_env_action_list[pid_idx]
-            .as_ref()
-            .ok_or_else(|| {
-                InvalidStateError::new_err(
-                    "Tried to collect response from env which doesn't have an env action yet",
-                )
-            })?;
-        let is_step_action = matches!(env_action, EnvAction::STEP { .. });
-        let new_episode = !is_step_action;
-        let (_, shmem, proc_id) = self.proc_packages.get(pid_idx).unwrap();
-        let evt_used_bytes = Event::size_of(None);
-        let shm_slice = unsafe { &shmem.as_slice()[evt_used_bytes..] };
-        let mut offset = 0;
-        Python::with_gil(|py| {
-            let current_agent_id_list = self
-                .pid_idx_current_agent_id_list
-                .get_mut(pid_idx)
-                .unwrap()
-                .take()
-                .unwrap();
-
-            let agent_id_type_serde_option =
-                self.agent_id_type_serde_option.as_mut().map(|v| v.bind(py));
-            let obs_type_serde_option = self.obs_type_serde_option.as_mut().map(|v| v.bind(py));
-            let reward_type_serde_option =
-                self.reward_type_serde_option.as_mut().map(|v| v.bind(py));
-
-            // Get n_agents for incoming data and instantiate lists
-            let n_agents;
-            let (
-                mut agent_id_list,
-                mut obs_list,
-                mut reward_list_option,
-                mut terminated_list_option,
-                mut truncated_list_option,
-            );
-
-            if new_episode {
-                (n_agents, offset) = retrieve_usize(shm_slice, offset)?;
-                agent_id_list = Vec::with_capacity(n_agents);
-            } else {
-                n_agents = current_agent_id_list.len();
-                if self.recalculate_agent_id_every_step {
-                    agent_id_list = Vec::with_capacity(n_agents);
-                } else {
-                    agent_id_list = current_agent_id_list;
-                }
-            }
-            obs_list = Vec::with_capacity(n_agents);
-            if is_step_action {
-                reward_list_option = Some(Vec::with_capacity(n_agents));
-                terminated_list_option = Some(Vec::with_capacity(n_agents));
-                truncated_list_option = Some(Vec::with_capacity(n_agents));
-            } else {
-                reward_list_option = None;
-                terminated_list_option = None;
-                truncated_list_option = None;
-            }
-
-            // Populate lists
-            for _ in 0..n_agents {
-                if self.recalculate_agent_id_every_step || new_episode {
-                    let agent_id;
-                    (agent_id, offset) = retrieve_python(
-                        py,
-                        shm_slice,
-                        offset,
-                        &agent_id_type_serde_option,
-                        &mut self.agent_id_pyany_serde_option,
-                    )?;
-                    agent_id_list.push(agent_id.unbind());
-                }
-                let obs;
-                (obs, offset) = retrieve_python(
-                    py,
-                    shm_slice,
-                    offset,
-                    &obs_type_serde_option,
-                    &mut self.obs_pyany_serde_option,
-                )?;
-                obs_list.push(obs.unbind());
-                if is_step_action {
-                    let reward;
-                    (reward, offset) = retrieve_python(
-                        py,
-                        shm_slice,
-                        offset,
-                        &reward_type_serde_option,
-                        &mut self.reward_pyany_serde_option,
-                    )?;
-                    reward_list_option.as_mut().unwrap().push(reward.unbind());
-                    let terminated;
-                    (terminated, offset) = retrieve_bool(shm_slice, offset)?;
-                    terminated_list_option.as_mut().unwrap().push(terminated);
-                    let truncated;
-                    (truncated, offset) = retrieve_bool(shm_slice, offset)?;
-                    truncated_list_option.as_mut().unwrap().push(truncated);
-                }
-            }
-
-            let state_option;
-            if self.send_state_to_agent_controllers {
-                let state_type_serde_option =
-                    self.state_type_serde_option.as_mut().map(|v| v.bind(py));
-                let state;
-                (state, offset) = retrieve_python(
-                    py,
-                    shm_slice,
-                    offset,
-                    &state_type_serde_option,
-                    &mut self.state_pyany_serde_option,
-                )?;
-                state_option = Some(state.unbind());
-            } else {
-                state_option = None;
-            }
-
-            let metrics_option;
-            if self.state_metrics_type_serde_option.is_some()
-                || self.state_metrics_pyany_serde_option.is_some()
-            {
-                let state_metrics_type_serde_option = self
-                    .state_metrics_type_serde_option
-                    .as_mut()
-                    .map(|v| v.bind(py));
-                let state_metrics;
-                (state_metrics, offset) = retrieve_python(
-                    py,
-                    shm_slice,
-                    offset,
-                    &state_metrics_type_serde_option,
-                    &mut self.state_metrics_pyany_serde_option,
-                )?;
-                metrics_option = Some(state_metrics.unbind());
-            } else {
-                metrics_option = None;
-            }
-
-            let timestep_id_list_option;
-            let mut timestep_list;
-            if is_step_action {
-                let timestep_class = self.timestep_class.bind(py);
-                let mut timestep_id_list = Vec::with_capacity(n_agents);
-                timestep_list = Vec::with_capacity(n_agents);
-                for (
-                    prev_timestep_id,
-                    agent_id,
-                    obs,
-                    next_obs,
-                    action,
-                    reward,
-                    &terminated,
-                    &truncated,
-                ) in izip!(
-                    self.pid_idx_prev_timestep_id_list.get(pid_idx).unwrap(),
-                    &agent_id_list,
-                    self.pid_idx_current_obs_list.get(pid_idx).unwrap(),
-                    &obs_list,
-                    &self.pid_idx_current_action_list[pid_idx],
-                    reward_list_option.as_ref().unwrap(),
-                    terminated_list_option.as_ref().unwrap(),
-                    truncated_list_option.as_ref().unwrap()
-                ) {
-                    let timestep_id = fastrand::u128(..);
-                    timestep_id_list.push(Some(timestep_id));
-                    timestep_list.push(
-                        timestep_class
-                            .call1((
-                                proc_id.into_py_any(py)?,
-                                timestep_id,
-                                *prev_timestep_id,
-                                agent_id.clone_ref(py),
-                                obs,
-                                next_obs,
-                                action,
-                                reward,
-                                terminated,
-                                truncated,
-                            ))?
-                            .unbind(),
-                    );
-                }
-                timestep_id_list_option = Some(timestep_id_list);
-            } else {
-                timestep_id_list_option = None;
-                timestep_list = Vec::new();
-            }
-            let n_timesteps = timestep_list.len();
-
-            let terminated_dict_option;
-            let truncated_dict_option;
-            if new_episode {
-                terminated_dict_option = None;
-                truncated_dict_option = None;
-            } else {
-                let mut terminated_kv_list = Vec::with_capacity(n_agents);
-                let mut truncated_kv_list = Vec::with_capacity(n_agents);
-                for (agent_id, terminated, truncated) in izip!(
-                    &agent_id_list,
-                    terminated_list_option.unwrap(),
-                    truncated_list_option.unwrap()
-                ) {
-                    terminated_kv_list.push((agent_id.clone_ref(py), terminated));
-                    truncated_kv_list.push((agent_id.clone_ref(py), truncated));
-                }
-                terminated_dict_option =
-                    Some(PyDict::from_sequence(&terminated_kv_list.into_pyobject(py)?)?.unbind());
-                truncated_dict_option =
-                    Some(PyDict::from_sequence(&truncated_kv_list.into_pyobject(py)?)?.unbind());
-            }
-
-            // Set prev_timestep_id_list for proc
-            let prev_timestep_id_list = &mut self.pid_idx_prev_timestep_id_list[pid_idx];
-            if is_step_action {
-                prev_timestep_id_list.clear();
-                prev_timestep_id_list.append(&mut timestep_id_list_option.unwrap());
-            } else if let EnvAction::SET_STATE {
-                prev_timestep_id_dict_option: Some(prev_timestep_id_dict),
-                ..
-            } = env_action
-            {
-                let prev_timestep_id_dict = prev_timestep_id_dict.downcast_bound::<PyDict>(py)?;
-                prev_timestep_id_list.clear();
-                for agent_id in agent_id_list.iter() {
-                    let agent_id = agent_id.bind(py);
-                    prev_timestep_id_list.push(
-                        prev_timestep_id_dict
-                            .get_item(agent_id)?
-                            .map_or(Ok(None), |prev_timestep_id| {
-                                prev_timestep_id.extract::<Option<u128>>()
-                            })?,
-                    );
-                }
-            } else {
-                prev_timestep_id_list.clear();
-                prev_timestep_id_list.append(&mut vec![None; n_agents]);
-            }
-            self.pid_idx_current_agent_id_list[pid_idx] = Some(clone_list(py, &agent_id_list));
-            self.pid_idx_current_obs_list[pid_idx] = clone_list(py, &obs_list);
-
-            let py_proc_id = proc_id.into_py_any(py)?;
-            let obs_data_kv = (py_proc_id.clone_ref(py), (agent_id_list, obs_list));
-            let timestep_data_kv = (
-                py_proc_id.clone_ref(py),
-                (
-                    timestep_list,
-                    (&self.pid_idx_current_aald_list[pid_idx]).into_py_any(py)?,
-                    metrics_option,
-                    state_option.as_ref().map(|state| state.clone_ref(py)),
-                ),
-            );
-            let state_info_kv = (
-                py_proc_id,
-                (state_option, terminated_dict_option, truncated_dict_option),
-            );
-
-            Ok((n_timesteps, obs_data_kv, timestep_data_kv, state_info_kv))
-        })
-    }
-
     fn send_env_actions(&mut self, env_actions: HashMap<String, EnvAction>) -> PyResult<()> {
         Python::with_gil(|py| {
-            let action_type_serde_option = self
-                .action_type_serde_option
-                .as_mut()
-                .map(|py_object| py_object.bind(py));
-            let state_type_serde_option = self
-                .state_type_serde_option
-                .as_mut()
-                .map(|py_object| py_object.bind(py));
+            let mut action_serde_option = self
+                .action_serde_option
+                .take()
+                .map(|serde| serde.into_bound(py));
+            let mut state_serde_option = self
+                .state_serde_option
+                .take()
+                .map(|serde| serde.into_bound(py));
 
             for (proc_id, env_action) in env_actions.into_iter() {
                 let &pid_idx = self.proc_id_pid_idx_map.get(&proc_id).unwrap();
@@ -873,15 +801,13 @@ impl EnvProcessInterface {
                 }
 
                 let offset = append_header(shm_slice, 0, Header::EnvAction);
-                _ = append_env_action(
+                _ = append_env_action_new(
                     py,
                     shm_slice,
                     offset,
                     &env_action,
-                    &action_type_serde_option,
-                    &mut self.action_pyany_serde_option,
-                    &state_type_serde_option,
-                    &mut self.state_pyany_serde_option,
+                    &mut action_serde_option,
+                    &mut state_serde_option,
                 )?;
 
                 ep_evt

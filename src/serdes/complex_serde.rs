@@ -1,6 +1,5 @@
 use pyo3::prelude::*;
 use pyo3::types::PyComplex;
-use pyo3::Bound;
 
 use crate::communication::{append_c_double, retrieve_c_double};
 

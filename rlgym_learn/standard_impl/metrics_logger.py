@@ -1,68 +1,88 @@
-import os
-import pickle
 from abc import abstractmethod
 from dataclasses import dataclass
-from typing import Any, Dict, Generic, List, Optional
+from typing import Any, Dict, Generic, List, Optional, TypeVar
 
-from wandb.wandb_run import Run
+from rlgym_learn.api import AgentControllerData, StateMetrics
 
-from rlgym_learn.api.agent_controller import AgentControllerData
-from rlgym_learn.api.typing import AgentControllerData, StateMetrics
-
-METRICS_LOGGER_FILE = "metrics_logger.pkl"
+MetricsLoggerConfig = TypeVar("MetricsLoggerConfig")
+MetricsLoggerAdditionalDerivedConfig = TypeVar("MetricsLoggerAdditionalDerivedConfig")
 
 
 @dataclass
-class DerivedMetricsLoggerConfig:
+class DerivedMetricsLoggerConfig(
+    Generic[MetricsLoggerConfig, MetricsLoggerAdditionalDerivedConfig]
+):
     checkpoint_load_folder: Optional[str] = None
+    agent_controller_name: str = ""
+    metrics_logger_config: MetricsLoggerConfig = None
+    additional_derived_config: MetricsLoggerAdditionalDerivedConfig = None
 
 
 # TODO: docs
 class MetricsLogger(
     Generic[
+        MetricsLoggerConfig,
+        MetricsLoggerAdditionalDerivedConfig,
         StateMetrics,
         AgentControllerData,
     ]
 ):
+    """
+    This class is designed to be used inside an agent controller to handle the processing of state metrics and agent controller data, and to have some side effects resulting from said processing. It supports config-based saving and loading, and nesting with other MetricsLogger subclasses' config-based saving and loading via the AdditionalDerivedConfig.
+
+    MetricsLoggerConfig is the (pydantic) config model for the class, or None if no config is needed.
+
+    MetricsLoggerAdditionalConfig is a dataclass that can include arbitrary data (usually from other config models). It is the responsibility of the agent controller to instantiate this if it's needed.
+
+    StateMetrics is the type used for collection of data from the environment processes.
+
+    AgentControllerData is the type used for collection of data from the agent controller containing this metrics logger.
+    """
+
+    def collect_state_metrics(self, data: List[StateMetrics]):
+        """
+        This method is intended to allow batch processing of StateMetrics instances. The result of processing should be stored and used the next time report_metrics is called.
+        There is no guarantee that this method will only be called once between each report_metrics call.
+        """
+        pass
+
+    def collect_agent_metrics(self, data: AgentControllerData):
+        """
+        This method is intended to allow processing of AgentControllerData after it gets finalized by the agent controller. The result of processing should be stored and used the next time report_metrics is called.
+        There is no guarantee that this method will only be called once between each report_metrics call.
+        """
+        pass
 
     @abstractmethod
-    def collect_state_metrics(self, data: List[StateMetrics]) -> Dict[str, Any]:
+    def report_metrics(self):
+        """
+        This method is intended to have arbitrary side effects based on data collected so far. This could be printing, or logging to wandb, or sending data to a redis server, or whatever.
+        """
         raise NotImplementedError
 
     @abstractmethod
-    def collect_agent_metrics(self, data: AgentControllerData) -> Dict[str, Any]:
+    def validate_config(self, config_obj: Dict[str, Any]) -> MetricsLoggerConfig:
+        """
+        Any class inheriting from this one has some sort of pydantic config (or None) that it expects to receive for loading. The agent controller may be generic over the type of metrics logger used, so it
+        needs some way of creating an instance of the particular MetricsLoggerConfig used based on a general-purpose config dict that doesn't have any guarantees on contents.
+
+        :return: an instance of the (pydantic) config model used by this class (or None), to be placed inside an instance of DerivedMetricsLoggerConfig when calling load.
+        """
         raise NotImplementedError
 
-    @abstractmethod
-    def report_metrics(
+    def load(
         self,
-        agent_controller_name: str,
-        state_metrics: Dict[str, Any],
-        agent_metrics: Dict[str, Any],
-        wandb_run: Run,
+        config: DerivedMetricsLoggerConfig[
+            MetricsLoggerConfig, MetricsLoggerAdditionalDerivedConfig
+        ],
     ):
-        raise NotImplementedError
+        """
+        Sets data inside this instance using config, which may include loading data from a checkpoint.
+        """
+        pass
 
-    def load(self, config: DerivedMetricsLoggerConfig):
-        self.config = config
-        if self.config.checkpoint_load_folder is not None:
-            self._load_from_checkpoint()
-
-    def _load_from_checkpoint(self):
-        with open(
-            os.path.join(self.config.checkpoint_load_folder, METRICS_LOGGER_FILE),
-            "rb",
-        ) as f:
-            _metrics_logger: MetricsLogger[
-                StateMetrics,
-                AgentControllerData,
-            ] = pickle.load(f)
-        self.__dict__ = _metrics_logger.__dict__
-
-    def save_checkpoint(self, folder_path):
-        os.makedirs(folder_path, exist_ok=True)
-        with open(
-            os.path.join(folder_path, METRICS_LOGGER_FILE),
-            "wb",
-        ) as f:
-            pickle.dump(self, f)
+    def save_checkpoint(self, folder_path, file_name):
+        """
+        Saves data inside this instance which needs to be checkpointed.
+        """
+        pass

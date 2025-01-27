@@ -29,14 +29,6 @@ class BaseConfigModel(BaseModel):
     send_state_to_agent_controllers: bool = False
 
 
-class WandbConfigModel(BaseModel):
-    project: str = "rlgym-learn"
-    group: str = "unnamed-runs"
-    run: str = "rlgym-learn-run"
-    id: Optional[str] = None
-    additional_wandb_config: Dict[str, Any] = Field(default_factory=dict)
-
-
 class LearningCoordinatorConfigModel(BaseModel):
     base_config: BaseConfigModel = Field(default_factory=BaseConfigModel)
     process_config: ProcessConfigModel = Field(default_factory=ProcessConfigModel)

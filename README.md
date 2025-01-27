@@ -1,30 +1,34 @@
-# RLGym-PPO
-A vectorized implementation of PPO for use with [RLGym](rlgym.org).
+# RLGym-Learn
+A flexible framework for efficiently using [RLGym v2](rlgym.org) to train models.
 
-## INSTALLATION
-1. install [RLGym-sim](https://github.com/AechPro/rocket-league-gym-sim). 
+## Features
+- Full support for all generics of the RLGym v2 API
+- Full support for all functionality of RLGym v2 across multiple environments
+- Fast parallelization of environments using Rust and shared memory
+- Support for metrics gathering from environments
+- Detailed checkpointing system
+- File-based configuration
+- Provided optimized PPO implementation
+- Allows multiple learning algorithms to provide actions for agents within an environment
+- Multi-platform (Windows, Linux)
+
+## Installation
+1. install RLGym via `pip install rlgym`. If you're here for Rocket League, you can use `pip install rlgym[rl-sim]` instead to get the RLGym API as well as the Rocket League / Sim submodules. 
 2. If you would like to use a GPU install [PyTorch with CUDA](https://pytorch.org/get-started/locally/)
-3. Install this project via `pip install git+https://github.com/AechPro/rlgym-ppo`
+3. Install this project via `pip install git+https://github.com/JPK314/rlgym-learn` (coming to PyPI soon)
 
-## USAGE
-Simply import the learner with `from rlgym_ppo import Learner`, pass it a function that will return an RLGym environment
-and run the learning algorithm. A simple example follows:
-```
-from rlgym_ppo import Learner
-
-def my_rlgym_function():
-    import rlgym_sim
-    return rlgym_sim.make()
-
-learner = Learner(my_rlgym_env_function)
-learner.learn()
-```
-Note that users must implement a function to configure Rocket League (or RocketSim) in RLGym that returns an 
-RLGym environment. See the `example.py` file for an example of writing such a function.
+## Usage
+See the [RLGym website](https://rlgym.org/RLGym%20Learn/introduction/) for complete documentation and demonstration of functionality. For now, you can take a look at quick_start_guide.py and speed_test.py to get a sense of what's going on.
 
 
-Assumptions:
+## Credits
+This project was built using Matthew Allen's wonderful [RLGym-PPO](https://github.com/AechPro/rlgym-ppo) as a starting point. Although this project has grown to share almost no code with its predecessor, I couldn't have done this without his support in talking through the design of abstractions and without RLGym-PPO to reference. A couple files in this project remain quite similar or even identical to their counterparts in RLGym-ppo - these include:
+- experience_buffer.py
+- all of standard_impl/util
+- actor / critic implementations in standard_impl/ppo
+
+## Disclaimer
+This framework is designed to be usable in every situation you might use the RLGym API in. However, there are a couple assumptions on the usage of RLGym which are baked into the functionality of this framework. These are pretty niche, but are listed below just in case:
 1. The AgentID hash must not change until the next environment reset() call once it is returned from reset().
 2. The AgentID hash must fit into a signed 64 bit integer.
 3. The obs space type and action space type should not change after the associated configuration objects' associated get_x_type functions have been called, and they should be the same across all agents and all envs.
-4. If an `__add__` method is added to the RewardType method for use in the metrics logger, the `as_tensor()` method should be a homomorphism from the group formed under addition for RewardType instances to the group of Tensors under addition to keep the metrics accurate to what's going on in learning.

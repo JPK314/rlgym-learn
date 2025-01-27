@@ -24,8 +24,6 @@ fn rlgym_learn_backend(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<standard_impl::rocket_league::rocket_league_serde_factory::RocketLeaguePyAnySerdeFactory>()?;
     m.add_class::<env_action::EnvActionResponse>()?;
     m.add_class::<env_action::EnvActionResponseType>()?;
-    m.add_class::<env_action::EnvActionResponse>()?;
-    m.add_class::<env_action::EnvActionResponse>()?;
     m.add_class::<env_action::EnvAction>()?;
     Ok(())
 }

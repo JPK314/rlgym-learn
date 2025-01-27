@@ -1,7 +1,6 @@
 use core::str;
 use pyo3::prelude::*;
 use pyo3::types::PyString;
-use pyo3::Bound;
 
 use crate::communication::{append_bytes, retrieve_bytes};
 

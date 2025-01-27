@@ -12,15 +12,16 @@ from rlgym.api import (
 )
 from rlgym_learn_backend import EnvActionResponse
 
-from rlgym_learn.experience.timestep import Timestep
-from rlgym_learn.learning_coordinator_config import BaseConfigModel, ProcessConfigModel
-
+from ..experience import Timestep
+from ..learning_coordinator_config import BaseConfigModel, ProcessConfigModel
 from .typing import (
     ActionAssociatedLearningData,
     AgentControllerConfig,
     AgentControllerData,
     StateMetrics,
 )
+
+# TODO: make abstract
 
 
 @dataclass
@@ -136,7 +137,7 @@ class AgentController(
     def set_space_types(self, obs_space: ObsSpaceType, action_space: ActionSpaceType):
         pass
 
-    def validate_config(self, config_obj: Any) -> AgentControllerConfig:
+    def validate_config(self, config_obj: Dict[str, Any]) -> AgentControllerConfig:
         raise NotImplementedError
 
     def load(self, config: DerivedAgentControllerConfig[AgentControllerConfig]):

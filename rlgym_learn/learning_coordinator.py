@@ -1,21 +1,8 @@
-"""
-File: learner.py
-Author: Jonathan Keegan
-
-Description:
-The primary algorithm file. The Learner object coordinates timesteps from the workers 
-and sends them to PPO, keeps track of the misc. variables and statistics for logging,
-reports to wandb and the console, and handles checkpointing.
-"""
-
 import cProfile
 import os
-import random
 from collections.abc import Callable
 from typing import Any, Dict, Generic, Optional, Union
 
-import numpy as np
-import torch
 from rlgym.api import (
     ActionSpaceType,
     ActionType,
@@ -28,18 +15,20 @@ from rlgym.api import (
     StateType,
 )
 
-from rlgym_learn.agent.agent_manager import AgentManager
-from rlgym_learn.api.agent_controller import AgentController
-from rlgym_learn.api.serdes import RustSerde, TypeSerde
-from rlgym_learn.api.typing import ActionAssociatedLearningData, StateMetrics
-from rlgym_learn.env_processing.env_process_interface import EnvProcessInterface
-from rlgym_learn.util.kbhit import KBHit
-from rlgym_learn.util.torch_functions import get_device
-
+from .agent import AgentManager
+from .api import (
+    ActionAssociatedLearningData,
+    AgentController,
+    RustSerde,
+    StateMetrics,
+    TypeSerde,
+)
+from .env_processing import EnvProcessInterface
 from .learning_coordinator_config import (
     DEFAULT_CONFIG_FILENAME,
     LearningCoordinatorConfigModel,
 )
+from .util import KBHit
 
 
 class LearningCoordinator(
@@ -111,13 +100,6 @@ class LearningCoordinator(
         with open(config_location, "rt") as f:
             self.config = LearningCoordinatorConfigModel.model_validate_json(f.read())
 
-        torch.manual_seed(self.config.base_config.random_seed)
-        np.random.seed(self.config.base_config.random_seed)
-        random.seed(self.config.base_config.random_seed)
-
-        self.device = get_device(self.config.base_config.device)
-        print(f"Using device {self.device}")
-
         self.agent_manager = AgentManager(
             agent_controllers,
             self.config.base_config.batched_tensor_action_associated_learning_data,
@@ -173,7 +155,6 @@ class LearningCoordinator(
         """
         try:
             self._run()
-            print("Hit timestep limit, cleaning up...")
         except Exception:
             import traceback
 
@@ -221,9 +202,14 @@ class LearningCoordinator(
             )
             loop_iterations += 1
             if loop_iterations % 50 == 0:
-                self.process_kbhit(kb)
+                if self.process_kbhit(kb):
+                    break
+        if self.cumulative_timesteps >= self.config.base_config.timestep_limit:
+            print("Hit timestep limit, cleaning up...")
+        else:
+            print("Quitting and cleaning up...")
 
-    def process_kbhit(self, kb: KBHit):
+    def process_kbhit(self, kb: KBHit) -> bool:
         # Check if keyboard press
         # p: pause, any key to resume
         # c: checkpoint
@@ -239,7 +225,7 @@ class LearningCoordinator(
             if c in ("c", "q"):
                 self.agent_manager.save_agent_controllers()
             if c == "q":
-                return
+                return True
             if c in ("c", "p"):
                 print("Resuming...\n")
             if c == "a":
@@ -264,6 +250,7 @@ class LearningCoordinator(
                 print(
                     f"Min process steps per inference decreased to {min_process_steps_per_inference} ({(100 * min_process_steps_per_inference / self.env_process_interface.n_procs):.2f}% of processes)"
                 )
+            return False
 
     def save(self):
         self.agent_manager.save_agent_controllers()
