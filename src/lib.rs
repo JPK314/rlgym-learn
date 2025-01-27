@@ -1,13 +1,13 @@
 use pyo3::prelude::*;
 
-mod agent_manager;
-mod common;
-mod communication;
-mod env_action;
-mod env_process;
-mod env_process_interface;
-mod serdes;
-mod standard_impl;
+pub mod agent_manager;
+pub mod common;
+pub mod communication;
+pub mod env_action;
+pub mod env_process;
+pub mod env_process_interface;
+pub mod serdes;
+pub mod standard_impl;
 
 #[pymodule]
 #[pyo3(name = "rlgym_learn_backend")]
