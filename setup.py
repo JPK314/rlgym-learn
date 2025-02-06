@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 from setuptools.command.install import install
 
 
-__version__ = "1.3.9"
+__version__ = "0.1.2"
 
 with open('README.md', 'r') as readme_file:
     long_description = readme_file.read()
@@ -13,14 +13,14 @@ class CustomInstall(install):
         install.run(self)
 
 setup(
-    name='rlgym-ppo',
+    name='rlgym-learn',
     packages=find_packages(),
     version=__version__,
     description='A multi-processed implementation of PPO for use with RLGym.',
     long_description=long_description,
     long_description_content_type='text/markdown',
-    author='Matthew Allen',
-    url='https://github.com/AechPro/rlgym-ppo',
+    author='JPK314',
+    url='https://github.com/JPK314/rlgym-learn',
 
     install_requires=[
         'cloudpickle>2.0',
