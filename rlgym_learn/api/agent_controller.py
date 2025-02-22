@@ -10,18 +10,16 @@ from rlgym.api import (
     RewardType,
     StateType,
 )
-from rlgym_learn_backend import EnvActionResponse
 
 from ..experience import Timestep
 from ..learning_coordinator_config import BaseConfigModel, ProcessConfigModel
+from ..rlgym_learn import EnvActionResponse
 from .typing import (
     ActionAssociatedLearningData,
     AgentControllerConfig,
     AgentControllerData,
     StateMetrics,
 )
-
-# TODO: make abstract
 
 
 @dataclass

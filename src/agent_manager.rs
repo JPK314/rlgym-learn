@@ -6,8 +6,8 @@ use pyo3::types::{PyDict, PyList};
 use pyo3::{intern, prelude::*};
 use pyo3::{IntoPyObjectExt, PyObject};
 
-use crate::common::misc::{tensor_slice_1d, torch_empty};
 use crate::env_action::{EnvAction, EnvActionResponse};
+use crate::misc::{tensor_slice_1d, torch_empty};
 
 fn get_actions<'py>(
     agent_controller: &Bound<'py, PyAny>,
@@ -62,7 +62,7 @@ enum ActionAssociatedLearningData<'py> {
     List(Vec<Option<Bound<'py, PyAny>>>),
 }
 
-#[pyclass(module = "rlgym_learn_backend")]
+#[pyclass(module = "rlgym_learn")]
 pub struct AgentManager {
     agent_controllers: Vec<PyObject>,
     batched_tensor_action_associated_learning_data: bool,

@@ -1,32 +1,19 @@
 use pyo3::prelude::*;
 use pyo3::{types::PyAnyMethods, IntoPyObject};
 
-use crate::{
+use pyany_serde::{
     communication::{append_f32, retrieve_f32},
-    serdes::{
-        pyany_serde::PyAnySerde,
-        serde_enum::{get_serde_bytes, Serde},
-    },
+    PyAnySerde,
 };
 
 use super::game_config::GameConfig;
 
 #[derive(Clone)]
-pub struct GameConfigSerde {
-    serde_enum: Serde,
-    serde_enum_bytes: Vec<u8>,
-}
+pub struct GameConfigSerde {}
 
 impl GameConfigSerde {
-    pub fn new() -> Self {
-        GameConfigSerde {
-            serde_enum: Serde::OTHER,
-            serde_enum_bytes: get_serde_bytes(&Serde::OTHER),
-        }
-    }
-
-    pub fn append<'py>(
-        &mut self,
+    pub fn append_inner<'py>(
+        &self,
         buf: &mut [u8],
         offset: usize,
         game_config: &GameConfig,
@@ -37,7 +24,7 @@ impl GameConfigSerde {
         offset
     }
 
-    pub fn retrieve<'py>(&mut self, buf: &[u8], offset: usize) -> PyResult<(GameConfig, usize)> {
+    pub fn retrieve_inner<'py>(&self, buf: &[u8], offset: usize) -> PyResult<(GameConfig, usize)> {
         let mut offset = offset;
         let gravity;
         (gravity, offset) = retrieve_f32(buf, offset)?;
@@ -58,29 +45,21 @@ impl GameConfigSerde {
 
 impl PyAnySerde for GameConfigSerde {
     fn append<'py>(
-        &mut self,
+        &self,
         buf: &mut [u8],
         offset: usize,
         obj: &pyo3::Bound<'py, pyo3::PyAny>,
     ) -> pyo3::PyResult<usize> {
-        Ok(self.append(buf, offset, &obj.extract::<GameConfig>()?))
+        Ok(self.append_inner(buf, offset, &obj.extract::<GameConfig>()?))
     }
 
     fn retrieve<'py>(
-        &mut self,
+        &self,
         py: pyo3::Python<'py>,
         buf: &[u8],
         offset: usize,
     ) -> pyo3::PyResult<(pyo3::Bound<'py, pyo3::PyAny>, usize)> {
-        let (game_config, offset) = self.retrieve(buf, offset)?;
+        let (game_config, offset) = self.retrieve_inner(buf, offset)?;
         Ok(((&game_config).into_pyobject(py)?, offset))
-    }
-
-    fn get_enum(&self) -> &crate::serdes::serde_enum::Serde {
-        &self.serde_enum
-    }
-
-    fn get_enum_bytes(&self) -> &[u8] {
-        &self.serde_enum_bytes
     }
 }

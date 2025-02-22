@@ -10,8 +10,6 @@ from rlgym.api import (
     RewardType,
     StateType,
 )
-from rlgym_learn_backend import AgentManager as RustAgentManager
-from rlgym_learn_backend import EnvAction
 
 from ..api import (
     ActionAssociatedLearningData,
@@ -21,6 +19,8 @@ from ..api import (
 )
 from ..experience import Timestep
 from ..learning_coordinator_config import LearningCoordinatorConfigModel
+from ..rlgym_learn import AgentManager as RustAgentManager
+from ..rlgym_learn import EnvAction
 
 
 class AgentManager(

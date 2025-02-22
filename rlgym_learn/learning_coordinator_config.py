@@ -1,7 +1,11 @@
+from __future__ import annotations
+
 import os
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Generic, Optional, TypeVar
 
 from pydantic import BaseModel, Field, model_validator
+
+from .rlgym_learn import PyAnySerdeType
 
 
 class ProcessConfigModel(BaseModel):
@@ -19,7 +23,22 @@ class ProcessConfigModel(BaseModel):
         return self
 
 
+class SerdeTypesModel(BaseModel):
+    agent_id_serde_type: PyAnySerdeType
+    action_serde_type: PyAnySerdeType
+    obs_serde_type: PyAnySerdeType
+    reward_serde_type: PyAnySerdeType
+    obs_space_serde_type: PyAnySerdeType
+    action_space_serde_type: PyAnySerdeType
+    state_serde_type: Optional[PyAnySerdeType] = None
+    state_metrics_serde_type: Optional[PyAnySerdeType] = None
+
+    class Config:
+        json_encoders = {PyAnySerdeType: lambda x: x.to_json()}
+
+
 class BaseConfigModel(BaseModel):
+    serde_types: SerdeTypesModel
     device: str = "auto"
     random_seed: int = 123
     shm_buffer_size: int = 8192
@@ -61,7 +80,7 @@ DEFAULT_CONFIG_FILENAME = "config.json"
 
 
 def generate_config(
-    learner_config=LearningCoordinatorConfigModel(),
+    learner_config,
     config_location: Optional[str] = None,
     force_overwrite: bool = False,
 ):

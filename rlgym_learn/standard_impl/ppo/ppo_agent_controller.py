@@ -22,6 +22,7 @@ from rlgym.api import (
 )
 from torch import device as _device
 
+from rlgym_learn import EnvActionResponse, EnvActionResponseType
 from rlgym_learn.api.agent_controller import AgentController
 from rlgym_learn.api.typing import StateMetrics
 from rlgym_learn.experience.timestep import Timestep
@@ -35,7 +36,6 @@ from rlgym_learn.standard_impl import (
     WandbMetricsLogger,
 )
 from rlgym_learn.util.torch_functions import get_device
-from rlgym_learn_backend import EnvActionResponse, EnvActionResponseType
 
 from .actor import Actor
 from .critic import Critic

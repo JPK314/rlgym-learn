@@ -8,11 +8,11 @@ import torch
 from numpy import ndarray
 from pydantic import BaseModel
 from rlgym.api import ActionType, AgentID, ObsType, RewardType
-from rlgym_learn_backend import (
-    DerivedGAETrajectoryProcessorConfig as RustDerivedGAETrajectoryProcessorConfig,
-)
-from rlgym_learn_backend import GAETrajectoryProcessor as RustGAETrajectoryProcessor
 
+from rlgym_learn import (
+    RustDerivedGAETrajectoryProcessorConfig,
+    RustGAETrajectoryProcessor,
+)
 from rlgym_learn.standard_impl import (
     BatchRewardTypeNumpyConverter,
     BatchRewardTypeSimpleNumpyConverter,

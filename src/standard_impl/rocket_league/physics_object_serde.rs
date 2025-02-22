@@ -1,33 +1,19 @@
 use numpy::{ndarray::Array, PyArray1, PyArray2, PyArrayMethods};
 use pyo3::{types::PyAnyMethods, IntoPyObject, PyResult, Python};
 
-use crate::{
+use pyany_serde::{
     append_n_vec_elements, append_n_vec_elements_option, retrieve_n_vec_elements,
-    retrieve_n_vec_elements_option,
-    serdes::{
-        pyany_serde::PyAnySerde,
-        serde_enum::{get_serde_bytes, Serde},
-    },
+    retrieve_n_vec_elements_option, PyAnySerde,
 };
 
 use super::physics_object::PhysicsObject;
 
 #[derive(Clone)]
-pub struct PhysicsObjectSerde {
-    serde_enum: Serde,
-    serde_enum_bytes: Vec<u8>,
-}
+pub struct PhysicsObjectSerde {}
 
 impl PhysicsObjectSerde {
-    pub fn new() -> Self {
-        PhysicsObjectSerde {
-            serde_enum: Serde::OTHER,
-            serde_enum_bytes: get_serde_bytes(&Serde::OTHER),
-        }
-    }
-
-    pub fn append<'py>(
-        &mut self,
+    pub fn append_inner<'py>(
+        &self,
         py: Python<'py>,
         buf: &mut [u8],
         offset: usize,
@@ -57,8 +43,8 @@ impl PhysicsObjectSerde {
         Ok(offset)
     }
 
-    pub fn retrieve<'py>(
-        &mut self,
+    pub fn retrieve_inner<'py>(
+        &self,
         py: pyo3::Python<'py>,
         buf: &[u8],
         offset: usize,
@@ -95,29 +81,21 @@ impl PhysicsObjectSerde {
 
 impl PyAnySerde for PhysicsObjectSerde {
     fn append<'py>(
-        &mut self,
+        &self,
         buf: &mut [u8],
         offset: usize,
         obj: &pyo3::Bound<'py, pyo3::PyAny>,
     ) -> PyResult<usize> {
-        Python::with_gil(|py| self.append(py, buf, offset, &obj.extract::<PhysicsObject>()?))
+        Python::with_gil(|py| self.append_inner(py, buf, offset, &obj.extract::<PhysicsObject>()?))
     }
 
     fn retrieve<'py>(
-        &mut self,
+        &self,
         py: pyo3::Python<'py>,
         buf: &[u8],
         offset: usize,
     ) -> PyResult<(pyo3::Bound<'py, pyo3::PyAny>, usize)> {
-        let (physics_object, offset) = self.retrieve(py, buf, offset)?;
+        let (physics_object, offset) = self.retrieve_inner(py, buf, offset)?;
         Ok(((&physics_object).into_pyobject(py)?, offset))
-    }
-
-    fn get_enum(&self) -> &crate::serdes::serde_enum::Serde {
-        &self.serde_enum
-    }
-
-    fn get_enum_bytes(&self) -> &[u8] {
-        &self.serde_enum_bytes
     }
 }
