@@ -1,9 +1,6 @@
-use pyo3::{prelude::*, types::PyList, IntoPyObjectExt};
+use pyo3::{exceptions::asyncio::InvalidStateError, prelude::*, types::PyList, IntoPyObjectExt};
 
-use crate::{
-    communication::{append_python, retrieve_python},
-    serdes::pyany_serde::BoundPythonSerde,
-};
+use pyany_serde::PyAnySerde;
 
 #[allow(non_camel_case_types)]
 #[pyclass]
@@ -72,13 +69,13 @@ pub enum EnvAction {
     },
 }
 
-pub fn append_env_action_new<'py>(
+pub fn append_env_action<'py>(
     py: Python<'py>,
     buf: &mut [u8],
     offset: usize,
     env_action: &EnvAction,
-    action_serde_option: &mut Option<BoundPythonSerde<'py>>,
-    state_serde_option: &mut Option<BoundPythonSerde<'py>>,
+    action_serde: &Box<dyn PyAnySerde>,
+    state_serde_option: &Option<&Box<dyn PyAnySerde>>,
 ) -> PyResult<usize> {
     let mut offset = offset;
     match env_action {
@@ -87,7 +84,7 @@ pub fn append_env_action_new<'py>(
             offset += 1;
             let action_list = action_list.bind(py);
             for action in action_list.iter() {
-                offset = append_python(buf, offset, &action, action_serde_option)?;
+                offset = action_serde.append(buf, offset, &action)?;
             }
         }
         EnvAction::RESET {} => {
@@ -97,19 +94,25 @@ pub fn append_env_action_new<'py>(
         EnvAction::SET_STATE { desired_state, .. } => {
             buf[offset] = 2;
             offset += 1;
-            offset = append_python(buf, offset, desired_state.bind(py), state_serde_option)?;
+            offset = state_serde_option
+                .ok_or_else(|| {
+                    InvalidStateError::new_err(
+                        "Received SET_STATE EnvAction but no state serde was provided",
+                    )
+                })?
+                .append(buf, offset, desired_state.bind(py))?;
         }
     }
     Ok(offset)
 }
 
-pub fn retrieve_env_action_new<'py>(
+pub fn retrieve_env_action<'py>(
     py: Python<'py>,
     buf: &mut [u8],
     offset: usize,
     n_actions: usize,
-    action_serde_option: &mut Option<BoundPythonSerde<'py>>,
-    state_serde_option: &mut Option<BoundPythonSerde<'py>>,
+    action_serde: &Box<dyn PyAnySerde>,
+    state_serde_option: &Option<&Box<dyn PyAnySerde>>,
 ) -> PyResult<(EnvAction, usize)> {
     let env_action_type = buf[offset];
     let mut offset = offset + 1;
@@ -118,7 +121,7 @@ pub fn retrieve_env_action_new<'py>(
             let mut action_list = Vec::with_capacity(n_actions);
             for _ in 0..n_actions {
                 let action;
-                (action, offset) = retrieve_python(py, buf, offset, action_serde_option)?;
+                (action, offset) = action_serde.retrieve(py, buf, offset)?;
                 action_list.push(action);
             }
             Ok((
@@ -133,7 +136,13 @@ pub fn retrieve_env_action_new<'py>(
         1 => Ok((EnvAction::RESET {}, offset)),
         2 => {
             let state;
-            (state, offset) = retrieve_python(py, buf, offset, state_serde_option)?;
+            (state, offset) = state_serde_option
+                .ok_or_else(|| {
+                    InvalidStateError::new_err(
+                        "Received SET_STATE EnvAction but no state serde was provided",
+                    )
+                })?
+                .retrieve(py, buf, offset)?;
             Ok((
                 EnvAction::SET_STATE {
                     desired_state: state.unbind(),

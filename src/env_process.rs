@@ -1,11 +1,7 @@
-use crate::common::misc::py_hash;
-use crate::communication::{
-    append_bool, append_bytes, append_python, append_usize, get_flink, insert_bytes, recvfrom_byte,
-    retrieve_header, sendto_byte, Header,
-};
-use crate::env_action::{retrieve_env_action_new, EnvAction};
-use crate::serdes::pyany_serde::PythonSerde;
+use pyany_serde::communication::{append_bool, append_usize};
+use pyany_serde::{DynPyAnySerdeOption, PyAnySerde};
 use pyo3::exceptions::asyncio::InvalidStateError;
+use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyTuple};
 use pyo3::{intern, PyAny, PyObject, Python};
@@ -14,6 +10,9 @@ use raw_sync::Timeout;
 use shared_memory::ShmemConf;
 use std::thread::sleep;
 use std::time::Duration;
+
+use crate::env_action::{retrieve_env_action, EnvAction};
+use crate::synchronization::{get_flink, recvfrom_byte, retrieve_header, sendto_byte, Header};
 
 fn sync_with_epi<'py>(py: Python<'py>, socket: &PyObject, address: &PyObject) -> PyResult<()> {
     sendto_byte(py, socket, address)?;
@@ -88,12 +87,12 @@ fn env_step<'py>(
     build_env_fn,
     flinks_folder,
     shm_buffer_size,
-    agent_id_serde_option,
-    action_serde_option,
-    obs_serde_option,
-    reward_serde_option,
-    obs_space_serde_option,
-    action_space_serde_option,
+    agent_id_serde,
+    action_serde,
+    obs_serde,
+    reward_serde,
+    obs_space_serde,
+    action_space_serde,
     state_serde_option,
     state_metrics_serde_option,
     collect_state_metrics_fn_option,
@@ -108,20 +107,36 @@ pub fn env_process(
     build_env_fn: PyObject,
     flinks_folder: &str,
     shm_buffer_size: usize,
-    agent_id_serde_option: Option<PythonSerde>,
-    action_serde_option: Option<PythonSerde>,
-    obs_serde_option: Option<PythonSerde>,
-    reward_serde_option: Option<PythonSerde>,
-    obs_space_serde_option: Option<PythonSerde>,
-    action_space_serde_option: Option<PythonSerde>,
-    state_serde_option: Option<PythonSerde>,
-    state_metrics_serde_option: Option<PythonSerde>,
+    agent_id_serde: Box<dyn PyAnySerde>,
+    action_serde: Box<dyn PyAnySerde>,
+    obs_serde: Box<dyn PyAnySerde>,
+    reward_serde: Box<dyn PyAnySerde>,
+    obs_space_serde: Box<dyn PyAnySerde>,
+    action_space_serde: Box<dyn PyAnySerde>,
+    state_serde_option: DynPyAnySerdeOption,
+    state_metrics_serde_option: DynPyAnySerdeOption,
     collect_state_metrics_fn_option: Option<PyObject>,
     send_state_to_agent_controllers: bool,
     render: bool,
     render_delay_option: Option<Duration>,
     recalculate_agent_id_every_step: bool,
 ) -> PyResult<()> {
+    if send_state_to_agent_controllers && matches!(state_serde_option, DynPyAnySerdeOption::None) {
+        return Err(PyValueError::new_err(
+            "state_serde must be passed in order to send state to agent controllers",
+        ));
+    }
+    if collect_state_metrics_fn_option.is_some()
+        && matches!(state_metrics_serde_option, DynPyAnySerdeOption::None)
+    {
+        return Err(PyValueError::new_err(
+                    "state_metrics_serde must be passed in order to collect state metrics from env processes",
+                ));
+    }
+    let state_serde_option: Option<Box<dyn PyAnySerde>> = state_serde_option.into();
+    let state_serde_option = state_serde_option.as_ref();
+    let state_metrics_serde_option: Option<Box<dyn PyAnySerde>> = state_metrics_serde_option.into();
+    let state_metrics_serde_option = state_metrics_serde_option.as_ref();
     let flink = get_flink(flinks_folder, proc_id);
     let mut shmem = ShmemConf::new()
         .size(shm_buffer_size)
@@ -139,8 +154,6 @@ pub fn env_process(
         })?
     };
     let shm_slice = unsafe { &mut shmem.as_slice_mut()[used_bytes..] };
-    let swap_space = &mut vec![0_u8; shm_buffer_size][..];
-    let mut swap_offset = 0;
 
     Python::with_gil::<_, PyResult<()>>(|py| {
         // Initial setup
@@ -154,16 +167,6 @@ pub fn env_process(
             game_speed_fn = Box::new(move || Ok(get_game_speed.call0()?.extract::<f64>()?));
             game_paused_fn = Box::new(move || Ok(get_game_paused.call0()?.extract::<bool>()?));
         }
-        let mut agent_id_serde_option = agent_id_serde_option.map(|serde| serde.into_bound(py));
-        let mut action_serde_option = action_serde_option.map(|serde| serde.into_bound(py));
-        let mut obs_serde_option = obs_serde_option.map(|serde| serde.into_bound(py));
-        let mut reward_serde_option = reward_serde_option.map(|serde| serde.into_bound(py));
-        let mut obs_space_serde_option = obs_space_serde_option.map(|serde| serde.into_bound(py));
-        let mut action_space_serde_option =
-            action_space_serde_option.map(|serde| serde.into_bound(py));
-        let mut state_serde_option = state_serde_option.map(|serde| serde.into_bound(py));
-        let mut state_metrics_serde_option =
-            state_metrics_serde_option.map(|serde| serde.into_bound(py));
 
         let collect_state_metrics_fn_option = collect_state_metrics_fn_option.as_ref();
 
@@ -173,20 +176,17 @@ pub fn env_process(
         let reset_obs = env_reset(&env)?;
         let should_collect_state_metrics = !collect_state_metrics_fn_option.is_none();
         let mut n_agents = reset_obs.len();
-        let mut agent_id_data_list = Vec::with_capacity(n_agents);
+        let mut agent_id_list = Vec::with_capacity(n_agents);
         for agent_id in reset_obs.keys().iter() {
-            let agent_id_hash = py_hash(&agent_id)?;
-            swap_offset = append_python(swap_space, 0, &agent_id, &mut agent_id_serde_option)?;
-
-            agent_id_data_list.push((agent_id, agent_id_hash, swap_space[0..swap_offset].to_vec()));
+            agent_id_list.push(agent_id);
         }
 
         // Write reset message
         let mut offset = 0;
         offset = append_usize(shm_slice, offset, n_agents);
-        for (agent_id, _, serialized_agent_id) in agent_id_data_list.iter() {
-            offset = insert_bytes(shm_slice, offset, &serialized_agent_id[..])?;
-            offset = append_python(
+        for agent_id in agent_id_list.iter() {
+            offset = agent_id_serde.append(shm_slice, offset, agent_id)?;
+            offset = obs_serde.append(
                 shm_slice,
                 offset,
                 &reset_obs
@@ -194,22 +194,17 @@ pub fn env_process(
                     .ok_or(InvalidStateError::new_err(
                         "Reset obs python dict did not contain AgentID as key",
                     ))?,
-                &mut obs_serde_option,
             )?;
         }
 
         if send_state_to_agent_controllers {
-            _ = append_python(
-                shm_slice,
-                offset,
-                &env_state(&env)?,
-                &mut state_serde_option,
-            )?;
+            _ = state_serde_option
+                .unwrap()
+                .append(shm_slice, offset, &env_state(&env)?)?;
         }
         sendto_byte(py, &child_end, &parent_sockname)?;
 
         // Start main loop
-        let mut metrics_bytes = Vec::new();
         let mut has_received_env_action = false;
         loop {
             epi_evt
@@ -225,13 +220,13 @@ pub fn env_process(
                 Header::EnvAction => {
                     has_received_env_action = true;
                     let env_action;
-                    (env_action, _) = retrieve_env_action_new(
+                    (env_action, _) = retrieve_env_action(
                         py,
                         shm_slice,
                         offset,
-                        agent_id_data_list.len(),
-                        &mut action_serde_option,
-                        &mut state_serde_option,
+                        agent_id_list.len(),
+                        &action_serde,
+                        &state_serde_option,
                     )?;
                     // Read actions message
                     let (
@@ -243,11 +238,9 @@ pub fn env_process(
                     );
                     match &env_action {
                         EnvAction::STEP { action_list, .. } => {
-                            let mut actions_kv_list = Vec::with_capacity(agent_id_data_list.len());
+                            let mut actions_kv_list = Vec::with_capacity(agent_id_list.len());
                             let action_list = action_list.bind(py);
-                            for ((agent_id, _, _), action) in
-                                agent_id_data_list.iter().zip(action_list.iter())
-                            {
+                            for (agent_id, action) in agent_id_list.iter().zip(action_list.iter()) {
                                 actions_kv_list.push((agent_id, action));
                             }
                             let actions_dict =
@@ -277,35 +270,6 @@ pub fn env_process(
                     }
                     let new_episode = !is_step_action;
 
-                    // Collect metrics
-                    if should_collect_state_metrics {
-                        let result = collect_state_metrics_fn_option
-                            .unwrap()
-                            .call1(py, (env_state(&env)?, env_shared_info(&env)?))?
-                            .into_bound(py);
-                        swap_offset =
-                            append_python(swap_space, 0, &result, &mut state_metrics_serde_option)?;
-                        metrics_bytes = swap_space[0..swap_offset].to_vec();
-                    };
-
-                    // Recalculate agent ids if needed
-                    if recalculate_agent_id_every_step {
-                        agent_id_data_list.clear();
-                        for agent_id in obs_dict.keys().iter() {
-                            let agent_id_hash = py_hash(&agent_id)?;
-                            swap_offset = append_python(
-                                swap_space,
-                                0,
-                                &agent_id,
-                                &mut agent_id_serde_option,
-                            )?;
-                            agent_id_data_list.push((
-                                agent_id,
-                                agent_id_hash,
-                                swap_space[0..swap_offset].to_vec(),
-                            ));
-                        }
-                    }
                     if new_episode {
                         n_agents = obs_dict.len();
                     }
@@ -315,18 +279,17 @@ pub fn env_process(
                     if new_episode {
                         offset = append_usize(shm_slice, offset, n_agents);
                     }
-                    for (agent_id, _, serialized_agent_id) in agent_id_data_list.iter() {
+                    for agent_id in agent_id_list.iter() {
                         if recalculate_agent_id_every_step || new_episode {
-                            offset = insert_bytes(shm_slice, offset, &serialized_agent_id[..])?;
+                            offset = agent_id_serde.append(shm_slice, offset, agent_id)?;
                         }
-                        offset = append_python(
+                        offset = obs_serde.append(
                             shm_slice,
                             offset,
                             &obs_dict.get_item(agent_id)?.unwrap(),
-                            &mut obs_serde_option,
                         )?;
                         if is_step_action {
-                            offset = append_python(
+                            offset = reward_serde.append(
                                 shm_slice,
                                 offset,
                                 &rew_dict_option
@@ -334,7 +297,6 @@ pub fn env_process(
                                     .unwrap()
                                     .get_item(agent_id)?
                                     .unwrap(),
-                                &mut reward_serde_option,
                             )?;
                             offset = append_bool(
                                 shm_slice,
@@ -360,16 +322,23 @@ pub fn env_process(
                     }
 
                     if send_state_to_agent_controllers {
-                        offset = append_python(
+                        offset = state_serde_option.unwrap().append(
                             shm_slice,
                             offset,
                             &env_state(&env)?,
-                            &mut state_serde_option,
                         )?;
                     }
 
                     if should_collect_state_metrics {
-                        append_bytes(shm_slice, offset, &metrics_bytes[..])?;
+                        let state_metrics = collect_state_metrics_fn_option
+                            .unwrap()
+                            .call1(py, (env_state(&env)?, env_shared_info(&env)?))?
+                            .into_bound(py);
+                        _ = state_metrics_serde_option.unwrap().append(
+                            shm_slice,
+                            offset,
+                            &state_metrics,
+                        )?;
                     }
                     sendto_byte(py, &child_end, &parent_sockname)?;
 
@@ -400,14 +369,8 @@ pub fn env_process(
                     println!("--------------------");
 
                     offset = 0;
-                    offset =
-                        append_python(shm_slice, offset, &obs_space, &mut obs_space_serde_option)?;
-                    append_python(
-                        shm_slice,
-                        offset,
-                        &action_space,
-                        &mut action_space_serde_option,
-                    )?;
+                    offset = obs_space_serde.append(shm_slice, offset, &obs_space)?;
+                    action_space_serde.append(shm_slice, offset, &action_space)?;
                     sendto_byte(py, &child_end, &parent_sockname)?;
                 }
                 Header::Stop => {

@@ -1,48 +1,44 @@
-use crate::{
-    communication::{append_bool, append_u64, retrieve_bool, retrieve_u64},
-    serdes::{
-        dict_serde::DictSerde,
-        numpy_dynamic_shape_serde::NumpyDynamicShapeSerde,
-        pyany_serde::{PyAnySerde, PythonSerde},
-        serde_enum::{get_serde_bytes, Serde},
+use std::marker::PhantomData;
+
+use pyo3::{prelude::*, types::PyDict};
+
+use pyany_serde::{
+    communication::{
+        append_bool, append_u64, append_usize, retrieve_bool, retrieve_u64, retrieve_usize,
     },
+    pyany_serde_impl::NumpyDynamicShapeSerde,
+    PyAnySerde,
 };
-use pyo3::prelude::*;
 
 use super::{
-    car_serde::CarSerde, game_config_serde::GameConfigSerde, game_state::GameState,
+    car::Car, car_serde::CarSerde, game_config_serde::GameConfigSerde, game_state::GameState,
     physics_object_serde::PhysicsObjectSerde,
 };
 
 #[derive(Clone)]
 pub struct GameStateSerde {
-    serde_enum: Serde,
-    serde_enum_bytes: Vec<u8>,
     game_config_serde: GameConfigSerde,
-    cars_dict_serde: DictSerde,
+    agent_id_serde: Box<dyn PyAnySerde>,
+    car_serde: CarSerde,
     physics_object_serde: PhysicsObjectSerde,
     numpy_dynamic_shape_serde: NumpyDynamicShapeSerde<f32>,
 }
 
 impl GameStateSerde {
-    pub fn new(agent_id_serde_option: Option<PythonSerde>) -> Self {
+    pub fn new(agent_id_serde: Box<dyn PyAnySerde>) -> Self {
         GameStateSerde {
-            serde_enum: Serde::OTHER,
-            serde_enum_bytes: get_serde_bytes(&Serde::OTHER),
-            game_config_serde: GameConfigSerde::new(),
-            cars_dict_serde: DictSerde::new(
-                agent_id_serde_option.clone(),
-                Some(PythonSerde::PyAnySerde(Box::new(CarSerde::new(
-                    agent_id_serde_option,
-                )))),
-            ),
-            physics_object_serde: PhysicsObjectSerde::new(),
-            numpy_dynamic_shape_serde: NumpyDynamicShapeSerde::<f32>::new(),
+            game_config_serde: GameConfigSerde {},
+            agent_id_serde: agent_id_serde.clone(),
+            car_serde: CarSerde::new(agent_id_serde),
+            physics_object_serde: PhysicsObjectSerde {},
+            numpy_dynamic_shape_serde: NumpyDynamicShapeSerde {
+                dtype: PhantomData::<f32>,
+            },
         }
     }
 
-    pub fn append<'py>(
-        &mut self,
+    pub fn append_inner<'py>(
+        &self,
         py: Python<'py>,
         buf: &mut [u8],
         offset: usize,
@@ -52,22 +48,27 @@ impl GameStateSerde {
         offset = append_bool(buf, offset, game_state.goal_scored);
         offset = self
             .game_config_serde
-            .append(buf, offset, &game_state.config);
-        offset = self
-            .cars_dict_serde
-            .append(buf, offset, game_state.cars.bind(py))?;
+            .append_inner(buf, offset, &game_state.config);
+        let cars_kv_list = game_state
+            .cars
+            .extract::<Vec<(Bound<'py, PyAny>, Car)>>(py)?;
+        offset = append_usize(buf, offset, cars_kv_list.len());
+        for (agent_id, car) in cars_kv_list.iter() {
+            offset = self.agent_id_serde.append(buf, offset, agent_id)?;
+            offset = self.car_serde.append_inner(py, buf, offset, car)?;
+        }
         offset = self
             .physics_object_serde
-            .append(py, buf, offset, &game_state.ball)?;
-        offset = self
-            .physics_object_serde
-            .append(py, buf, offset, &game_state._inverted_ball)?;
-        offset = self.numpy_dynamic_shape_serde.append(
+            .append_inner(py, buf, offset, &game_state.ball)?;
+        offset =
+            self.physics_object_serde
+                .append_inner(py, buf, offset, &game_state._inverted_ball)?;
+        offset = self.numpy_dynamic_shape_serde.append_inner(
             buf,
             offset,
             game_state.boost_pad_timers.bind(py),
         )?;
-        offset = self.numpy_dynamic_shape_serde.append(
+        offset = self.numpy_dynamic_shape_serde.append_inner(
             buf,
             offset,
             game_state._inverted_boost_pad_timers.bind(py),
@@ -75,8 +76,8 @@ impl GameStateSerde {
         Ok(offset)
     }
 
-    pub fn retrieve<'py>(
-        &mut self,
+    pub fn retrieve_inner<'py>(
+        &self,
         py: Python<'py>,
         buf: &[u8],
         offset: usize,
@@ -85,24 +86,38 @@ impl GameStateSerde {
         let goal_scored;
         (goal_scored, offset) = retrieve_bool(buf, offset)?;
         let game_config;
-        (game_config, offset) = self.game_config_serde.retrieve(buf, offset)?;
-        let cars;
-        (cars, offset) = self.cars_dict_serde.retrieve(py, buf, offset)?;
+        (game_config, offset) = self.game_config_serde.retrieve_inner(buf, offset)?;
+        let n_cars;
+        (n_cars, offset) = retrieve_usize(buf, offset)?;
+        let mut cars_kv_list = Vec::with_capacity(n_cars);
+        for _ in 0..n_cars {
+            let agent_id;
+            (agent_id, offset) = self.agent_id_serde.retrieve(py, buf, offset)?;
+            let car;
+            (car, offset) = self.car_serde.retrieve(py, buf, offset)?;
+            cars_kv_list.push((agent_id, car))
+        }
+        let cars = PyDict::from_sequence(&cars_kv_list.into_pyobject(py)?)?
+            .into_any()
+            .unbind();
         let ball;
-        (ball, offset) = self.physics_object_serde.retrieve(py, buf, offset)?;
+        (ball, offset) = self.physics_object_serde.retrieve_inner(py, buf, offset)?;
         let _inverted_ball;
-        (_inverted_ball, offset) = self.physics_object_serde.retrieve(py, buf, offset)?;
+        (_inverted_ball, offset) = self.physics_object_serde.retrieve_inner(py, buf, offset)?;
         let boost_pad_timers;
-        (boost_pad_timers, offset) = self.numpy_dynamic_shape_serde.retrieve(py, buf, offset)?;
+        (boost_pad_timers, offset) = self
+            .numpy_dynamic_shape_serde
+            .retrieve_inner(py, buf, offset)?;
         let _inverted_boost_pad_timers;
-        (_inverted_boost_pad_timers, offset) =
-            self.numpy_dynamic_shape_serde.retrieve(py, buf, offset)?;
+        (_inverted_boost_pad_timers, offset) = self
+            .numpy_dynamic_shape_serde
+            .retrieve_inner(py, buf, offset)?;
         Ok((
             GameState {
                 tick_count,
                 goal_scored,
                 config: game_config,
-                cars: cars.unbind(),
+                cars,
                 ball,
                 _inverted_ball,
                 boost_pad_timers: boost_pad_timers.unbind(),
@@ -115,29 +130,21 @@ impl GameStateSerde {
 
 impl PyAnySerde for GameStateSerde {
     fn append<'py>(
-        &mut self,
+        &self,
         buf: &mut [u8],
         offset: usize,
         obj: &pyo3::Bound<'py, pyo3::PyAny>,
     ) -> pyo3::PyResult<usize> {
-        Python::with_gil(|py| self.append(py, buf, offset, obj.extract::<GameState>()?))
+        Python::with_gil(|py| self.append_inner(py, buf, offset, obj.extract::<GameState>()?))
     }
 
     fn retrieve<'py>(
-        &mut self,
+        &self,
         py: pyo3::Python<'py>,
         buf: &[u8],
         offset: usize,
     ) -> pyo3::PyResult<(pyo3::Bound<'py, pyo3::PyAny>, usize)> {
-        let (game_state, offset) = self.retrieve(py, buf, offset)?;
+        let (game_state, offset) = self.retrieve_inner(py, buf, offset)?;
         Ok((game_state.into_pyobject(py)?, offset))
-    }
-
-    fn get_enum(&self) -> &crate::serdes::serde_enum::Serde {
-        &self.serde_enum
-    }
-
-    fn get_enum_bytes(&self) -> &[u8] {
-        &self.serde_enum_bytes
     }
 }

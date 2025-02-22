@@ -11,3 +11,4 @@ torch>1.13
 typing_extensions>4.6
 pydantic>=2.8.2
 wandb>0.15
+pyany-serde>0.1.2

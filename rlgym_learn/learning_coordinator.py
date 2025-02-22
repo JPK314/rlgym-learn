@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import cProfile
 import os
 from collections.abc import Callable
@@ -16,18 +18,13 @@ from rlgym.api import (
 )
 
 from .agent import AgentManager
-from .api import (
-    ActionAssociatedLearningData,
-    AgentController,
-    RustSerde,
-    StateMetrics,
-    TypeSerde,
-)
+from .api import ActionAssociatedLearningData, AgentController, StateMetrics
 from .env_processing import EnvProcessInterface
 from .learning_coordinator_config import (
     DEFAULT_CONFIG_FILENAME,
     LearningCoordinatorConfigModel,
 )
+from .rlgym_learn import PyAnySerdeType
 from .util import KBHit
 
 
@@ -76,16 +73,6 @@ class LearningCoordinator(
                 Any,
             ],
         ],
-        agent_id_serde: Optional[Union[TypeSerde[AgentID], RustSerde]] = None,
-        action_serde: Optional[Union[TypeSerde[ActionType], RustSerde]] = None,
-        obs_serde: Optional[Union[TypeSerde[ObsType], RustSerde]] = None,
-        reward_serde: Optional[Union[TypeSerde[RewardType], RustSerde]] = None,
-        obs_space_serde: Optional[Union[TypeSerde[ObsSpaceType], RustSerde]] = None,
-        action_space_serde: Optional[
-            Union[TypeSerde[ActionSpaceType], RustSerde]
-        ] = None,
-        state_serde: Optional[Union[TypeSerde[StateType], RustSerde]] = None,
-        state_metrics_serde: Optional[Union[TypeSerde[StateMetrics], RustSerde]] = None,
         collect_state_metrics_fn: Optional[
             Callable[[StateType, Dict[str, Any]], StateMetrics]
         ] = None,
@@ -108,15 +95,8 @@ class LearningCoordinator(
         self.cumulative_timesteps = 0
         self.env_process_interface = EnvProcessInterface(
             env_create_function,
-            agent_id_serde,
-            action_serde,
-            obs_serde,
-            reward_serde,
-            obs_space_serde,
-            action_space_serde,
-            state_serde,
-            state_metrics_serde,
             collect_state_metrics_fn,
+            self.config.base_config.serde_types,
             self.config.process_config.min_process_steps_per_inference,
             self.config.base_config.send_state_to_agent_controllers,
             self.config.base_config.flinks_folder,

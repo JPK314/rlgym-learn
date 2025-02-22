@@ -11,21 +11,6 @@ from .metrics_logger import (
 )
 from .numpy_obs_standardizer import NumpyObsStandardizer
 from .obs_standardizer import ObsStandardizer
-from .serdes import (
-    BoolSerde,
-    DynamicPrimitiveTupleSerde,
-    FloatSerde,
-    HomogeneousTupleSerde,
-    IntSerde,
-    NumpyDynamicShapeSerde,
-    NumpyStaticShapeSerde,
-    StrIntTupleSerde,
-    StrSerde,
-    car_serde,
-    game_config_serde,
-    game_state_serde,
-    physics_object_serde,
-)
 from .wandb_metrics_logger import (
     InnerMetricsLoggerAdditionalDerivedConfig,
     InnerMetricsLoggerConfig,

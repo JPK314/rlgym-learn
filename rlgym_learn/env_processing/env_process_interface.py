@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import multiprocessing as mp
 import os
 import socket
@@ -18,13 +20,14 @@ from rlgym.api import (
     RLGym,
     StateType,
 )
-from rlgym_learn_backend import EnvAction
-from rlgym_learn_backend import EnvProcessInterface as RustEnvProcessInterface
-from rlgym_learn_backend import recvfrom_byte_py, sendto_byte_py
 
-from ..api import ActionAssociatedLearningData, RustSerde, StateMetrics, TypeSerde
+from ..api import ActionAssociatedLearningData, StateMetrics
 from ..experience import Timestep
-from .env_process import env_process
+from ..learning_coordinator_config import SerdeTypesModel
+from ..rlgym_learn import EnvAction
+from ..rlgym_learn import EnvProcessInterface as RustEnvProcessInterface
+from ..rlgym_learn import PickleablePyAnySerdeType, recvfrom_byte_py, sendto_byte_py
+from .env_process import PickleableSerdeTypeConfig, env_process
 
 try:
     from tqdm import tqdm
@@ -63,17 +66,10 @@ class EnvProcessInterface(
                 ActionSpaceType,
             ],
         ],
-        agent_id_serde: Optional[Union[TypeSerde[AgentID], RustSerde]],
-        action_serde: Optional[Union[TypeSerde[ActionType], RustSerde]],
-        obs_serde: Optional[Union[TypeSerde[ObsType], RustSerde]],
-        reward_serde: Optional[Union[TypeSerde[RewardType], RustSerde]],
-        obs_space_serde: Optional[Union[TypeSerde[ObsSpaceType], RustSerde]],
-        action_space_serde: Optional[Union[TypeSerde[ActionSpaceType], RustSerde]],
-        state_serde: Optional[Union[TypeSerde[StateType], RustSerde]],
-        state_metrics_serde: Optional[Union[TypeSerde[StateMetrics], RustSerde]],
         collect_state_metrics_fn: Optional[
             Callable[[StateType, Dict[AgentID, RewardType]], StateMetrics]
         ],
+        serde_types: SerdeTypesModel,
         min_process_steps_per_inference: int,
         send_state_to_agent_controllers: bool,
         flinks_folder: str,
@@ -82,14 +78,16 @@ class EnvProcessInterface(
         recalculate_agent_id_every_step: bool,
     ):
         self.build_env_fn = build_env_fn
-        self.agent_id_serde = agent_id_serde
-        self.action_serde = action_serde
-        self.obs_serde = obs_serde
-        self.reward_serde = reward_serde
-        self.obs_space_serde = obs_space_serde
-        self.action_space_serde = action_space_serde
-        self.state_serde = state_serde
-        self.state_metrics_serde = state_metrics_serde
+        self.serde_type_config = PickleableSerdeTypeConfig(
+            PickleablePyAnySerdeType(serde_types.agent_id_serde_type),
+            PickleablePyAnySerdeType(serde_types.action_serde_type),
+            PickleablePyAnySerdeType(serde_types.obs_serde_type),
+            PickleablePyAnySerdeType(serde_types.reward_serde_type),
+            PickleablePyAnySerdeType(serde_types.obs_space_serde_type),
+            PickleablePyAnySerdeType(serde_types.action_space_serde_type),
+            PickleablePyAnySerdeType(serde_types.state_serde_type),
+            PickleablePyAnySerdeType(serde_types.state_metrics_serde_type),
+        )
         self.collect_state_metrics_fn = collect_state_metrics_fn
         self.send_state_to_agent_controllers = send_state_to_agent_controllers
         self.flinks_folder = flinks_folder
@@ -102,14 +100,14 @@ class EnvProcessInterface(
 
         should_collect_state_metrics = collect_state_metrics_fn is not None
         self.rust_env_process_interface = RustEnvProcessInterface(
-            agent_id_serde,
-            action_serde,
-            obs_serde,
-            reward_serde,
-            obs_space_serde,
-            action_space_serde,
-            state_serde,
-            state_metrics_serde,
+            serde_types.agent_id_serde_type,
+            serde_types.action_serde_type,
+            serde_types.obs_serde_type,
+            serde_types.reward_serde_type,
+            serde_types.obs_space_serde_type,
+            serde_types.action_space_serde_type,
+            serde_types.state_serde_type,
+            serde_types.state_metrics_serde_type,
             self.recalculate_agent_id_every_step,
             flinks_folder,
             min_process_steps_per_inference,
@@ -171,14 +169,7 @@ class EnvProcessInterface(
                     proc_id,
                     parent_end.getsockname(),
                     self.build_env_fn,
-                    self.agent_id_serde,
-                    self.action_serde,
-                    self.obs_serde,
-                    self.reward_serde,
-                    self.obs_space_serde,
-                    self.action_space_serde,
-                    self.state_serde,
-                    self.state_metrics_serde,
+                    self.serde_type_config,
                     self.collect_state_metrics_fn,
                     self.send_state_to_agent_controllers,
                     self.flinks_folder,
@@ -242,14 +233,7 @@ class EnvProcessInterface(
                 proc_id,
                 parent_end.getsockname(),
                 self.build_env_fn,
-                self.agent_id_serde,
-                self.action_serde,
-                self.obs_serde,
-                self.reward_serde,
-                self.obs_space_serde,
-                self.action_space_serde,
-                self.state_serde,
-                self.state_metrics_serde,
+                self.serde_type_config,
                 self.collect_state_metrics_fn,
                 self.send_state_to_agent_controllers,
                 self.flinks_folder,

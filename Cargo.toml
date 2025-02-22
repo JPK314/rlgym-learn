@@ -1,32 +1,16 @@
 [package]
-name = "rlgym-learn-backend"
+name = "rlgym-learn"
 version = "0.1.2"
 edition = "2021"
-description = "Backend for the more expensive parts of the rlgym-learn python module"
+description = "Rust backend for the more expensive parts of the rlgym-learn python module"
 license="Apache-2.0"
-exclude = [
-    "rlgym_learn",
-    "rlgym_learn_backend",
-    "multi_agent_controller_test.py",
-    "quick_start_guide.py",
-    "requirements.txt",
-    "setup.py",
-    "speed_test.py",
-    "wandb_test.py"
-]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [lib]
-name = "rlgym_learn_backend"
+name = "rlgym_learn"
 crate-type = ["cdylib"]
 
-[profile.test]
-inherits = "release"
-
 [dependencies]
-anyhow = "1.0.89"
-bytemuck = "1.17.0"
-byteorder = "1.5.0"
 dyn-clone = "1.0.17"
 fastrand = "2.2.0"
 itertools = "0.13.0"
@@ -34,10 +18,13 @@ num-derive = "0.4.2"
 num-traits = "0.2.19"
 numpy = "0.23.0"
 paste = "1.0.15"
+pyany-serde = { path = "../pyany-serde"}
 pyo3 = { version = "0.23.4", features = ["extension-module", "py-clone"] }
 raw_sync = "0.1.5"
+rayon = "1.10.0"
 shared_memory = "0.12.4"
 
 [dev-dependencies]
-which = "6.0.3"
+libc = "0.2.169"
+which = "7.0.1"
 widestring = "1.1.0"
