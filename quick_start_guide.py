@@ -120,20 +120,16 @@ def critic_factory(obs_space_type, device):
 if __name__ == "__main__":
     import numpy as np
 
-    from rlgym_learn.api.serdes import (
-        float_serde,
-        int_serde,
-        numpy_serde,
-        string_serde,
-        tuple_serde,
-    )
     from rlgym_learn.learning_coordinator import LearningCoordinator
     from rlgym_learn.learning_coordinator_config import (
         BaseConfigModel,
         LearningCoordinatorConfigModel,
         ProcessConfigModel,
-        WandbConfigModel,
         generate_config,
+    )
+    from rlgym_learn.standard_impl import (
+        WandbMetricsLogger,
+        WandbMetricsLoggerConfigModel,
     )
     from rlgym_learn.standard_impl.ppo import (
         ExperienceBufferConfigModel,
@@ -165,7 +161,9 @@ if __name__ == "__main__":
                     max_size=150_000,  # Sets the number of timesteps to store in the experience buffer. Old timesteps will be pruned to only store the most recently obtained timesteps.
                     trajectory_processor_config=GAETrajectoryProcessorConfigModel(),
                 ),
-                wandb_config=WandbConfigModel(),
+                wandb_config=WandbMetricsLoggerConfigModel(
+                    group="rlgym-learn-testing", resume=True
+                ),
             )
         },
         agent_controllers_save_folder="agent_controllers_checkpoints",  # (default value) WARNING: THIS PROCESS MAY DELETE ANYTHING INSIDE THIS FOLDER. This determines the parent folder for the runs for each agent controller. The runs folder for the agent controller will be this folder and then the agent controller config key as a subfolder.
@@ -185,16 +183,10 @@ if __name__ == "__main__":
                 actor_factory=actor_factory,
                 critic_factory=critic_factory,
                 experience_buffer=NumpyExperienceBuffer(GAETrajectoryProcessor()),
-                metrics_logger_factory=lambda: ExampleLogger(),
+                metrics_logger=WandbMetricsLogger(PPOMetricsLogger()),
                 obs_standardizer=None,
             )
         },
-        agent_id_serde=string_serde(),
-        action_serde=numpy_serde(np.int64),
-        obs_serde=numpy_serde(np.float64),
-        reward_serde=float_serde(),
-        obs_space_serde=tuple_serde(string_serde(), int_serde()),
-        action_space_serde=tuple_serde(string_serde(), int_serde()),
         state_metrics_serde=None,
         collect_state_metrics_fn=None,
         config_location="config.json",

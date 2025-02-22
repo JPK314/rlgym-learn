@@ -307,7 +307,9 @@ dependencies = [
 
 [[package]]
 name = "pyany-serde"
-version = "0.1.10"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f57c854995bfad14fdca0828a11aea6807e822b4f831437b4653330e54805d88"
 dependencies = [
  "bytemuck",
  "byteorder",
@@ -469,7 +471,7 @@ dependencies = [
 
 [[package]]
 name = "rlgym-learn"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "dyn-clone",
  "fastrand",

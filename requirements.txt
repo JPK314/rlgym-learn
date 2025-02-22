@@ -1,14 +1,7 @@
 cloudpickle>2.0
 filelock>3.0
 pydantic>=2.8.2
-gym>0.23
-gym-notices==0.0.8
-Jinja2>3.0
-mpmath>1.0
 numpy>1.21
-sympy>1.10
 torch>1.13
 typing_extensions>4.6
-pydantic>=2.8.2
 wandb>0.15
-pyany-serde>0.1.2
