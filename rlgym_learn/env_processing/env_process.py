@@ -23,7 +23,7 @@ from rlgym.api import (
 from ..api import StateMetrics
 from ..rlgym_learn import PickleablePyAnySerdeType
 from ..rlgym_learn import env_process as rust_env_process
-from ..rlgym_learn import recvfrom_byte_py, sendto_byte_py
+from ..rlgym_learn import recvfrom_byte, sendto_byte
 
 
 @dataclass
@@ -72,8 +72,8 @@ def env_process(
     random.seed(seed)
     np.random.seed(seed)
 
-    sendto_byte_py(child_end, parent_sockname)
-    recvfrom_byte_py(child_end)
+    sendto_byte(child_end, parent_sockname)
+    recvfrom_byte(child_end)
 
     rust_env_process(
         proc_id,

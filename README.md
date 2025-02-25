@@ -15,7 +15,7 @@ A flexible framework for efficiently using [RLGym v2](rlgym.org) to train models
 ## Installation
 1. install RLGym via `pip install rlgym`. If you're here for Rocket League, you can use `pip install rlgym[rl-sim]` instead to get the RLGym API as well as the Rocket League / Sim submodules. 
 2. If you would like to use a GPU install [PyTorch with CUDA](https://pytorch.org/get-started/locally/)
-3. Install this project via `pip install git+https://github.com/JPK314/rlgym-learn` (coming to PyPI soon)
+3. Install this project via `pip install rlgym-learn`
 
 ## Usage
 See the [RLGym website](https://rlgym.org/RLGym%20Learn/introduction/) for complete documentation and demonstration of functionality. For now, you can take a look at quick_start_guide.py and speed_test.py to get a sense of what's going on.

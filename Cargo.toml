@@ -1,6 +1,6 @@
 [package]
 name = "rlgym-learn"
-version = "0.1.3"
+version = "0.1.4"
 edition = "2021"
 description = "Rust backend for the more expensive parts of the rlgym-learn python module"
 license="Apache-2.0"

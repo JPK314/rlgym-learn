@@ -4,7 +4,7 @@ use pyo3::exceptions::asyncio::InvalidStateError;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyTuple};
-use pyo3::{intern, PyAny, PyObject, Python};
+use pyo3::{intern, PyAny, Python};
 use raw_sync::events::{Event, EventInit, EventState};
 use raw_sync::Timeout;
 use shared_memory::ShmemConf;
@@ -14,9 +14,9 @@ use std::time::Duration;
 use crate::env_action::{retrieve_env_action, EnvAction};
 use crate::synchronization::{get_flink, recvfrom_byte, retrieve_header, sendto_byte, Header};
 
-fn sync_with_epi<'py>(py: Python<'py>, socket: &PyObject, address: &PyObject) -> PyResult<()> {
-    sendto_byte(py, socket, address)?;
-    recvfrom_byte(py, socket)?;
+fn sync_with_epi<'py>(socket: &Bound<'py, PyAny>, address: &Bound<'py, PyAny>) -> PyResult<()> {
+    sendto_byte(socket, address)?;
+    recvfrom_byte(socket)?;
     Ok(())
 }
 
@@ -100,11 +100,11 @@ fn env_step<'py>(
     render=false,
     render_delay_option=None,
     recalculate_agent_id_every_step=false))]
-pub fn env_process(
+pub fn env_process<'py>(
     proc_id: &str,
-    child_end: PyObject,
-    parent_sockname: PyObject,
-    build_env_fn: PyObject,
+    child_end: Bound<'py, PyAny>,
+    parent_sockname: Bound<'py, PyAny>,
+    build_env_fn: Bound<'py, PyAny>,
     flinks_folder: &str,
     shm_buffer_size: usize,
     agent_id_serde: Box<dyn PyAnySerde>,
@@ -115,7 +115,7 @@ pub fn env_process(
     action_space_serde: Box<dyn PyAnySerde>,
     state_serde_option: DynPyAnySerdeOption,
     state_metrics_serde_option: DynPyAnySerdeOption,
-    collect_state_metrics_fn_option: Option<PyObject>,
+    collect_state_metrics_fn_option: Option<Bound<'py, PyAny>>,
     send_state_to_agent_controllers: bool,
     render: bool,
     render_delay_option: Option<Duration>,
@@ -157,7 +157,7 @@ pub fn env_process(
 
     Python::with_gil::<_, PyResult<()>>(|py| {
         // Initial setup
-        let env = build_env_fn.call0(py)?.into_bound(py);
+        let env = build_env_fn.call0()?;
         let mut game_speed_fn: Box<dyn Fn() -> PyResult<f64>> = Box::new(|| Ok(1.0));
         let mut game_paused_fn: Box<dyn Fn() -> PyResult<bool>> = Box::new(|| Ok(false));
         if render {
@@ -171,7 +171,7 @@ pub fn env_process(
         let collect_state_metrics_fn_option = collect_state_metrics_fn_option.as_ref();
 
         // Startup complete
-        sync_with_epi(py, &child_end, &parent_sockname)?;
+        sync_with_epi(&child_end, &parent_sockname)?;
 
         let reset_obs = env_reset(&env)?;
         let should_collect_state_metrics = !collect_state_metrics_fn_option.is_none();
@@ -202,7 +202,7 @@ pub fn env_process(
                 .unwrap()
                 .append(shm_slice, offset, &env_state(&env)?)?;
         }
-        sendto_byte(py, &child_end, &parent_sockname)?;
+        sendto_byte(&child_end, &parent_sockname)?;
 
         // Start main loop
         let mut has_received_env_action = false;
@@ -332,15 +332,14 @@ pub fn env_process(
                     if should_collect_state_metrics {
                         let state_metrics = collect_state_metrics_fn_option
                             .unwrap()
-                            .call1(py, (env_state(&env)?, env_shared_info(&env)?))?
-                            .into_bound(py);
+                            .call1((env_state(&env)?, env_shared_info(&env)?))?;
                         _ = state_metrics_serde_option.unwrap().append(
                             shm_slice,
                             offset,
                             &state_metrics,
                         )?;
                     }
-                    sendto_byte(py, &child_end, &parent_sockname)?;
+                    sendto_byte(&child_end, &parent_sockname)?;
 
                     // Render
                     if render {
@@ -371,7 +370,7 @@ pub fn env_process(
                     offset = 0;
                     offset = obs_space_serde.append(shm_slice, offset, &obs_space)?;
                     action_space_serde.append(shm_slice, offset, &action_space)?;
-                    sendto_byte(py, &child_end, &parent_sockname)?;
+                    sendto_byte(&child_end, &parent_sockname)?;
                 }
                 Header::Stop => {
                     break;
