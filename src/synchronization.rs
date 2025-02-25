@@ -22,28 +22,20 @@ impl Display for Header {
 }
 
 #[pyfunction]
-pub fn recvfrom_byte_py(socket: PyObject) -> PyResult<PyObject> {
-    Python::with_gil(|py| recvfrom_byte(py, &socket))
-}
-
-pub fn recvfrom_byte<'py>(py: Python<'py>, socket: &PyObject) -> PyResult<PyObject> {
+pub fn recvfrom_byte<'py>(socket: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
     static INTERNED_INT_1: GILOnceCell<PyObject> = GILOnceCell::new();
+    let py = socket.py();
     socket.call_method1(
-        py,
         intern!(py, "recvfrom"),
         (INTERNED_INT_1.get_or_init(py, || 1_i64.into_py_any(py).unwrap()),),
     )
 }
 
 #[pyfunction]
-pub fn sendto_byte_py(socket: PyObject, address: PyObject) -> PyResult<()> {
-    Python::with_gil(|py| sendto_byte(py, &socket, &address))
-}
-
-pub fn sendto_byte<'py>(py: Python<'py>, socket: &PyObject, address: &PyObject) -> PyResult<()> {
+pub fn sendto_byte<'py>(socket: &Bound<'py, PyAny>, address: &Bound<'py, PyAny>) -> PyResult<()> {
     static INTERNED_BYTES_0: GILOnceCell<PyObject> = GILOnceCell::new();
+    let py = socket.py();
     socket.call_method1(
-        py,
         intern!(py, "sendto"),
         (
             INTERNED_BYTES_0

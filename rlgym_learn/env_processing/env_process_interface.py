@@ -26,7 +26,7 @@ from ..experience import Timestep
 from ..learning_coordinator_config import SerdeTypesModel
 from ..rlgym_learn import EnvAction
 from ..rlgym_learn import EnvProcessInterface as RustEnvProcessInterface
-from ..rlgym_learn import PickleablePyAnySerdeType, recvfrom_byte_py, sendto_byte_py
+from ..rlgym_learn import PickleablePyAnySerdeType, recvfrom_byte, sendto_byte
 from .env_process import PickleableSerdeTypeConfig, env_process
 
 try:
@@ -190,8 +190,8 @@ class EnvProcessInterface(
             process, parent_end, _, proc_id = self.processes[pid_idx]
 
             # Get child endpoint
-            _, child_sockname = recvfrom_byte_py(parent_end)
-            sendto_byte_py(parent_end, child_sockname)
+            _, child_sockname = recvfrom_byte(parent_end)
+            sendto_byte(parent_end, child_sockname)
 
             if spawn_delay is not None:
                 time.sleep(spawn_delay)
@@ -246,8 +246,8 @@ class EnvProcessInterface(
         )
 
         process.start()
-        _, child_sockname = recvfrom_byte_py(parent_end)
-        sendto_byte_py(parent_end, child_sockname)
+        _, child_sockname = recvfrom_byte(parent_end)
+        sendto_byte(parent_end, child_sockname)
 
         self.processes.append(
             (

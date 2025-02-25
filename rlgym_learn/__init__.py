@@ -20,4 +20,4 @@ from .rlgym_learn import (
     PyAnySerdeType,
 )
 from .rlgym_learn import env_process as rust_env_process
-from .rlgym_learn import recvfrom_byte_py, sendto_byte_py
+from .rlgym_learn import recvfrom_byte, sendto_byte

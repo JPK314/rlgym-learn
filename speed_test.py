@@ -193,9 +193,9 @@ if __name__ == "__main__":
             standardize_returns=True
         ),
     )
-    wandb_config = WandbMetricsLoggerConfigModel(
-        group="rlgym-learn-testing", resume=True
-    )
+    # wandb_config = WandbMetricsLoggerConfigModel(
+    #     group="rlgym-learn-testing", resume=True
+    # )
     ppo_agent_controller_config = PPOAgentControllerConfigModel(
         timesteps_per_iteration=50_000,
         save_every_ts=600_000,
@@ -207,7 +207,7 @@ if __name__ == "__main__":
         log_to_wandb=False,
         learner_config=learner_config,
         experience_buffer_config=experience_buffer_config,
-        metrics_logger_config=wandb_config,
+        # metrics_logger_config=wandb_config,
     )
 
     generate_config(
@@ -243,7 +243,8 @@ if __name__ == "__main__":
             actor_factory,
             critic_factory,
             NumpyExperienceBuffer(GAETrajectoryProcessor()),
-            metrics_logger=WandbMetricsLogger(PPOMetricsLogger()),
+            # metrics_logger=WandbMetricsLogger(PPOMetricsLogger()),
+            metrics_logger=PPOMetricsLogger(),
         )
     }
 
