@@ -126,6 +126,8 @@ if __name__ == "__main__":
         LearningCoordinatorConfigModel,
         ProcessConfigModel,
         generate_config,
+        SerdeTypesModel,
+        PyAnySerdeType
     )
     from rlgym_learn.standard_impl import (
         WandbMetricsLogger,
@@ -144,6 +146,21 @@ if __name__ == "__main__":
     # Create the config that will be used for the run
     config = LearningCoordinatorConfigModel(
         base_config=BaseConfigModel(
+            serde_types=SerdeTypesModel(
+                agent_id_serde_type=PyAnySerdeType.STRING(),
+                action_serde_type=PyAnySerdeType.NUMPY(np.int64),
+                obs_serde_type=PyAnySerdeType.NUMPY(np.float64),
+                reward_serde_type=PyAnySerdeType.FLOAT(),
+                obs_space_serde_type=PyAnySerdeType.TUPLE(
+                    (PyAnySerdeType.STRING(), PyAnySerdeType.INT())
+                ),
+                action_space_serde_type=PyAnySerdeType.TUPLE(
+                    (PyAnySerdeType.STRING(), PyAnySerdeType.INT())
+                ),
+                state_metrics_serde_type=PyAnySerdeType.LIST(
+                    PyAnySerdeType.NUMPY(np.float64)
+                ),
+            ),
             timestep_limit=1_000_000_000,  # Train for 1B steps
         ),
         process_config=ProcessConfigModel(
@@ -187,7 +204,6 @@ if __name__ == "__main__":
                 obs_standardizer=None,
             )
         },
-        state_metrics_serde=None,
         collect_state_metrics_fn=None,
         config_location="config.json",
     )
