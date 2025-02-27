@@ -4,7 +4,6 @@ use numpy::ndarray::Array1;
 use numpy::PyArrayDescr;
 use numpy::ToPyArray;
 use paste::paste;
-use pyany_serde::common::get_numpy_dtype;
 use pyany_serde::common::NumpyDtype;
 use pyo3::exceptions::PyNotImplementedError;
 use pyo3::exceptions::PyRuntimeError;
@@ -167,7 +166,7 @@ impl GAETrajectoryProcessor {
         Python::with_gil(|py| {
             self.gamma = Some(config.gamma.clone_ref(py));
             self.lambda = Some(config.lambda.clone_ref(py));
-            self.dtype = Some(get_numpy_dtype(config.dtype.clone_ref(py))?);
+            self.dtype = Some(config.dtype.extract::<NumpyDtype>(py)?);
             self.batch_reward_type_numpy_converter.call_method1(
                 py,
                 intern!(py, "set_dtype"),
