@@ -2,7 +2,7 @@ from abc import abstractmethod
 from dataclasses import dataclass
 from typing import Any, Dict, Generic, List, Optional, TypeVar
 
-from rlgym_learn.api import AgentControllerData, StateMetrics
+from rlgym_learn.api import AgentControllerData
 
 MetricsLoggerConfig = TypeVar("MetricsLoggerConfig")
 MetricsLoggerAdditionalDerivedConfig = TypeVar("MetricsLoggerAdditionalDerivedConfig")
@@ -23,7 +23,6 @@ class MetricsLogger(
     Generic[
         MetricsLoggerConfig,
         MetricsLoggerAdditionalDerivedConfig,
-        StateMetrics,
         AgentControllerData,
     ]
 ):
@@ -39,9 +38,9 @@ class MetricsLogger(
     AgentControllerData is the type used for collection of data from the agent controller containing this metrics logger.
     """
 
-    def collect_state_metrics(self, data: List[StateMetrics]):
+    def collect_env_metrics(self, data: List[Dict[str, Any]]):
         """
-        This method is intended to allow batch processing of StateMetrics instances. The result of processing should be stored and used the next time report_metrics is called.
+        This method is intended to allow batch processing of env metrics using the shared info deserialized from the env processes. The result of processing should be stored and used the next time report_metrics is called.
         There is no guarantee that this method will only be called once between each report_metrics call.
         """
         pass

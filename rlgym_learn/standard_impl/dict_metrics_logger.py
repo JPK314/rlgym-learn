@@ -1,8 +1,7 @@
 from abc import abstractmethod
-from dataclasses import dataclass
-from typing import Any, Dict, Generic, List, Optional, TypeVar
+from typing import Any, Dict, Generic, List
 
-from rlgym_learn.api import AgentControllerData, StateMetrics
+from rlgym_learn.api import AgentControllerData
 
 from .metrics_logger import (
     DerivedMetricsLoggerConfig,
@@ -35,7 +34,6 @@ class DictMetricsLogger(
     Generic[
         MetricsLoggerConfig,
         MetricsLoggerAdditionalDerivedConfig,
-        StateMetrics,
         AgentControllerData,
     ]
 ):
@@ -43,7 +41,7 @@ class DictMetricsLogger(
     This is a specification of the MetricsLogger which provides an additional method get_metrics to retrieve the metrics as a dictionary.
     """
 
-    def collect_state_metrics(self, data: List[StateMetrics]):
+    def collect_env_metrics(self, data: List[Dict[str, Any]]):
         pass
 
     def collect_agent_metrics(self, data: AgentControllerData):

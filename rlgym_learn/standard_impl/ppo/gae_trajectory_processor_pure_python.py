@@ -47,8 +47,8 @@ class GAETrajectoryProcessorPurePython(
         return_std = (
             self.return_stats.std.squeeze() if self.standardize_returns else None
         )
-        gamma = np.array(self.gamma, dtype=self.numpy_dtype)
-        lmbda = np.array(self.lmbda, dtype=self.numpy_dtype)
+        gamma = np.array(self.gamma, dtype=self.dtype)
+        lmbda = np.array(self.lmbda, dtype=self.dtype)
         exp_len = 0
         agent_ids: List[AgentID] = []
         observations: List[ObsType] = []
@@ -58,16 +58,16 @@ class GAETrajectoryProcessorPurePython(
         values_list: List[torch.Tensor] = []
         advantages_list: List[torch.Tensor] = []
         returns_list: List[torch.Tensor] = []
-        reward_sum = np.array(0, dtype=self.numpy_dtype)
+        reward_sum = np.array(0, dtype=self.dtype)
         for trajectory in trajectories:
-            cur_return = np.array(0, dtype=self.numpy_dtype)
+            cur_return = np.array(0, dtype=self.dtype)
             next_val_pred = (
                 trajectory.final_val_pred.squeeze().cpu().numpy()
                 if trajectory.truncated
-                else np.array(0, dtype=self.numpy_dtype)
+                else np.array(0, dtype=self.dtype)
             )
 
-            cur_advantages = np.array(0, dtype=self.numpy_dtype)
+            cur_advantages = np.array(0, dtype=self.dtype)
             reward_array = self.batch_reward_type_numpy_converter.as_numpy(
                 trajectory.reward_list
             )
@@ -117,7 +117,7 @@ class GAETrajectoryProcessorPurePython(
         else:
             avg_return = np.nan
             return_std = np.nan
-        avg_reward = reward_sum / exp_len
+        avg_reward = reward_sum[0] / exp_len
         trajectory_processor_data = GAETrajectoryProcessorData(
             average_undiscounted_episodic_return=avg_reward,
             average_return=avg_return,
@@ -146,7 +146,7 @@ class GAETrajectoryProcessorPurePython(
         self.max_returns_per_stats_increment = (
             config.trajectory_processor_config.max_returns_per_stats_increment
         )
-        self.dtype = config.dtype
+        self.dtype = np.dtype(config.dtype)
         self.device = config.device
         self.checkpoint_load_folder = config.checkpoint_load_folder
         if self.checkpoint_load_folder is not None:

@@ -26,7 +26,7 @@ pub fn tensor_slice_1d<'py>(
     Ok(tensor.call_method1(intern!(py, "narrow"), (0, start, stop - start))?)
 }
 
-pub fn torch_cat<'py>(py: Python<'py>, obj: &[&PyObject]) -> PyResult<Bound<'py, PyAny>> {
+pub fn torch_cat<'py>(py: Python<'py>, obj: &[Bound<'py, PyAny>]) -> PyResult<Bound<'py, PyAny>> {
     static INTERNED_CAT: GILOnceCell<PyObject> = GILOnceCell::new();
     Ok(INTERNED_CAT
         .get_or_try_init::<_, PyErr>(py, || Ok(py.import("torch")?.getattr("cat")?.unbind()))?

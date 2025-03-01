@@ -87,7 +87,6 @@ class EnvProcessInterface(
         StateType,
         ObsSpaceType,
         ActionSpaceType,
-        StateMetrics,
         ActionAssociatedLearningData,
     ]
 ):
@@ -99,13 +98,10 @@ class EnvProcessInterface(
         reward_serde: PyAnySerdeType[RewardType],
         obs_space_serde: PyAnySerdeType[ObsSpaceType],
         action_space_serde: PyAnySerdeType[ActionSpaceType],
-        state_serde_option: Optional[PyAnySerdeType[StateType]],
-        state_metrics_serde_option: Optional[PyAnySerdeType[StateMetrics]],
+        shared_info_serde_option: Optional[PyAnySerdeType[Dict[str, Any]]],
         recalculate_agent_id_every_step: bool,
         flinks_folder_option: str,
         min_process_steps_per_inference: int,
-        send_state_to_agent_controllers: bool,
-        should_collect_state_metrics: bool,
     ) -> EnvProcessInterface: ...
     def init_processes(
         self, proc_package_defs: List[Process, socket, _RetAddress, str]
@@ -153,10 +149,8 @@ class AgentManager(
         ObsType,
         ActionType,
         RewardType,
-        StateType,
         ObsSpaceType,
         ActionSpaceType,
-        StateMetrics,
         ActionAssociatedLearningData,
     ]
 ):
@@ -169,10 +163,8 @@ class AgentManager(
                 ObsType,
                 ActionType,
                 RewardType,
-                StateType,
                 ObsSpaceType,
                 ActionSpaceType,
-                StateMetrics,
                 ActionAssociatedLearningData,
                 Any,
             ],
@@ -183,13 +175,15 @@ class AgentManager(
         self, env_obs_data_dict: Dict[str, Tuple[List[AgentID], List[ObsType]]]
     ) -> Dict[str, EnvAction]: ...
 
-class GAETrajectoryProcessor:
+class GAETrajectoryProcessor(Generic[AgentID, ObsType, ActionType, RewardType]):
     def __new__(
         cls, batch_reward_type_numpy_converter: BatchRewardTypeNumpyConverter
     ) -> GAETrajectoryProcessor: ...
     def load(self, config: DerivedGAETrajectoryProcessorConfig): ...
     def process_trajectories(
-        self, trajectories: List[Trajectory], return_std: ndarray
+        self,
+        trajectories: List[Trajectory[AgentID, ObsType, ActionType, RewardType]],
+        return_std: ndarray,
     ) -> Tuple[
         List[AgentID],
         List[ObsType],
@@ -198,7 +192,7 @@ class GAETrajectoryProcessor:
         Tensor,
         ndarray,
         ndarray,
-        ndarray,
+        float,
     ]: ...
 
 def env_process(
@@ -226,12 +220,7 @@ def env_process(
     reward_serde: PyAnySerdeType[RewardType],
     obs_space_serde: PyAnySerdeType[ObsSpaceType],
     action_space_serde: PyAnySerdeType[ActionSpaceType],
-    state_serde_option: Optional[PyAnySerdeType[StateType]],
-    state_metrics_serde_option: Optional[PyAnySerdeType[StateMetrics]],
-    collect_state_metrics_fn_option: Optional[
-        Callable[[StateType, Dict[AgentID, RewardType]], StateMetrics]
-    ],
-    send_state_to_agent_controllers: bool,
+    shared_info_serde_option: Optional[PyAnySerdeType[Dict[str, Any]]],
     render: bool,
     render_delay_option: Optional[timedelta],
     recalculate_agent_id_every_step: bool,

@@ -3,5 +3,4 @@ from .typing import (
     ActionAssociatedLearningData,
     AgentControllerConfig,
     AgentControllerData,
-    StateMetrics,
 )

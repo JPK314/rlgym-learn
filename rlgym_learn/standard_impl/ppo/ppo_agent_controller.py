@@ -24,7 +24,6 @@ from torch import device as _device
 
 from rlgym_learn import EnvActionResponse, EnvActionResponseType
 from rlgym_learn.api.agent_controller import AgentController
-from rlgym_learn.api.typing import StateMetrics
 from rlgym_learn.experience.timestep import Timestep
 from rlgym_learn.standard_impl import (
     DerivedMetricsLoggerConfig,
@@ -58,7 +57,7 @@ EXPERIENCE_BUFFER_FOLDER = "experience_buffer"
 PPO_LEARNER_FOLDER = "ppo_learner"
 METRICS_LOGGER_FOLDER = "metrics_logger"
 PPO_AGENT_FILE = "ppo_agent.json"
-ITERATION_STATE_METRICS_FILE = "iteration_state_metrics.pkl"
+ITERATION_SHARED_INFOS_FILE = "iteration_shared_infos.pkl"
 CURRENT_TRAJECTORIES_FILE = "current_trajectories.pkl"
 
 
@@ -112,7 +111,6 @@ class PPOAgentController(
         StateType,
         ObsSpaceType,
         ActionSpaceType,
-        StateMetrics,
         torch.Tensor,
         PPOAgentControllerData[TrajectoryProcessorData],
     ],
@@ -126,7 +124,6 @@ class PPOAgentController(
         StateType,
         ObsSpaceType,
         ActionSpaceType,
-        StateMetrics,
         TrajectoryProcessorData,
     ],
 ):
@@ -149,7 +146,6 @@ class PPOAgentController(
             MetricsLogger[
                 MetricsLoggerConfig,
                 MetricsLoggerAdditionalDerivedConfig,
-                StateMetrics,
                 PPOAgentControllerData[TrajectoryProcessorData],
             ]
         ] = None,
@@ -175,7 +171,7 @@ class PPOAgentController(
         self.current_trajectories: List[
             Trajectory[AgentID, ActionType, ObsType, RewardType]
         ] = []
-        self.iteration_state_metrics: List[StateMetrics] = []
+        self.iteration_shared_infos: List[Dict[str, Any]] = []
         self.cur_iteration = 0
         self.iteration_timesteps = 0
         self.cumulative_timesteps = 0
@@ -332,11 +328,11 @@ class PPOAgentController(
         with open(
             os.path.join(
                 self.config.agent_controller_config.checkpoint_load_folder,
-                ITERATION_STATE_METRICS_FILE,
+                ITERATION_SHARED_INFOS_FILE,
             ),
             "rb",
         ) as f:
-            iteration_state_metrics: List[StateMetrics] = pickle.load(f)
+            iteration_shared_infos: List[Dict[str, Any]] = pickle.load(f)
         with open(
             os.path.join(
                 self.config.agent_controller_config.checkpoint_load_folder,
@@ -347,7 +343,7 @@ class PPOAgentController(
             state = json.load(f)
 
         self.current_trajectories = current_trajectories
-        self.iteration_state_metrics = iteration_state_metrics
+        self.iteration_shared_infos = iteration_shared_infos
         self.cur_iteration = state["cur_iteration"]
         self.iteration_timesteps = state["iteration_timesteps"]
         self.cumulative_timesteps = state["cumulative_timesteps"]
@@ -378,10 +374,10 @@ class PPOAgentController(
         ) as f:
             pickle.dump(self.current_trajectories, f)
         with open(
-            os.path.join(checkpoint_save_folder, ITERATION_STATE_METRICS_FILE),
+            os.path.join(checkpoint_save_folder, ITERATION_SHARED_INFOS_FILE),
             "wb",
         ) as f:
-            pickle.dump(self.iteration_state_metrics, f)
+            pickle.dump(self.iteration_shared_infos, f)
         with open(os.path.join(checkpoint_save_folder, PPO_AGENT_FILE), "wt") as f:
             state = {
                 "cur_iteration": self.cur_iteration,
@@ -439,12 +435,11 @@ class PPOAgentController(
 
     def process_timestep_data(self, timestep_data):
         timesteps_added = 0
-        state_metrics: List[StateMetrics] = []
+        shared_infos: List[Dict[str, Any]] = []
         for env_id, (
             env_timesteps,
             env_log_probs,
-            env_state_metrics,
-            _,
+            env_shared_info,
         ) in timestep_data.items():
             if self.obs_standardizer is not None:
                 self.standardize_timestep_observations(env_timesteps)
@@ -457,10 +452,10 @@ class PPOAgentController(
                 timesteps_added += self.current_env_trajectories[env_id].add_steps(
                     env_timesteps, env_log_probs
                 )
-            state_metrics.append(env_state_metrics)
+            shared_infos.append(env_shared_info)
         self.iteration_timesteps += timesteps_added
         self.cumulative_timesteps += timesteps_added
-        self.iteration_state_metrics += state_metrics
+        self.iteration_shared_infos += shared_infos
         if (
             self.iteration_timesteps
             >= self.config.agent_controller_config.timesteps_per_iteration
@@ -525,10 +520,10 @@ class PPOAgentController(
                     - self.timestep_collection_start_time,
                 )
             )
-            self.metrics_logger.collect_state_metrics(self.iteration_state_metrics)
+            self.metrics_logger.collect_env_metrics(self.iteration_shared_infos)
             self.metrics_logger.report_metrics()
 
-        self.iteration_state_metrics = []
+        self.iteration_shared_infos = []
         self.current_env_trajectories.clear()
         self.current_trajectories.clear()
         self.ts_since_last_save += self.iteration_timesteps

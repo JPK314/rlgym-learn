@@ -1,5 +1,4 @@
 use core::slice;
-use numpy::ndarray::Array0;
 use numpy::ndarray::Array1;
 use numpy::PyArrayDescr;
 use numpy::ToPyArray;
@@ -9,7 +8,6 @@ use pyo3::exceptions::PyNotImplementedError;
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::intern;
 use pyo3::prelude::*;
-use pyo3::IntoPyObjectExt;
 use pyo3::PyObject;
 
 use super::trajectory::Trajectory;
@@ -39,24 +37,24 @@ macro_rules! define_process_trajectories {
         paste! {
             fn [<process_trajectories_ $dtype>]<'py>(
                 py: Python<'py>,
-                mut trajectories: Vec<Trajectory>,
-                batch_reward_type_numpy_converter: PyObject,
-                return_std: PyObject,
-                gamma: &PyObject,
-                lambda: &PyObject,
+                trajectories: Vec<Trajectory<'py>>,
+                batch_reward_type_numpy_converter: &Bound<'py, PyAny>,
+                return_std: Bound<'py, PyAny>,
+                gamma: &Bound<'py, PyAny>,
+                lambda: &Bound<'py, PyAny>,
             ) -> PyResult<(
-                Vec<PyObject>,
-                PyObject,
-                PyObject,
-                PyObject,
-                PyObject,
-                PyObject,
-                PyObject,
-                PyObject,
+                Vec<Bound<'py, PyAny>>,
+                Bound<'py, PyAny>,
+                Bound<'py, PyAny>,
+                Bound<'py, PyAny>,
+                Bound<'py, PyAny>,
+                Bound<'py, PyAny>,
+                Bound<'py, PyAny>,
+                Bound<'py, PyAny>,
             )> {
-                let return_std = return_std.extract::<$dtype>(py)?;
-                let gamma = gamma.extract::<$dtype>(py)?;
-                let lambda = lambda.extract::<$dtype>(py)?;
+                let return_std = return_std.extract::<$dtype>()?;
+                let gamma = gamma.extract::<$dtype>()?;
+                let lambda = lambda.extract::<$dtype>()?;
                 let batch_reward_type_numpy_converter = batch_reward_type_numpy_converter.into_pyobject(py)?;
                 let total_experience = trajectories
                     .iter()
@@ -70,32 +68,32 @@ macro_rules! define_process_trajectories {
                 let mut advantage_list = Vec::with_capacity(total_experience);
                 let mut return_list = Vec::with_capacity(total_experience);
                 let mut reward_sum = 0 as $dtype;
-                for trajectory in trajectories.iter_mut() {
+                for trajectory in trajectories.into_iter() {
                     let mut cur_return = 0 as $dtype;
-                    let mut next_val_pred = trajectory.final_val_pred.extract::<$dtype>(py)?;
+                    let mut next_val_pred = trajectory.final_val_pred.extract::<$dtype>()?;
                     let mut cur_advantage = 0 as $dtype;
                     let timesteps_rewards = batch_reward_type_numpy_converter
                         .call_method1(intern!(py, "as_numpy"), (&trajectory.reward_list,))?
                         .extract::<Vec<$dtype>>()?;
-                    log_probs_list.push(&trajectory.log_probs);
-                    values_list.push(&trajectory.val_preds);
+                    log_probs_list.push(trajectory.log_probs);
+                    values_list.push(trajectory.val_preds.clone());
                     let value_preds = unsafe {
                         let ptr = trajectory
                             .val_preds
-                            .call_method0(py, intern!(py, "data_ptr"))?
-                            .extract::<usize>(py)? as *const $dtype;
+                            .call_method0(intern!(py, "data_ptr"))?
+                            .extract::<usize>()? as *const $dtype;
                         let mem = slice::from_raw_parts(
                             ptr,
                             trajectory
                                 .val_preds
-                                .call_method0(py, intern!(py, "numel"))?
-                                .extract::<usize>(py)?,
+                                .call_method0(intern!(py, "numel"))?
+                                .extract::<usize>()?,
                         );
                         mem
                     };
                     for (obs, action, reward, &val_pred) in itertools::izip!(
-                        &trajectory.obs_list,
-                        &trajectory.action_list,
+                        trajectory.obs_list,
+                        trajectory.action_list,
                         timesteps_rewards,
                         value_preds
                     ).rev()
@@ -111,7 +109,7 @@ macro_rules! define_process_trajectories {
                         next_val_pred = val_pred;
                         cur_advantage = delta + gamma * lambda * cur_advantage;
                         cur_return = reward + gamma * cur_return;
-                        agent_id_list.push(trajectory.agent_id.clone_ref(py));
+                        agent_id_list.push(trajectory.agent_id.clone());
                         observation_list.push(obs);
                         action_list.push(action);
                         advantage_list.push(cur_advantage);
@@ -120,19 +118,17 @@ macro_rules! define_process_trajectories {
                 }
                 Ok((
                     agent_id_list,
-                    observation_list.into_py_any(py)?,
-                    action_list.into_py_any(py)?,
-                    torch_cat(py, &log_probs_list[..])?.unbind(),
-                    torch_cat(py, &values_list[..])?.unbind(),
+                    observation_list.into_pyobject(py)?,
+                    action_list.into_pyobject(py)?,
+                    torch_cat(py, &log_probs_list[..])?,
+                    torch_cat(py, &values_list[..])?,
                     Array1::from_vec(advantage_list)
                         .to_pyarray(py)
-                        .into_any()
-                        .unbind(),
+                        .into_any(),
                     Array1::from_vec(return_list)
                         .to_pyarray(py)
-                        .into_any()
-                        .unbind(),
-                    Array0::from_elem((), reward_sum / (total_experience as $dtype)).to_pyarray(py).into_any().unbind(),
+                        .into_any(),
+                    (reward_sum / (total_experience as $dtype)).into_pyobject(py)?.into_any(),
                 ))
             }
         }
@@ -176,31 +172,34 @@ impl GAETrajectoryProcessor {
         })
     }
 
-    pub fn process_trajectories(
+    pub fn process_trajectories<'py>(
         &self,
-        trajectories: Vec<Trajectory>,
-        return_std: PyObject,
+        py: Python<'py>,
+        trajectories: Vec<Trajectory<'py>>,
+        return_std: Bound<'py, PyAny>,
     ) -> PyResult<(
-        Vec<PyObject>,
-        PyObject,
-        PyObject,
-        PyObject,
-        PyObject,
-        PyObject,
-        PyObject,
-        PyObject,
+        Vec<Bound<'py, PyAny>>,
+        Bound<'py, PyAny>,
+        Bound<'py, PyAny>,
+        Bound<'py, PyAny>,
+        Bound<'py, PyAny>,
+        Bound<'py, PyAny>,
+        Bound<'py, PyAny>,
+        Bound<'py, PyAny>,
     )> {
         let gamma = self
             .gamma
             .as_ref()
-            .ok_or_else(|| PyRuntimeError::new_err("process_trajectories called before load"))?;
-        let lambda = self.lambda.as_ref().unwrap();
+            .ok_or_else(|| PyRuntimeError::new_err("process_trajectories called before load"))?
+            .bind(py);
+        let lambda = self.lambda.as_ref().unwrap().bind(py);
         let dtype = self.dtype.as_ref().unwrap();
-        Python::with_gil(|py| match dtype {
+        let batch_reward_type_numpy_converter = self.batch_reward_type_numpy_converter.bind(py);
+        match dtype {
             NumpyDtype::FLOAT32 => process_trajectories_f32(
                 py,
                 trajectories,
-                self.batch_reward_type_numpy_converter.clone_ref(py),
+                batch_reward_type_numpy_converter,
                 return_std,
                 gamma,
                 lambda,
@@ -209,7 +208,7 @@ impl GAETrajectoryProcessor {
             NumpyDtype::FLOAT64 => process_trajectories_f64(
                 py,
                 trajectories,
-                self.batch_reward_type_numpy_converter.clone_ref(py),
+                batch_reward_type_numpy_converter,
                 return_std,
                 gamma,
                 lambda,
@@ -218,6 +217,6 @@ impl GAETrajectoryProcessor {
                 "GAE Trajectory Processor not implemented for dtype {:?}",
                 v
             ))),
-        })
+        }
     }
 }

@@ -20,7 +20,6 @@ from rlgym.api import (
     StateType,
 )
 
-from ..api import StateMetrics
 from ..rlgym_learn import PickleablePyAnySerdeType
 from ..rlgym_learn import env_process as rust_env_process
 from ..rlgym_learn import recvfrom_byte, sendto_byte
@@ -34,8 +33,8 @@ class PickleableSerdeTypeConfig:
     reward_serde_type: PickleablePyAnySerdeType
     obs_space_serde_type: PickleablePyAnySerdeType
     action_space_serde_type: PickleablePyAnySerdeType
-    state_serde_type: PickleablePyAnySerdeType
-    state_metrics_serde_type: PickleablePyAnySerdeType
+    shared_info_serde_type: Optional[PickleablePyAnySerdeType]
+    state_serde_type: Optional[PickleablePyAnySerdeType]
 
 
 def env_process(
@@ -55,10 +54,6 @@ def env_process(
         ],
     ],
     serde_type_config: PickleableSerdeTypeConfig,
-    collect_state_metrics_fn: Optional[
-        Callable[[StateType, Dict[AgentID, RewardType]], StateMetrics]
-    ],
-    send_state_to_agent_controllers: bool,
     flinks_folder: str,
     shm_buffer_size: int,
     seed: int,
@@ -88,10 +83,8 @@ def env_process(
         serde_type_config.reward_serde_type,
         serde_type_config.obs_space_serde_type,
         serde_type_config.action_space_serde_type,
+        serde_type_config.shared_info_serde_type,
         serde_type_config.state_serde_type,
-        serde_type_config.state_metrics_serde_type,
-        collect_state_metrics_fn,
-        send_state_to_agent_controllers,
         render_this_proc,
         timedelta(seconds=render_delay),
         recalculate_agent_id_every_step,

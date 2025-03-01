@@ -18,7 +18,6 @@ from .typing import (
     ActionAssociatedLearningData,
     AgentControllerConfig,
     AgentControllerData,
-    StateMetrics,
 )
 
 
@@ -41,7 +40,6 @@ class AgentController(
         StateType,
         ObsSpaceType,
         ActionSpaceType,
-        StateMetrics,
         ActionAssociatedLearningData,
         AgentControllerData,
     ]
@@ -81,8 +79,7 @@ class AgentController(
             Tuple[
                 List[Timestep],
                 Optional[ActionAssociatedLearningData],
-                Optional[StateMetrics],
-                Optional[StateType],
+                Optional[Dict[str, Any]],
             ],
         ],
     ):
@@ -107,7 +104,7 @@ class AgentController(
         state_info: Dict[
             str,
             Tuple[
-                Optional[StateType],
+                Optional[Dict[str, Any]],
                 Optional[Dict[AgentID, bool]],
                 Optional[Dict[AgentID, bool]],
             ],

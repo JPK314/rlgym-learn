@@ -61,21 +61,6 @@ class VelocityPlayerToBallReward(RewardFunction[AgentID, GameState, float]):
         return np.dot(car_to_ball, car.linear_velocity) / CAR_MAX_SPEED
 
 
-def collect_state_metrics_fn(state: GameState, rew_dict: Dict[str, float]):
-    tot_cars = 0
-    lin_vel_sum = np.zeros(3)
-    ang_vel_sum = np.zeros(3)
-    for car_data in state.cars.values():
-        lin_vel_sum += car_data.physics.linear_velocity
-        ang_vel_sum += car_data.physics.angular_velocity
-        tot_cars += 1
-
-    return (
-        lin_vel_sum / tot_cars,
-        ang_vel_sum / tot_cars,
-    )
-
-
 def env_create_function():
     import numpy as np
     from rlgym.api import RLGym
@@ -165,7 +150,6 @@ if __name__ == "__main__":
         PPOMetricsLogger,
     )
     from rlgym_learn.standard_impl.rocket_league import game_state_serde
-    from rlgym_learn.util import reporting
 
     def actor_factory(
         obs_space: Tuple[str, int], action_space: Tuple[str, int], device: str
@@ -251,7 +235,6 @@ if __name__ == "__main__":
     coordinator = LearningCoordinator(
         env_create_function=env_create_function,
         agent_controllers=agent_controllers,
-        collect_state_metrics_fn=None,
         config_location="config.json",
     )
     coordinator.start()

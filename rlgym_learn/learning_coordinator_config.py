@@ -30,8 +30,8 @@ class SerdeTypesModel(BaseModel):
     reward_serde_type: PyAnySerdeType
     obs_space_serde_type: PyAnySerdeType
     action_space_serde_type: PyAnySerdeType
+    shared_info_serde_type: Optional[PyAnySerdeType] = None
     state_serde_type: Optional[PyAnySerdeType] = None
-    state_metrics_serde_type: Optional[PyAnySerdeType] = None
 
     class Config:
         json_encoders = {PyAnySerdeType: lambda x: x.to_json()}
@@ -45,7 +45,6 @@ class BaseConfigModel(BaseModel):
     flinks_folder: str = "shmem_flinks"
     timestep_limit: int = 5_000_000_000
     batched_tensor_action_associated_learning_data: bool = True
-    send_state_to_agent_controllers: bool = False
 
 
 class LearningCoordinatorConfigModel(BaseModel):

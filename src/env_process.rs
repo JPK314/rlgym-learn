@@ -1,7 +1,6 @@
 use pyany_serde::communication::{append_bool, append_usize};
 use pyany_serde::{DynPyAnySerdeOption, PyAnySerde};
 use pyo3::exceptions::asyncio::InvalidStateError;
-use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyTuple};
 use pyo3::{intern, PyAny, Python};
@@ -38,10 +37,6 @@ fn env_set_state<'py>(
 fn env_render<'py>(env: &'py Bound<'py, PyAny>) -> PyResult<()> {
     env.call_method0(intern!(env.py(), "render"))?;
     Ok(())
-}
-
-fn env_state<'py>(env: &'py Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
-    env.getattr(intern!(env.py(), "state"))
 }
 
 fn env_shared_info<'py>(env: &'py Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
@@ -93,10 +88,8 @@ fn env_step<'py>(
     reward_serde,
     obs_space_serde,
     action_space_serde,
+    shared_info_serde_option,
     state_serde_option,
-    state_metrics_serde_option,
-    collect_state_metrics_fn_option,
-    send_state_to_agent_controllers=false,
     render=false,
     render_delay_option=None,
     recalculate_agent_id_every_step=false))]
@@ -113,30 +106,16 @@ pub fn env_process<'py>(
     reward_serde: Box<dyn PyAnySerde>,
     obs_space_serde: Box<dyn PyAnySerde>,
     action_space_serde: Box<dyn PyAnySerde>,
+    shared_info_serde_option: DynPyAnySerdeOption,
     state_serde_option: DynPyAnySerdeOption,
-    state_metrics_serde_option: DynPyAnySerdeOption,
-    collect_state_metrics_fn_option: Option<Bound<'py, PyAny>>,
-    send_state_to_agent_controllers: bool,
     render: bool,
     render_delay_option: Option<Duration>,
     recalculate_agent_id_every_step: bool,
 ) -> PyResult<()> {
-    if send_state_to_agent_controllers && matches!(state_serde_option, DynPyAnySerdeOption::None) {
-        return Err(PyValueError::new_err(
-            "state_serde must be passed in order to send state to agent controllers",
-        ));
-    }
-    if collect_state_metrics_fn_option.is_some()
-        && matches!(state_metrics_serde_option, DynPyAnySerdeOption::None)
-    {
-        return Err(PyValueError::new_err(
-                    "state_metrics_serde must be passed in order to collect state metrics from env processes",
-                ));
-    }
+    let shared_info_serde_option: Option<Box<dyn PyAnySerde>> = shared_info_serde_option.into();
+    let shared_info_serde_option = shared_info_serde_option.as_ref();
     let state_serde_option: Option<Box<dyn PyAnySerde>> = state_serde_option.into();
     let state_serde_option = state_serde_option.as_ref();
-    let state_metrics_serde_option: Option<Box<dyn PyAnySerde>> = state_metrics_serde_option.into();
-    let state_metrics_serde_option = state_metrics_serde_option.as_ref();
     let flink = get_flink(flinks_folder, proc_id);
     let mut shmem = ShmemConf::new()
         .size(shm_buffer_size)
@@ -168,13 +147,10 @@ pub fn env_process<'py>(
             game_paused_fn = Box::new(move || Ok(get_game_paused.call0()?.extract::<bool>()?));
         }
 
-        let collect_state_metrics_fn_option = collect_state_metrics_fn_option.as_ref();
-
         // Startup complete
         sync_with_epi(&child_end, &parent_sockname)?;
 
         let reset_obs = env_reset(&env)?;
-        let should_collect_state_metrics = !collect_state_metrics_fn_option.is_none();
         let mut n_agents = reset_obs.len();
         let mut agent_id_list = Vec::with_capacity(n_agents);
         for agent_id in reset_obs.keys().iter() {
@@ -197,10 +173,8 @@ pub fn env_process<'py>(
             )?;
         }
 
-        if send_state_to_agent_controllers {
-            _ = state_serde_option
-                .unwrap()
-                .append(shm_slice, offset, &env_state(&env)?)?;
+        if let Some(shared_info_serde) = shared_info_serde_option {
+            _ = shared_info_serde.append(shm_slice, offset, &env_shared_info(&env)?)?;
         }
         sendto_byte(&child_end, &parent_sockname)?;
 
@@ -321,24 +295,10 @@ pub fn env_process<'py>(
                         }
                     }
 
-                    if send_state_to_agent_controllers {
-                        offset = state_serde_option.unwrap().append(
-                            shm_slice,
-                            offset,
-                            &env_state(&env)?,
-                        )?;
+                    if let Some(shared_info_serde) = shared_info_serde_option {
+                        _ = shared_info_serde.append(shm_slice, offset, &env_shared_info(&env)?)?;
                     }
 
-                    if should_collect_state_metrics {
-                        let state_metrics = collect_state_metrics_fn_option
-                            .unwrap()
-                            .call1((env_state(&env)?, env_shared_info(&env)?))?;
-                        _ = state_metrics_serde_option.unwrap().append(
-                            shm_slice,
-                            offset,
-                            &state_metrics,
-                        )?;
-                    }
                     sendto_byte(&child_end, &parent_sockname)?;
 
                     // Render

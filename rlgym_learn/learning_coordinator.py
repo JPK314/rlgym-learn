@@ -18,13 +18,12 @@ from rlgym.api import (
 )
 
 from .agent import AgentManager
-from .api import ActionAssociatedLearningData, AgentController, StateMetrics
+from .api import ActionAssociatedLearningData, AgentController
 from .env_processing import EnvProcessInterface
 from .learning_coordinator_config import (
     DEFAULT_CONFIG_FILENAME,
     LearningCoordinatorConfigModel,
 )
-from .rlgym_learn import PyAnySerdeType
 from .util import KBHit
 
 
@@ -38,7 +37,6 @@ class LearningCoordinator(
         StateType,
         ObsSpaceType,
         ActionSpaceType,
-        StateMetrics,
         ActionAssociatedLearningData,
     ]
 ):
@@ -68,14 +66,10 @@ class LearningCoordinator(
                 StateType,
                 ObsSpaceType,
                 ActionSpaceType,
-                StateMetrics,
                 ActionAssociatedLearningData,
                 Any,
             ],
         ],
-        collect_state_metrics_fn: Optional[
-            Callable[[StateType, Dict[str, Any]], StateMetrics]
-        ] = None,
         config_location: str = None,
     ):
         if config_location is None:
@@ -95,10 +89,8 @@ class LearningCoordinator(
         self.cumulative_timesteps = 0
         self.env_process_interface = EnvProcessInterface(
             env_create_function,
-            collect_state_metrics_fn,
             self.config.base_config.serde_types,
             self.config.process_config.min_process_steps_per_inference,
-            self.config.base_config.send_state_to_agent_controllers,
             self.config.base_config.flinks_folder,
             self.config.base_config.shm_buffer_size,
             self.config.base_config.random_seed,

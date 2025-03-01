@@ -15,7 +15,6 @@ from ..api import (
     ActionAssociatedLearningData,
     AgentController,
     DerivedAgentControllerConfig,
-    StateMetrics,
 )
 from ..experience import Timestep
 from ..learning_coordinator_config import LearningCoordinatorConfigModel
@@ -32,7 +31,6 @@ class AgentManager(
         StateType,
         ObsSpaceType,
         ActionSpaceType,
-        StateMetrics,
         ActionAssociatedLearningData,
     ]
 ):
@@ -49,7 +47,6 @@ class AgentManager(
                 StateType,
                 ObsSpaceType,
                 ActionSpaceType,
-                StateMetrics,
                 ActionAssociatedLearningData,
                 Any,
             ],
@@ -74,8 +71,7 @@ class AgentManager(
             Tuple[
                 List[Timestep],
                 Optional[ActionAssociatedLearningData],
-                Optional[StateMetrics],
-                Optional[StateType],
+                Optional[Dict[str, Any]],
             ],
         ],
     ):
@@ -88,7 +84,7 @@ class AgentManager(
         state_info: Dict[
             str,
             Tuple[
-                Optional[StateType],
+                Optional[Dict[str, Any]],
                 Optional[Dict[AgentID, bool]],
                 Optional[Dict[AgentID, bool]],
             ],

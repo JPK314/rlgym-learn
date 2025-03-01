@@ -1,11 +1,7 @@
 from typing import Any, Dict, List
 
-from wandb.wandb_run import Run
-
-from rlgym_learn.api.typing import StateMetrics
 from rlgym_learn.standard_impl import DictMetricsLogger
 from rlgym_learn.standard_impl.ppo import PPOAgentControllerData
-from rlgym_learn.util import reporting
 
 from .gae_trajectory_processor import GAETrajectoryProcessorData
 
@@ -14,7 +10,6 @@ class PPOMetricsLogger(
     DictMetricsLogger[
         None,
         None,
-        StateMetrics,
         PPOAgentControllerData[GAETrajectoryProcessorData],
     ],
 ):
@@ -25,7 +20,7 @@ class PPOMetricsLogger(
     def get_metrics(self) -> Dict[str, Any]:
         return {**self.agent_metrics, **self.state_metrics}
 
-    def collect_state_metrics(self, data: List[StateMetrics]):
+    def collect_env_metrics(self, data: List[Dict[str, Any]]):
         """
         Override this function to set self.state_metrics to something else using the data provided.
         The metrics should be nested dictionaries

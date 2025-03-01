@@ -1,7 +1,8 @@
+from __future__ import annotations
+
 import json
 import os
 from dataclasses import dataclass
-from typing import List, Tuple
 
 import numpy as np
 import torch
@@ -48,30 +49,22 @@ class GAETrajectoryProcessor(
 ):
     def __init__(
         self,
-        batch_reward_type_numpy_converter: BatchRewardTypeNumpyConverter = BatchRewardTypeSimpleNumpyConverter(),
+        batch_reward_type_numpy_converter: BatchRewardTypeNumpyConverter[
+            RewardType
+        ] = BatchRewardTypeSimpleNumpyConverter(),
     ):
         """
         :param batch_reward_type_numpy_converter: BatchRewardTypeNumpyConverter instance
         """
         self.return_stats = WelfordRunningStat(1)
-        self.rust_gae_trajectory_processor = RustGAETrajectoryProcessor(
+        self.rust_gae_trajectory_processor: RustGAETrajectoryProcessor[
+            AgentID, ObsType, ActionType, RewardType
+        ] = RustGAETrajectoryProcessor(
             batch_reward_type_numpy_converter,
         )
 
     def process_trajectories(self, trajectories):
         return_std = self.return_stats.std[0] if self.standardize_returns else 1
-        result: Tuple[
-            List[AgentID],
-            List[ObsType],
-            List[ActionType],
-            List[torch.Tensor],
-            List[torch.Tensor],
-            ndarray,
-            ndarray,
-            ndarray,
-        ] = self.rust_gae_trajectory_processor.process_trajectories(
-            trajectories, return_std
-        )
         (
             agent_id_list,
             observation_list,
@@ -81,7 +74,9 @@ class GAETrajectoryProcessor(
             advantage_array,
             return_array,
             avg_reward,
-        ) = result
+        ) = self.rust_gae_trajectory_processor.process_trajectories(
+            trajectories, return_std
+        )
 
         if self.standardize_returns:
             # Update the running statistics about the returns.

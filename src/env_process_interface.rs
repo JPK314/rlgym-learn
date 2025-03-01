@@ -13,7 +13,6 @@ use pyany_serde::{
     communication::{retrieve_bool, retrieve_usize},
     PyAnySerde,
 };
-use pyo3::exceptions::PyValueError;
 use pyo3::types::PyString;
 use pyo3::{
     exceptions::asyncio::InvalidStateError, intern, prelude::*, sync::GILOnceCell, types::PyDict,
@@ -51,18 +50,12 @@ type TimestepDataKV<'py> = (
         Vec<Bound<'py, PyAny>>,
         Option<PyObject>,
         Option<Bound<'py, PyAny>>,
-        Option<Bound<'py, PyAny>>,
     ),
 );
 
 type UnboundTimestepDataKV = (
     Py<PyString>,
-    (
-        Vec<PyObject>,
-        Option<PyObject>,
-        Option<PyObject>,
-        Option<PyObject>,
-    ),
+    (Vec<PyObject>, Option<PyObject>, Option<PyObject>),
 );
 
 type StateInfoKV<'py> = (
@@ -108,7 +101,6 @@ impl Bind for UnboundTimestepDataKV {
                 self.1 .0.into_iter().map(|v| v.into_bound(py)).collect(),
                 self.1 .1,
                 self.1 .2.map(|v| v.into_bound(py)),
-                self.1 .3.map(|v| v.into_bound(py)),
             ),
         )
     }
@@ -139,14 +131,12 @@ pub struct EnvProcessInterface {
     reward_serde: Box<dyn PyAnySerde>,
     obs_space_serde: Box<dyn PyAnySerde>,
     action_space_serde: Box<dyn PyAnySerde>,
+    shared_info_serde_option: Option<Box<dyn PyAnySerde>>,
     state_serde_option: Option<Box<dyn PyAnySerde>>,
-    state_metrics_serde_option: Option<Box<dyn PyAnySerde>>,
     recalculate_agent_id_every_step: bool,
     flinks_folder: String,
     proc_packages: Vec<(PyObject, Shmem, Option<usize>, String)>,
     min_process_steps_per_inference: usize,
-    send_state_to_agent_controllers: bool,
-    should_collect_state_metrics: bool,
     selector: PyObject,
     timestep_class: PyObject,
     proc_id_pid_idx_map: HashMap<String, usize>,
@@ -195,23 +185,19 @@ impl EnvProcessInterface {
             obs_list.push(obs.unbind());
         }
 
-        let state_option;
-        if self.send_state_to_agent_controllers {
-            let state;
-            (state, _) = self
-                .state_serde_option
-                .as_ref()
-                .unwrap()
-                .retrieve(py, shm_slice, offset)?;
-            state_option = Some(state.unbind());
+        let shared_info_option;
+        if let Some(shared_info_serde) = &self.shared_info_serde_option {
+            let shared_info;
+            (shared_info, _) = shared_info_serde.retrieve(py, shm_slice, offset)?;
+            shared_info_option = Some(shared_info.unbind());
         } else {
-            state_option = None;
+            shared_info_option = None;
         }
 
         let py_proc_id = (&*proc_id).into_pyobject(py)?.unbind();
         Ok((
             (py_proc_id.clone_ref(py), (agent_id_list, obs_list)),
-            (py_proc_id, (state_option, None, None)),
+            (py_proc_id, (shared_info_option, None, None)),
         ))
     }
 
@@ -391,30 +377,13 @@ impl EnvProcessInterface {
             }
         }
 
-        let state_option;
-        if self.send_state_to_agent_controllers {
-            let state;
-            (state, offset) = self
-                .state_serde_option
-                .as_ref()
-                .unwrap()
-                .retrieve(py, shm_slice, offset)?;
-            state_option = Some(state);
+        let shared_info_option;
+        if let Some(shared_info_serde) = &self.shared_info_serde_option {
+            let shared_info;
+            (shared_info, _) = shared_info_serde.retrieve(py, shm_slice, offset)?;
+            shared_info_option = Some(shared_info);
         } else {
-            state_option = None;
-        }
-
-        let metrics_option;
-        if self.should_collect_state_metrics {
-            let state_metrics;
-            (state_metrics, _) = self
-                .state_metrics_serde_option
-                .as_ref()
-                .unwrap()
-                .retrieve(py, shm_slice, offset)?;
-            metrics_option = Some(state_metrics);
-        } else {
-            metrics_option = None;
+            shared_info_option = None;
         }
 
         let timestep_id_list_option;
@@ -527,13 +496,16 @@ impl EnvProcessInterface {
             (
                 timestep_list,
                 self.pid_idx_current_aald_list[pid_idx].clone(),
-                metrics_option,
-                state_option.clone(),
+                shared_info_option.clone(),
             ),
         );
         let state_info_kv = (
             py_proc_id,
-            (state_option, terminated_dict_option, truncated_dict_option),
+            (
+                shared_info_option,
+                terminated_dict_option,
+                truncated_dict_option,
+            ),
         );
 
         Ok((n_timesteps, obs_data_kv, timestep_data_kv, state_info_kv))
@@ -550,13 +522,11 @@ impl EnvProcessInterface {
         reward_serde,
         obs_space_serde,
         action_space_serde,
+        shared_info_serde_option,
         state_serde_option,
-        state_metrics_serde_option,
         recalculate_agent_id_every_step,
         flinks_folder,
         min_process_steps_per_inference,
-        send_state_to_agent_controllers,
-        should_collect_state_metrics,
         ))]
     pub fn new<'py>(
         py: Python<'py>,
@@ -566,13 +536,11 @@ impl EnvProcessInterface {
         reward_serde: Box<dyn PyAnySerde>,
         obs_space_serde: Box<dyn PyAnySerde>,
         action_space_serde: Box<dyn PyAnySerde>,
+        shared_info_serde_option: DynPyAnySerdeOption,
         state_serde_option: DynPyAnySerdeOption,
-        state_metrics_serde_option: DynPyAnySerdeOption,
         recalculate_agent_id_every_step: bool,
         flinks_folder: String,
         min_process_steps_per_inference: usize,
-        send_state_to_agent_controllers: bool,
-        should_collect_state_metrics: bool,
     ) -> PyResult<Self> {
         let timestep_class = PyModule::import(py, "rlgym_learn.experience.timestep")?
             .getattr("Timestep")?
@@ -581,20 +549,6 @@ impl EnvProcessInterface {
             .getattr("DefaultSelector")?
             .call0()?
             .unbind();
-        if send_state_to_agent_controllers
-            && matches!(state_serde_option, DynPyAnySerdeOption::None)
-        {
-            return Err(PyValueError::new_err(
-                "state_serde must be passed in order to send state to agent controllers",
-            ));
-        }
-        if should_collect_state_metrics
-            && matches!(state_metrics_serde_option, DynPyAnySerdeOption::None)
-        {
-            return Err(PyValueError::new_err(
-                    "state_metrics_serde must be passed in order to collect state metrics from env processes",
-                ));
-        }
         Ok(EnvProcessInterface {
             agent_id_serde,
             action_serde,
@@ -602,14 +556,12 @@ impl EnvProcessInterface {
             reward_serde,
             obs_space_serde,
             action_space_serde,
+            shared_info_serde_option: shared_info_serde_option.into(),
             state_serde_option: state_serde_option.into(),
-            state_metrics_serde_option: state_metrics_serde_option.into(),
             recalculate_agent_id_every_step,
             flinks_folder,
             proc_packages: Vec::new(),
             min_process_steps_per_inference,
-            send_state_to_agent_controllers,
-            should_collect_state_metrics,
             selector,
             timestep_class,
             proc_id_pid_idx_map: HashMap::new(),

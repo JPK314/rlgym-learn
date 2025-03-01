@@ -6,7 +6,7 @@ import socket
 import time
 import traceback
 from collections.abc import Callable
-from typing import Dict, Generic, List, Optional, Tuple, Union
+from typing import Any, Dict, Generic, List, Optional, Tuple
 from uuid import uuid4
 
 from rlgym.api import (
@@ -21,7 +21,7 @@ from rlgym.api import (
     StateType,
 )
 
-from ..api import ActionAssociatedLearningData, StateMetrics
+from ..api import ActionAssociatedLearningData
 from ..experience import Timestep
 from ..learning_coordinator_config import SerdeTypesModel
 from ..rlgym_learn import EnvAction
@@ -47,7 +47,6 @@ class EnvProcessInterface(
         StateType,
         ObsSpaceType,
         ActionSpaceType,
-        StateMetrics,
         ActionAssociatedLearningData,
     ]
 ):
@@ -66,12 +65,8 @@ class EnvProcessInterface(
                 ActionSpaceType,
             ],
         ],
-        collect_state_metrics_fn: Optional[
-            Callable[[StateType, Dict[AgentID, RewardType]], StateMetrics]
-        ],
         serde_types: SerdeTypesModel,
         min_process_steps_per_inference: int,
-        send_state_to_agent_controllers: bool,
         flinks_folder: str,
         shm_buffer_size: int,
         seed: int,
@@ -85,11 +80,9 @@ class EnvProcessInterface(
             PickleablePyAnySerdeType(serde_types.reward_serde_type),
             PickleablePyAnySerdeType(serde_types.obs_space_serde_type),
             PickleablePyAnySerdeType(serde_types.action_space_serde_type),
+            PickleablePyAnySerdeType(serde_types.shared_info_serde_type),
             PickleablePyAnySerdeType(serde_types.state_serde_type),
-            PickleablePyAnySerdeType(serde_types.state_metrics_serde_type),
         )
-        self.collect_state_metrics_fn = collect_state_metrics_fn
-        self.send_state_to_agent_controllers = send_state_to_agent_controllers
         self.flinks_folder = flinks_folder
         self.shm_buffer_size = shm_buffer_size
         self.seed = seed
@@ -98,7 +91,6 @@ class EnvProcessInterface(
 
         os.makedirs(flinks_folder, exist_ok=True)
 
-        should_collect_state_metrics = collect_state_metrics_fn is not None
         self.rust_env_process_interface = RustEnvProcessInterface(
             serde_types.agent_id_serde_type,
             serde_types.action_serde_type,
@@ -106,13 +98,11 @@ class EnvProcessInterface(
             serde_types.reward_serde_type,
             serde_types.obs_space_serde_type,
             serde_types.action_space_serde_type,
+            serde_types.shared_info_serde_type,
             serde_types.state_serde_type,
-            serde_types.state_metrics_serde_type,
             self.recalculate_agent_id_every_step,
             flinks_folder,
             min_process_steps_per_inference,
-            self.send_state_to_agent_controllers,
-            should_collect_state_metrics,
         )
 
     def init_processes(
@@ -170,8 +160,6 @@ class EnvProcessInterface(
                     parent_end.getsockname(),
                     self.build_env_fn,
                     self.serde_type_config,
-                    self.collect_state_metrics_fn,
-                    self.send_state_to_agent_controllers,
                     self.flinks_folder,
                     self.shm_buffer_size,
                     self.seed + proc_idx,
@@ -234,8 +222,6 @@ class EnvProcessInterface(
                 parent_end.getsockname(),
                 self.build_env_fn,
                 self.serde_type_config,
-                self.collect_state_metrics_fn,
-                self.send_state_to_agent_controllers,
                 self.flinks_folder,
                 self.shm_buffer_size,
                 self.seed + self.n_procs,
@@ -307,11 +293,13 @@ class EnvProcessInterface(
             Tuple[
                 List[Timestep],
                 Optional[ActionAssociatedLearningData],
-                Optional[StateMetrics],
-                Optional[StateType],
+                Optional[Dict[str, Any]],
             ],
         ],
-        Dict[str, Tuple[StateType, Dict[AgentID, bool], Dict[AgentID, bool]]],
+        Dict[
+            str,
+            Tuple[Optional[Dict[str, Any]], Dict[AgentID, bool], Dict[AgentID, bool]],
+        ],
     ]:
         """
         :return: Total timesteps collected, parallel lists of AgentID and ObsType for inference (per environment), a dict of timesteps and related data (per environment), and a dict of state info (per environment).

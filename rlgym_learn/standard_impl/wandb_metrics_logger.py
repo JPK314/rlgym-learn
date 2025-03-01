@@ -1,7 +1,6 @@
 import json
 import os
 import time
-from abc import abstractmethod
 from dataclasses import dataclass
 from typing import Any, Dict, Generic, List, Optional, TypeVar
 
@@ -9,7 +8,7 @@ from pydantic import BaseModel, Field
 
 import wandb
 
-from ..api import AgentControllerData, StateMetrics
+from ..api import AgentControllerData
 from .dict_metrics_logger import DictMetricsLogger
 from .metrics_logger import DerivedMetricsLoggerConfig, MetricsLogger
 
@@ -59,13 +58,11 @@ class WandbMetricsLogger(
         WandbAdditionalDerivedConfig[
             InnerMetricsLoggerConfig, InnerMetricsLoggerAdditionalDerivedConfig
         ],
-        StateMetrics,
         AgentControllerData,
     ],
     Generic[
         InnerMetricsLoggerConfig,
         InnerMetricsLoggerAdditionalDerivedConfig,
-        StateMetrics,
         AgentControllerData,
     ],
 ):
@@ -74,7 +71,6 @@ class WandbMetricsLogger(
         inner_metrics_logger: DictMetricsLogger[
             InnerMetricsLoggerConfig,
             InnerMetricsLoggerAdditionalDerivedConfig,
-            StateMetrics,
             AgentControllerData,
         ],
         checkpoint_file_name: str = "wandb_metrics_logger.json",
@@ -82,8 +78,8 @@ class WandbMetricsLogger(
         self.inner_metrics_logger = inner_metrics_logger
         self.checkpoint_file_name = checkpoint_file_name
 
-    def collect_state_metrics(self, data: List[StateMetrics]):
-        self.inner_metrics_logger.collect_state_metrics(data)
+    def collect_env_metrics(self, data: List[Dict[str, Any]]):
+        self.inner_metrics_logger.collect_env_metrics(data)
 
     def collect_agent_metrics(self, data: AgentControllerData):
         self.inner_metrics_logger.collect_agent_metrics(data)

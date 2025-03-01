@@ -1,28 +1,9 @@
-from typing import Any, Dict, List
+import os
+
+# needed to prevent numpy from using a ton of memory in env processes and causing them to throttle each other
+os.environ["OPENBLAS_NUM_THREADS"] = "1"
 
 from rlgym_learn.standard_impl.ppo import PPOMetricsLogger
-from rlgym_learn.util import reporting
-
-
-class ExampleLogger(PPOMetricsLogger[None]):
-
-    def collect_state_metrics(self, data: List[None]) -> Dict[str, Any]:
-        return {}
-
-    def report_metrics(
-        self,
-        agent_controller_name,
-        state_metrics,
-        agent_metrics,
-        wandb_run,
-    ):
-        report = {
-            **agent_metrics,
-            **state_metrics,
-        }
-        reporting.report_metrics(
-            agent_controller_name, report, None, wandb_run=wandb_run
-        )
 
 
 def build_rlgym_v2_env():
@@ -125,9 +106,9 @@ if __name__ == "__main__":
         BaseConfigModel,
         LearningCoordinatorConfigModel,
         ProcessConfigModel,
-        generate_config,
+        PyAnySerdeType,
         SerdeTypesModel,
-        PyAnySerdeType
+        generate_config,
     )
     from rlgym_learn.standard_impl import (
         WandbMetricsLogger,
@@ -204,7 +185,6 @@ if __name__ == "__main__":
                 obs_standardizer=None,
             )
         },
-        collect_state_metrics_fn=None,
         config_location="config.json",
     )
     learning_coordinator.start()

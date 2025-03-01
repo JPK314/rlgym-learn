@@ -1,16 +1,15 @@
 use pyo3::prelude::*;
-use pyo3::PyObject;
 
 #[allow(dead_code)]
 #[derive(FromPyObject)]
-pub struct Trajectory {
-    pub agent_id: PyObject,
-    pub obs_list: Vec<PyObject>,
-    pub action_list: Vec<PyObject>,
-    pub log_probs: PyObject,
-    pub reward_list: PyObject,
-    pub val_preds: PyObject,
-    pub final_obs: PyObject,
-    pub final_val_pred: PyObject,
+pub struct Trajectory<'py> {
+    pub agent_id: Bound<'py, PyAny>,
+    pub obs_list: Vec<Bound<'py, PyAny>>,
+    pub action_list: Vec<Bound<'py, PyAny>>,
+    pub log_probs: Bound<'py, PyAny>,
+    pub reward_list: Bound<'py, PyAny>,
+    pub val_preds: Bound<'py, PyAny>,
+    pub final_obs: Bound<'py, PyAny>,
+    pub final_val_pred: Bound<'py, PyAny>,
     pub truncated: bool,
 }
