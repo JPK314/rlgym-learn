@@ -81,6 +81,7 @@ class EnvProcessInterface(
             PickleablePyAnySerdeType(serde_types.obs_space_serde_type),
             PickleablePyAnySerdeType(serde_types.action_space_serde_type),
             PickleablePyAnySerdeType(serde_types.shared_info_serde_type),
+            PickleablePyAnySerdeType(serde_types.shared_info_setter_serde_type),
             PickleablePyAnySerdeType(serde_types.state_serde_type),
         )
         self.flinks_folder = flinks_folder
@@ -99,6 +100,7 @@ class EnvProcessInterface(
             serde_types.obs_space_serde_type,
             serde_types.action_space_serde_type,
             serde_types.shared_info_serde_type,
+            serde_types.shared_info_setter_serde_type,
             serde_types.state_serde_type,
             self.recalculate_agent_id_every_step,
             flinks_folder,

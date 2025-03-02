@@ -132,6 +132,7 @@ pub struct EnvProcessInterface {
     obs_space_serde: Box<dyn PyAnySerde>,
     action_space_serde: Box<dyn PyAnySerde>,
     shared_info_serde_option: Option<Box<dyn PyAnySerde>>,
+    shared_info_setter_serde_option: Option<Box<dyn PyAnySerde>>,
     state_serde_option: Option<Box<dyn PyAnySerde>>,
     recalculate_agent_id_every_step: bool,
     flinks_folder: String,
@@ -523,6 +524,7 @@ impl EnvProcessInterface {
         obs_space_serde,
         action_space_serde,
         shared_info_serde_option,
+        shared_info_setter_serde_option,
         state_serde_option,
         recalculate_agent_id_every_step,
         flinks_folder,
@@ -537,6 +539,7 @@ impl EnvProcessInterface {
         obs_space_serde: Box<dyn PyAnySerde>,
         action_space_serde: Box<dyn PyAnySerde>,
         shared_info_serde_option: DynPyAnySerdeOption,
+        shared_info_setter_serde_option: DynPyAnySerdeOption,
         state_serde_option: DynPyAnySerdeOption,
         recalculate_agent_id_every_step: bool,
         flinks_folder: String,
@@ -557,6 +560,7 @@ impl EnvProcessInterface {
             obs_space_serde,
             action_space_serde,
             shared_info_serde_option: shared_info_serde_option.into(),
+            shared_info_setter_serde_option: shared_info_setter_serde_option.into(),
             state_serde_option: state_serde_option.into(),
             recalculate_agent_id_every_step,
             flinks_folder,
@@ -806,6 +810,7 @@ impl EnvProcessInterface {
             if let EnvAction::STEP {
                 ref action_list,
                 ref action_associated_learning_data,
+                ..
             } = env_action
             {
                 let current_action_list = &mut self.pid_idx_current_action_list[pid_idx];
@@ -830,6 +835,7 @@ impl EnvProcessInterface {
                 offset,
                 &env_action,
                 &self.action_serde,
+                &self.shared_info_setter_serde_option.as_ref(),
                 &self.state_serde_option.as_ref(),
             )?;
 

@@ -52,16 +52,21 @@ class EnvActionResponseType:
     SET_STATE = ...
 
 class EnvActionResponse_STEP:
-    def __new__(cls) -> EnvActionResponse_STEP: ...
+    def __new__(
+        cls, shared_info_setter: Optional[Dict[str, Any]] = None
+    ) -> EnvActionResponse_STEP: ...
 
 class EnvActionResponse_RESET:
-    def __new__(cls) -> EnvActionResponse_RESET: ...
+    def __new__(
+        cls, shared_info_setter: Optional[Dict[str, Any]] = None
+    ) -> EnvActionResponse_RESET: ...
 
 class EnvActionResponse_SET_STATE(Generic[AgentID, StateType]):
     def __new__(
         cls,
         desired_state: StateType,
-        prev_timestep_id_dict: Optional[Dict[AgentID, Optional[int]]],
+        shared_info_setter: Optional[Dict[str, Any]] = None,
+        prev_timestep_id_dict: Optional[Dict[AgentID, Optional[int]]] = None,
     ) -> EnvActionResponse_SET_STATE[AgentID, StateType]: ...
 
 class EnvActionResponse(Generic[AgentID, StateType]):

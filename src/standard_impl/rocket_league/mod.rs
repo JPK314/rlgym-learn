@@ -5,6 +5,7 @@ pub mod game_config;
 pub mod game_config_serde;
 pub mod game_state;
 pub mod game_state_serde;
+pub mod helper;
 pub mod physics_object;
 pub mod physics_object_serde;
 // pub mod rocket_league_serde_factory;

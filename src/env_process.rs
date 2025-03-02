@@ -89,6 +89,7 @@ fn env_step<'py>(
     obs_space_serde,
     action_space_serde,
     shared_info_serde_option,
+    shared_info_setter_serde_option,
     state_serde_option,
     render=false,
     render_delay_option=None,
@@ -107,6 +108,7 @@ pub fn env_process<'py>(
     obs_space_serde: Box<dyn PyAnySerde>,
     action_space_serde: Box<dyn PyAnySerde>,
     shared_info_serde_option: DynPyAnySerdeOption,
+    shared_info_setter_serde_option: DynPyAnySerdeOption,
     state_serde_option: DynPyAnySerdeOption,
     render: bool,
     render_delay_option: Option<Duration>,
@@ -114,6 +116,9 @@ pub fn env_process<'py>(
 ) -> PyResult<()> {
     let shared_info_serde_option: Option<Box<dyn PyAnySerde>> = shared_info_serde_option.into();
     let shared_info_serde_option = shared_info_serde_option.as_ref();
+    let shared_info_setter_serde_option: Option<Box<dyn PyAnySerde>> =
+        shared_info_setter_serde_option.into();
+    let shared_info_setter_serde_option = shared_info_setter_serde_option.as_ref();
     let state_serde_option: Option<Box<dyn PyAnySerde>> = state_serde_option.into();
     let state_serde_option = state_serde_option.as_ref();
     let flink = get_flink(flinks_folder, proc_id);
@@ -200,6 +205,7 @@ pub fn env_process<'py>(
                         offset,
                         agent_id_list.len(),
                         &action_serde,
+                        &shared_info_setter_serde_option,
                         &state_serde_option,
                     )?;
                     // Read actions message
@@ -210,8 +216,12 @@ pub fn env_process<'py>(
                         truncated_dict_option,
                         is_step_action,
                     );
-                    match &env_action {
-                        EnvAction::STEP { action_list, .. } => {
+                    let shared_info_setter_option = match &env_action {
+                        EnvAction::STEP {
+                            shared_info_setter_option,
+                            action_list,
+                            ..
+                        } => {
                             let mut actions_kv_list = Vec::with_capacity(agent_id_list.len());
                             let action_list = action_list.bind(py);
                             for (agent_id, action) in agent_id_list.iter().zip(action_list.iter()) {
@@ -226,21 +236,37 @@ pub fn env_process<'py>(
                             terminated_dict_option = Some(terminated_dict);
                             truncated_dict_option = Some(truncated_dict);
                             is_step_action = true;
+                            shared_info_setter_option
                         }
-                        EnvAction::RESET {} => {
+                        EnvAction::RESET {
+                            shared_info_setter_option,
+                        } => {
                             obs_dict = env_reset(&env)?;
                             rew_dict_option = None;
                             terminated_dict_option = None;
                             truncated_dict_option = None;
                             is_step_action = false;
+                            shared_info_setter_option
                         }
-                        EnvAction::SET_STATE { desired_state, .. } => {
+                        EnvAction::SET_STATE {
+                            desired_state,
+                            shared_info_setter_option,
+                            ..
+                        } => {
                             obs_dict = env_set_state(&env, desired_state.bind(py))?;
                             rew_dict_option = None;
                             terminated_dict_option = None;
                             truncated_dict_option = None;
                             is_step_action = false;
+                            shared_info_setter_option
                         }
+                    };
+                    if let Some(shared_info_setter) = shared_info_setter_option {
+                        env_shared_info(&env)?.downcast::<PyDict>()?.update(
+                            shared_info_setter
+                                .downcast_bound::<PyDict>(py)?
+                                .as_mapping(),
+                        )?;
                     }
                     let new_episode = !is_step_action;
 

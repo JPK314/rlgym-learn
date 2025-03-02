@@ -2,12 +2,15 @@ use numpy::{PyArray1, PyArrayMethods};
 use pyo3::{types::PyAnyMethods, IntoPyObject, PyResult, Python};
 
 use pyany_serde::{
-    append_n_vec_elements,
     communication::{append_bool, append_f32, retrieve_bool, retrieve_f32},
-    retrieve_n_vec_elements, PyAnySerde,
+    PyAnySerde,
 };
 
-use super::{car::Car, physics_object_serde::PhysicsObjectSerde};
+use super::{
+    car::Car,
+    helper::{append_n_vec_elements, retrieve_n_vec_elements},
+    physics_object_serde::PhysicsObjectSerde,
+};
 
 #[derive(Clone)]
 pub struct CarSerde {
@@ -56,7 +59,7 @@ impl CarSerde {
         offset = append_bool(buf, offset, car.has_double_jumped);
         offset = append_f32(buf, offset, car.air_time_since_jump);
         offset = append_f32(buf, offset, car.flip_time);
-        offset = append_n_vec_elements!(buf, offset, flip_torque, 3);
+        offset = append_n_vec_elements(buf, offset, &flip_torque, 3);
         offset = append_bool(buf, offset, car.is_autoflipping);
         offset = append_f32(buf, offset, car.autoflip_timer);
         offset = append_f32(buf, offset, car.autoflip_direction);
@@ -117,7 +120,7 @@ impl CarSerde {
         (has_double_jumped, offset) = retrieve_bool(buf, offset)?;
         (air_time_since_jump, offset) = retrieve_f32(buf, offset)?;
         (flip_time, offset) = retrieve_f32(buf, offset)?;
-        (flip_torque, offset) = retrieve_n_vec_elements!(buf, offset, 3);
+        (flip_torque, offset) = retrieve_n_vec_elements(buf, offset, 3)?;
         (is_autoflipping, offset) = retrieve_bool(buf, offset)?;
         (autoflip_timer, offset) = retrieve_f32(buf, offset)?;
         (autoflip_direction, offset) = retrieve_f32(buf, offset)?;

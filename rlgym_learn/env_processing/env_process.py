@@ -34,6 +34,7 @@ class PickleableSerdeTypeConfig:
     obs_space_serde_type: PickleablePyAnySerdeType
     action_space_serde_type: PickleablePyAnySerdeType
     shared_info_serde_type: Optional[PickleablePyAnySerdeType]
+    shared_info_setter_serde_type: Optional[PickleablePyAnySerdeType]
     state_serde_type: Optional[PickleablePyAnySerdeType]
 
 
@@ -84,6 +85,7 @@ def env_process(
         serde_type_config.obs_space_serde_type,
         serde_type_config.action_space_serde_type,
         serde_type_config.shared_info_serde_type,
+        serde_type_config.shared_info_setter_serde_type,
         serde_type_config.state_serde_type,
         render_this_proc,
         timedelta(seconds=render_delay),

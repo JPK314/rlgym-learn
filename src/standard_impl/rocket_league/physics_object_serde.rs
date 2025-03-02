@@ -1,12 +1,15 @@
 use numpy::{ndarray::Array, PyArray1, PyArray2, PyArrayMethods};
 use pyo3::{types::PyAnyMethods, IntoPyObject, PyResult, Python};
 
-use pyany_serde::{
-    append_n_vec_elements, append_n_vec_elements_option, retrieve_n_vec_elements,
-    retrieve_n_vec_elements_option, PyAnySerde,
-};
+use pyany_serde::PyAnySerde;
 
-use super::physics_object::PhysicsObject;
+use super::{
+    helper::{
+        append_n_vec_elements, append_n_vec_elements_option, retrieve_n_vec_elements,
+        retrieve_n_vec_elements_option,
+    },
+    physics_object::PhysicsObject,
+};
 
 #[derive(Clone)]
 pub struct PhysicsObjectSerde {}
@@ -34,12 +37,12 @@ impl PhysicsObjectSerde {
             ._euler_angles
             .as_ref()
             .map(|euler| euler.bind(py).to_vec().unwrap());
-        let mut offset = append_n_vec_elements!(buf, offset, pos, 3);
-        offset = append_n_vec_elements!(buf, offset, lin_vel, 3);
-        offset = append_n_vec_elements!(buf, offset, ang_vel, 3);
-        offset = append_n_vec_elements_option!(buf, offset, quat_option, 4);
-        offset = append_n_vec_elements_option!(buf, offset, rotmat_option, 9);
-        offset = append_n_vec_elements_option!(buf, offset, euler_option, 3);
+        let mut offset = append_n_vec_elements(buf, offset, &pos, 3);
+        offset = append_n_vec_elements(buf, offset, &lin_vel, 3);
+        offset = append_n_vec_elements(buf, offset, &ang_vel, 3);
+        offset = append_n_vec_elements_option(buf, offset, &quat_option, 4);
+        offset = append_n_vec_elements_option(buf, offset, &rotmat_option, 9);
+        offset = append_n_vec_elements_option(buf, offset, &euler_option, 3);
         Ok(offset)
     }
 
@@ -56,12 +59,12 @@ impl PhysicsObjectSerde {
         let quat_option;
         let rotmat_option;
         let euler_option;
-        (pos, offset) = retrieve_n_vec_elements!(buf, offset, 3);
-        (lin_vel, offset) = retrieve_n_vec_elements!(buf, offset, 3);
-        (ang_vel, offset) = retrieve_n_vec_elements!(buf, offset, 3);
-        (quat_option, offset) = retrieve_n_vec_elements_option!(buf, offset, 4);
-        (rotmat_option, offset) = retrieve_n_vec_elements_option!(buf, offset, 9);
-        (euler_option, offset) = retrieve_n_vec_elements_option!(buf, offset, 3);
+        (pos, offset) = retrieve_n_vec_elements(buf, offset, 3)?;
+        (lin_vel, offset) = retrieve_n_vec_elements(buf, offset, 3)?;
+        (ang_vel, offset) = retrieve_n_vec_elements(buf, offset, 3)?;
+        (quat_option, offset) = retrieve_n_vec_elements_option(buf, offset, 4)?;
+        (rotmat_option, offset) = retrieve_n_vec_elements_option(buf, offset, 9)?;
+        (euler_option, offset) = retrieve_n_vec_elements_option(buf, offset, 3)?;
         Ok((
             PhysicsObject {
                 position: PyArray1::from_vec(py, pos).unbind(),
