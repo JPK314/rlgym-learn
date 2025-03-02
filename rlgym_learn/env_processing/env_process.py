@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import random
+import signal
 import socket
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import timedelta
-from typing import Dict, Optional
+from typing import Optional
 
 import numpy as np
 from rlgym.api import (
@@ -62,6 +63,7 @@ def env_process(
     render_delay: Optional[float],
     recalculate_agent_id_every_step: bool,
 ):
+    signal.signal(signal.SIGINT, signal.SIG_IGN)
     child_end = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     child_end.bind(("127.0.0.1", 0))
 

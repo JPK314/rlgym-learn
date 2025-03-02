@@ -325,6 +325,10 @@ class PPOLearner(
         self.critic_optimizer.zero_grad()
 
         self.cumulative_model_updates += n_batches
+
+        # If there were no batches, we just want to log the total time spent here, so just set n_batches to 1
+        if n_batches == 0:
+            n_batches = 1
         return PPOData(
             (time.time() - t1) / n_batches,
             self.cumulative_model_updates,

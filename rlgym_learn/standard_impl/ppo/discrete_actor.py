@@ -12,6 +12,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 from rlgym.api import AgentID
+from torch.distributions.utils import probs_to_logits
 
 from .actor import Actor
 
@@ -63,8 +64,10 @@ class DiscreteFF(Actor[AgentID, np.ndarray, np.ndarray]):
     def get_backprop_data(self, agent_id_list, obs_list, acts, **kwargs):
         probs = self.get_output(obs_list)
         acts_tensor = torch.as_tensor(np.array(acts)).to(self.device)
-        log_probs = torch.log(probs)
-        action_log_probs = log_probs.gather(-1, acts_tensor)
-        entropy = -(log_probs * probs).sum(dim=-1)
+        action_probs = probs.gather(-1, acts_tensor)
+        action_logits = probs_to_logits(action_probs)
+        min_real = torch.finfo(action_logits.dtype).min
+        action_logits = torch.clamp(action_logits, min=min_real)
+        entropy = -(action_logits * action_probs).sum(dim=-1)
 
-        return action_log_probs.to(self.device), entropy.to(self.device).mean()
+        return action_logits.to(self.device), entropy.to(self.device).mean()

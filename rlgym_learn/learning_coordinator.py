@@ -127,11 +127,14 @@ class LearningCoordinator(
         """
         try:
             self._run()
-        except Exception:
+        except (Exception, KeyboardInterrupt) as e:
             import traceback
 
-            print("\n\nLEARNING LOOP ENCOUNTERED AN ERROR\n")
-            traceback.print_exc()
+            if isinstance(e, KeyboardInterrupt):
+                print("\n\n KeyboardInterrupt")
+            else:
+                print("\n\nLEARNING LOOP ENCOUNTERED AN ERROR\n")
+                traceback.print_exc()
 
             try:
                 self.save()

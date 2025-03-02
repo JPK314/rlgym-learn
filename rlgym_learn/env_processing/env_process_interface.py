@@ -214,7 +214,7 @@ class EnvProcessInterface(
         self.processes.append(None)
 
         # Set up process
-        proc_id = uuid4()
+        proc_id = str(uuid4())
         parent_end = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         parent_end.bind(("127.0.0.1", 0))
         process = context.Process(
