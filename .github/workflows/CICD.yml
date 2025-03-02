@@ -37,6 +37,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: 3.x
+          cache: 'pip'
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
@@ -68,6 +69,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: 3.x
+          cache: 'pip'
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
@@ -90,17 +92,19 @@ jobs:
             target: x64
           - runner: windows-latest
             target: x86
+        python-version: ["3.8", "3.9", "3.10", "3.11", "3.12"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: 3.x
+          python-version: ${{ matrix.python-version }}
           architecture: ${{ matrix.platform.target }}
+          cache: 'pip'
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
           target: ${{ matrix.platform.target }}
-          args: --release --out dist --interpreter python-3.8 --interpreter python-3.9 --interpreter python-3.10 --interpreter python-3.11 --interpreter python-3.12
+          args: --release --out dist --interpreter python-${{ matrix.python-version }}
           sccache: 'true'
       - name: Upload wheels
         uses: actions/upload-artifact@v4
@@ -120,6 +124,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: 3.x
+          cache: 'pip'
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
