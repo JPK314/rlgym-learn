@@ -205,12 +205,10 @@ class PPOLearner(
         """
 
         n_batches = 0
-        mean_clip = 0
-        mean_entropy = 0
-        mean_divergence = torch.tensor(
-            0, dtype=torch.float32, device=self.config.device
-        )
-        mean_val_loss = 0
+        tot_clip = 0
+        tot_entropy = 0
+        tot_divergence = 0
+        tot_val_loss = 0
 
         # Save parameters before computing any updates.
         actor_before = torch.nn.utils.parameters_to_vector(
@@ -287,7 +285,7 @@ class PPOLearner(
                             .item()
                             * minibatch_ratio
                         )
-                        mean_clip += clip_fraction
+                        tot_clip += clip_fraction
 
                     actor_loss = (
                         -torch.min(ratio * advantages, clipped * advantages).mean()
@@ -301,9 +299,9 @@ class PPOLearner(
                     ppo_loss.backward()
                     value_loss.backward()
 
-                    mean_val_loss += value_loss.cpu().detach().item()
-                    mean_divergence += kl
-                    mean_entropy += entropy.cpu().detach().item()
+                    tot_val_loss += value_loss.cpu().detach().item()
+                    tot_divergence += kl.cpu().detach().item()
+                    tot_entropy += entropy.cpu().detach().item()
 
                 torch.nn.utils.clip_grad_norm_(self.critic.parameters(), max_norm=0.5)
                 torch.nn.utils.clip_grad_norm_(self.actor.parameters(), max_norm=0.5)
@@ -326,14 +324,18 @@ class PPOLearner(
 
         self.cumulative_model_updates += n_batches
 
-        # If there were no batches, we just want to log the total time spent here, so just set n_batches to 1
+        # If there were no batches, we just want to log the total time spent here (and totals will all be 0 anyway), so just set n_batches to 1
         if n_batches == 0:
             n_batches = 1
+        mean_clip = tot_clip / n_batches
+        mean_entropy = tot_entropy / n_batches
+        mean_divergence = tot_divergence / n_batches
+        mean_val_loss = tot_val_loss / n_batches
         return PPOData(
             (time.time() - t1) / n_batches,
             self.cumulative_model_updates,
             mean_entropy,
-            mean_divergence.cpu().item(),
+            mean_divergence,
             mean_val_loss,
             mean_clip,
             actor_update_magnitude,

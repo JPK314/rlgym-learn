@@ -108,6 +108,11 @@ class LearningCoordinator(
             render_delay=self.config.process_config.render_delay,
         )
         print("Loading agent controllers...")
+        print(
+            "Press (p) to pause, (c) to checkpoint, (q) to checkpoint and quit (after next iteration)\n"
+            + "(a) to add an env process, (d) to delete an env process\n"
+            + "(j) to increase min inference size, (l) to decrease min inference size\n"
+        )
         self.agent_manager.set_space_types(obs_space, action_space)
         self.agent_manager.load_agent_controllers(self.config)
         # Handle actions for observations created on process init
@@ -155,11 +160,6 @@ class LearningCoordinator(
 
         # Class to watch for keyboard hits
         kb = KBHit()
-        print(
-            "Press (p) to pause, (c) to checkpoint, (q) to checkpoint and quit (after next iteration)\n"
-            + "(a) to add an env process, (d) to delete an env process\n"
-            + "(j) to increase min inference size, (l) to decrease min inference size\n"
-        )
         # Handle actions for observations created on process init
         self.env_process_interface.send_env_actions(self.initial_env_actions)
 

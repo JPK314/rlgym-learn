@@ -1,4 +1,5 @@
 // use rayon::prelude::*;
+// use rayon::ThreadPoolBuilder;
 
 use std::cmp::max;
 use std::cmp::min;
@@ -856,10 +857,9 @@ impl EnvProcessInterface {
 //     obs_space_serde: Box<dyn PyAnySerde>,
 //     action_space_serde: Box<dyn PyAnySerde>,
 //     state_serde_option: Option<Box<dyn PyAnySerde>>,
-//     state_metrics_serde_option: Option<Box<dyn PyAnySerde>>,
+//     shared_info_serde_option: Option<Box<dyn PyAnySerde>>,
+//     shared_info_setter_serde_option: Option<Box<dyn PyAnySerde>>,
 //     recalculate_agent_id_every_step: bool,
-//     send_state_to_agent_controllers: bool,
-//     should_collect_state_metrics: bool,
 //     timestep_class: PyObject,
 //     shm_slice_ptr: *mut u8,
 //     shm_slice_len: usize,

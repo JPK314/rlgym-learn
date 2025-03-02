@@ -169,6 +169,7 @@ class EnvProcessInterface(
                     render_delay,
                     self.recalculate_agent_id_every_step,
                 ),
+                daemon=True,
             )
             process.start()
 
@@ -231,6 +232,7 @@ class EnvProcessInterface(
                 0,
                 self.recalculate_agent_id_every_step,
             ),
+            daemon=True,
         )
 
         process.start()

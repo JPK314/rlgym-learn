@@ -64,10 +64,10 @@ class DiscreteFF(Actor[AgentID, np.ndarray, np.ndarray]):
     def get_backprop_data(self, agent_id_list, obs_list, acts, **kwargs):
         probs = self.get_output(obs_list)
         acts_tensor = torch.as_tensor(np.array(acts)).to(self.device)
-        action_probs = probs.gather(-1, acts_tensor)
-        action_logits = probs_to_logits(action_probs)
-        min_real = torch.finfo(action_logits.dtype).min
-        action_logits = torch.clamp(action_logits, min=min_real)
-        entropy = -(action_logits * action_probs).sum(dim=-1)
+        logits = probs_to_logits(probs)
+        min_real = torch.finfo(logits.dtype).min
+        logits = torch.clamp(logits, min=min_real)
+        entropy = -(logits * probs).sum(dim=-1)
+        action_logits = logits.gather(-1, acts_tensor)
 
         return action_logits.to(self.device), entropy.to(self.device).mean()
