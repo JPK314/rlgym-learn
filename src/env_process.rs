@@ -164,6 +164,7 @@ pub fn env_process<'py>(
 
         // Write reset message
         let mut offset = 0;
+        println!("env process: n_agents: {n_agents}");
         offset = append_usize(shm_slice, offset, n_agents);
         for agent_id in agent_id_list.iter() {
             offset = agent_id_serde.append(shm_slice, offset, agent_id)?;
@@ -181,6 +182,10 @@ pub fn env_process<'py>(
         if let Some(shared_info_serde) = shared_info_serde_option {
             _ = shared_info_serde.append(shm_slice, offset, &env_shared_info(&env)?)?;
         }
+        println!(
+            "env process: just set shm, first 100 bytes: {:x?}",
+            &shm_slice[0..100]
+        );
         sendto_byte(&child_end, &parent_sockname)?;
 
         // Start main loop
@@ -195,6 +200,7 @@ pub fn env_process<'py>(
             offset = 0;
             let header;
             (header, offset) = retrieve_header(shm_slice, offset)?;
+            println!("env process: retrieved header {header}");
             match header {
                 Header::EnvAction => {
                     has_received_env_action = true;
@@ -214,7 +220,7 @@ pub fn env_process<'py>(
                         rew_dict_option,
                         terminated_dict_option,
                         truncated_dict_option,
-                        is_step_action,
+                        is_step,
                     );
                     let shared_info_setter_option = match &env_action {
                         EnvAction::STEP {
@@ -223,7 +229,7 @@ pub fn env_process<'py>(
                             ..
                         } => {
                             let mut actions_kv_list = Vec::with_capacity(agent_id_list.len());
-                            let action_list = action_list.bind(py);
+
                             for (agent_id, action) in agent_id_list.iter().zip(action_list.iter()) {
                                 actions_kv_list.push((agent_id, action));
                             }
@@ -235,7 +241,7 @@ pub fn env_process<'py>(
                             rew_dict_option = Some(rew_dict);
                             terminated_dict_option = Some(terminated_dict);
                             truncated_dict_option = Some(truncated_dict);
-                            is_step_action = true;
+                            is_step = true;
                             shared_info_setter_option
                         }
                         EnvAction::RESET {
@@ -245,7 +251,7 @@ pub fn env_process<'py>(
                             rew_dict_option = None;
                             terminated_dict_option = None;
                             truncated_dict_option = None;
-                            is_step_action = false;
+                            is_step = false;
                             shared_info_setter_option
                         }
                         EnvAction::SET_STATE {
@@ -257,7 +263,7 @@ pub fn env_process<'py>(
                             rew_dict_option = None;
                             terminated_dict_option = None;
                             truncated_dict_option = None;
-                            is_step_action = false;
+                            is_step = false;
                             shared_info_setter_option
                         }
                     };
@@ -268,19 +274,19 @@ pub fn env_process<'py>(
                                 .as_mapping(),
                         )?;
                     }
-                    let new_episode = !is_step_action;
+                    let non_step = !is_step;
 
-                    if new_episode {
+                    if non_step {
                         n_agents = obs_dict.len();
                     }
 
                     // Write env step message
                     offset = 0;
-                    if new_episode {
+                    if non_step {
                         offset = append_usize(shm_slice, offset, n_agents);
                     }
                     for agent_id in agent_id_list.iter() {
-                        if recalculate_agent_id_every_step || new_episode {
+                        if recalculate_agent_id_every_step || non_step {
                             offset = agent_id_serde.append(shm_slice, offset, agent_id)?;
                         }
                         offset = obs_serde.append(
@@ -288,7 +294,7 @@ pub fn env_process<'py>(
                             offset,
                             &obs_dict.get_item(agent_id)?.unwrap(),
                         )?;
-                        if is_step_action {
+                        if is_step {
                             offset = reward_serde.append(
                                 shm_slice,
                                 offset,
@@ -324,6 +330,8 @@ pub fn env_process<'py>(
                     if let Some(shared_info_serde) = shared_info_serde_option {
                         _ = shared_info_serde.append(shm_slice, offset, &env_shared_info(&env)?)?;
                     }
+
+                    // TODO: add back sending StateType
 
                     sendto_byte(&child_end, &parent_sockname)?;
 

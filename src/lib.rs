@@ -6,6 +6,7 @@ pub mod agent_manager;
 pub mod env_action;
 pub mod env_process;
 pub mod env_process_interface;
+pub mod env_process_interface_worker_thread;
 pub mod misc;
 // pub mod pyany_serde_extension;
 // pub mod pyany_serde_type_extension;

@@ -66,8 +66,14 @@ class EnvActionResponse_SET_STATE(Generic[AgentID, StateType]):
         cls,
         desired_state: StateType,
         shared_info_setter: Optional[Dict[str, Any]] = None,
-        prev_timestep_id_dict: Optional[Dict[AgentID, Optional[int]]] = None,
-    ) -> EnvActionResponse_SET_STATE[AgentID, StateType]: ...
+        prev_timestep_id_dict: Optional[Dict[AgentID, int]] = None,
+    ) -> EnvActionResponse_SET_STATE[AgentID, StateType]:
+        """
+        :param desired_state: StateType to set in env
+        :param shared_info_setter: Optional dict of fields to set in shared_info in env
+        :param prev_timestep_id_dict: Optional dict mapping AgentID to previous timestep id, which will be used for the first Timestep instances after getting actions for the set state. Any AgentIDs not present in the dict will have None for the previous timestep id. Timestep id must be a nonnegative integer < 2^128
+        """
+        ...
 
 class EnvActionResponse(Generic[AgentID, StateType]):
     STEP: Type[EnvActionResponse_STEP] = ...
@@ -111,8 +117,6 @@ class EnvProcessInterface(
     def init_processes(
         self, proc_package_defs: List[Process, socket, _RetAddress, str]
     ) -> Tuple[
-        Dict[str, Tuple[List[AgentID], List[ObsType]]],
-        Dict[str, Tuple[Optional[StateType], None, None]],
         ObsSpaceType,
         ActionSpaceType,
     ]: ...
@@ -133,7 +137,7 @@ class EnvProcessInterface(
             Tuple[
                 List[Timestep],
                 ActionAssociatedLearningData,
-                Optional[StateMetrics],
+                Optional[Dict[str, Any]],
                 Optional[StateType],
             ],
         ],

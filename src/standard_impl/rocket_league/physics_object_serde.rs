@@ -101,4 +101,16 @@ impl PyAnySerde for PhysicsObjectSerde {
         let (physics_object, offset) = self.retrieve_inner(py, buf, offset)?;
         Ok(((&physics_object).into_pyobject(py)?, offset))
     }
+
+    unsafe fn retrieve_ptr(&self, buf: &[u8], offset: usize) -> PyResult<(*mut u8, usize)> {
+        todo!()
+    }
+
+    unsafe fn retrieve_from_ptr<'py>(
+        &self,
+        py: Python<'py>,
+        ptr: *mut u8,
+    ) -> PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+        todo!()
+    }
 }

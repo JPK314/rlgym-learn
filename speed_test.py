@@ -160,7 +160,7 @@ if __name__ == "__main__":
         return BasicCritic(obs_space[1], (256, 256, 256), device)
 
     # 80 processes
-    n_proc = 200
+    n_proc = 1
 
     learner_config = PPOLearnerConfigModel(
         n_epochs=1,
@@ -191,7 +191,7 @@ if __name__ == "__main__":
         log_to_wandb=False,
         learner_config=learner_config,
         experience_buffer_config=experience_buffer_config,
-        metrics_logger_config=wandb_config,
+        # metrics_logger_config=wandb_config,
     )
 
     generate_config(
@@ -224,8 +224,8 @@ if __name__ == "__main__":
             actor_factory,
             critic_factory,
             NumpyExperienceBuffer(GAETrajectoryProcessor()),
-            metrics_logger=WandbMetricsLogger(PPOMetricsLogger()),
-            # metrics_logger=PPOMetricsLogger(),
+            # metrics_logger=WandbMetricsLogger(PPOMetricsLogger()),
+            metrics_logger=PPOMetricsLogger(),
         )
     }
 

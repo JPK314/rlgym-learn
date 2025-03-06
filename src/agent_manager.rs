@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use itertools::Itertools;
 use pyo3::exceptions::PyAssertionError;
-use pyo3::types::{PyDict, PyList};
+use pyo3::types::PyDict;
 use pyo3::{intern, prelude::*};
 use pyo3::{IntoPyObjectExt, PyObject};
 
@@ -266,7 +266,7 @@ impl AgentManager {
                             env_obs_data_dict.remove(&env_id)
                         else {
                             return Err(PyAssertionError::new_err(
-                                "state_info contains env ids not present in env_obs_kv_list_dict",
+                                "env_action_responses contains env ids not present in env_obs_data_dict",
                             ));
                         };
                         env_id_list_range_list.push((
@@ -289,14 +289,44 @@ impl AgentManager {
                         desired_state,
                         shared_info_setter_option,
                         prev_timestep_id_dict_option,
-                    ) => env_actions.push((
-                        env_id,
-                        EnvAction::SET_STATE {
-                            desired_state,
-                            shared_info_setter_option,
-                            prev_timestep_id_dict_option,
-                        },
-                    )),
+                    ) => {
+                        let Some((env_agent_id_list, _)) = env_obs_data_dict.remove(&env_id) else {
+                            return Err(PyAssertionError::new_err(
+                                "env_action_responses contains env ids not present in env_obs_data_dict",
+                            ));
+                        };
+                        let prev_timestep_id_option_list_option = match prev_timestep_id_dict_option
+                        {
+                            Some(prev_timestep_id_dict) => {
+                                let prev_timestep_id_dict = prev_timestep_id_dict.into_bound(py);
+                                Some(
+                                    env_agent_id_list
+                                        .iter()
+                                        .map(|agent_id| {
+                                            let prev_timestep_id_option =
+                                                prev_timestep_id_dict.get_item(agent_id)?;
+                                            Ok(match prev_timestep_id_option {
+                                                Some(prev_timestep_id) => {
+                                                    prev_timestep_id.extract::<Option<u128>>()?
+                                                }
+                                                None => None,
+                                            })
+                                        })
+                                        .collect::<PyResult<Vec<_>>>()?,
+                                )
+                            }
+                            None => None,
+                        };
+                        env_actions.push((
+                            env_id,
+                            EnvAction::SET_STATE {
+                                desired_state,
+                                shared_info_setter_option,
+                                prev_timestep_id_option_list_option,
+                            },
+                        ));
+                        todo!()
+                    }
                 };
             }
             if should_get_actions {
@@ -304,6 +334,10 @@ impl AgentManager {
                 let obs_list = env_obs_list_list.into_iter().flatten().collect_vec();
                 let (action_list, action_associated_learning_data) =
                     self.get_actions(py, agent_id_list, obs_list)?;
+                let action_list = action_list
+                    .into_iter()
+                    .map(|v| v.unwrap().unbind())
+                    .collect::<Vec<_>>();
                 for (env_id, shared_info_setter_option, start, stop) in
                     env_id_list_range_list.into_iter()
                 {
@@ -311,7 +345,7 @@ impl AgentManager {
                         env_id,
                         EnvAction::STEP {
                             shared_info_setter_option,
-                            action_list: PyList::new(py, &action_list[start..stop])?.unbind(),
+                            action_list: action_list[start..stop].to_vec(),
                             action_associated_learning_data: match &action_associated_learning_data
                             {
                                 ActionAssociatedLearningData::BatchedTensor(tensor) => {
