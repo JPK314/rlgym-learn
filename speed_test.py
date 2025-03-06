@@ -160,7 +160,7 @@ if __name__ == "__main__":
         return BasicCritic(obs_space[1], (256, 256, 256), device)
 
     # 80 processes
-    n_proc = 1
+    n_proc = 200
 
     learner_config = PPOLearnerConfigModel(
         n_epochs=1,
@@ -210,7 +210,7 @@ if __name__ == "__main__":
                         (PyAnySerdeType.STRING(), PyAnySerdeType.INT())
                     ),
                 ),
-                timestep_limit=500_000_000,
+                timestep_limit=500_000,
                 send_state_to_agent_controllers=False,
             ),
             agent_controllers_config={"PPO1": ppo_agent_controller_config},

@@ -162,35 +162,11 @@ pub fn env_process<'py>(
             agent_id_list.push(agent_id);
         }
 
-        // Write reset message
-        let mut offset = 0;
-        println!("env process: n_agents: {n_agents}");
-        offset = append_usize(shm_slice, offset, n_agents);
-        for agent_id in agent_id_list.iter() {
-            offset = agent_id_serde.append(shm_slice, offset, agent_id)?;
-            offset = obs_serde.append(
-                shm_slice,
-                offset,
-                &reset_obs
-                    .get_item(agent_id)?
-                    .ok_or(InvalidStateError::new_err(
-                        "Reset obs python dict did not contain AgentID as key",
-                    ))?,
-            )?;
-        }
-
-        if let Some(shared_info_serde) = shared_info_serde_option {
-            _ = shared_info_serde.append(shm_slice, offset, &env_shared_info(&env)?)?;
-        }
-        println!(
-            "env process: just set shm, first 100 bytes: {:x?}",
-            &shm_slice[0..100]
-        );
-        sendto_byte(&child_end, &parent_sockname)?;
-
         // Start main loop
+        let mut offset;
         let mut has_received_env_action = false;
         loop {
+            // println!("env process: waiting for event");
             epi_evt
                 .wait(Timeout::Infinite)
                 .map_err(|err| InvalidStateError::new_err(err.to_string()))?;
@@ -200,7 +176,7 @@ pub fn env_process<'py>(
             offset = 0;
             let header;
             (header, offset) = retrieve_header(shm_slice, offset)?;
-            println!("env process: retrieved header {header}");
+            // println!("env process: retrieved header {header}");
             match header {
                 Header::EnvAction => {
                     has_received_env_action = true;

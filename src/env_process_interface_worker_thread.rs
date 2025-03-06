@@ -1,6 +1,9 @@
+use std::collections::VecDeque;
 use std::sync::Arc;
 use std::sync::Condvar;
 use std::sync::Mutex;
+use std::thread::sleep;
+use std::time::Duration;
 
 use pyany_serde::{
     communication::{retrieve_bool, retrieve_usize},
@@ -14,23 +17,18 @@ use shared_memory::ShmemConf;
 use crate::env_action::EnvAction;
 use crate::env_action::EnvActionType;
 
+#[derive(Debug)]
 pub enum WorkerThreadSignal {
     EnvAction {
         env_action_option: Option<EnvAction>,
     },
     EnvProcessResponse,
-    InitialObsData,
     Stop,
+    ThreadInitialized,
     None,
 }
 
 unsafe impl Send for WorkerThreadSignal {}
-
-#[derive(Clone)]
-pub enum PointerOrPyObject {
-    Pointer(*mut u8),
-    PyObject(PyObject),
-}
 
 pub struct StepData {
     pub prev_timestep_id_list: Vec<Option<u128>>,
@@ -82,9 +80,11 @@ struct WorkerThreadState<'a> {
     current_obs_list_option: Option<Vec<*mut u8>>,
     prev_timestep_id_option_list: Vec<Option<u128>>,
     shm_slice: &'a mut [u8],
+    last_3_calls: VecDeque<WorkerThreadSignal>,
 }
 
 struct WorkerThreadConfig {
+    flink: String,
     agent_id_serde: Box<dyn PyAnySerde>,
     obs_serde: Box<dyn PyAnySerde>,
     reward_serde: Box<dyn PyAnySerde>,
@@ -94,7 +94,7 @@ struct WorkerThreadConfig {
 }
 
 pub fn worker_thread_loop(params: WorkerThreadParameters) {
-    println!("worker thread: entered worker_thread_loop");
+    // println!("worker thread: entered worker_thread_loop");
     let (ipc_mutex, cv) = &*params.ipc_and_cv;
     let mut shmem = ShmemConf::new()
         .flink(params.flink.clone())
@@ -117,16 +117,20 @@ pub fn worker_thread_loop(params: WorkerThreadParameters) {
             })
             .unwrap()
     };
-    println!("Setting up WorkerThreadState");
+    // println!("Setting up WorkerThreadState");
     let mut state = WorkerThreadState {
-        current_env_action_option: None,
+        current_env_action_option: Some(EnvAction::RESET {
+            shared_info_setter_option: None,
+        }),
         current_agent_id_list_option: Some(Vec::new()),
         current_obs_list_option: Some(Vec::new()),
         prev_timestep_id_option_list: Vec::new(),
         shm_slice: unsafe { &mut shmem.as_slice_mut()[evt_used_bytes..] },
+        last_3_calls: VecDeque::new(),
     };
-    println!("Setting up WorkerThreadConfig");
+    // println!("Setting up WorkerThreadConfig");
     let config = WorkerThreadConfig {
+        flink: params.flink,
         agent_id_serde: params.agent_id_serde,
         obs_serde: params.obs_serde,
         reward_serde: params.reward_serde,
@@ -134,35 +138,56 @@ pub fn worker_thread_loop(params: WorkerThreadParameters) {
         shared_info_serde_option: params.shared_info_serde_option,
         recalculate_agent_id_every_step: params.recalculate_agent_id_every_step,
     };
+    {
+        let mut ipc = ipc_mutex.lock().unwrap();
+        ipc.0 = WorkerThreadSignal::ThreadInitialized;
+        drop(ipc);
+        cv.notify_one();
+    }
     loop {
-        println!("Waiting for activation signal");
+        // println!("worker thread: waiting for activation signal");
+
         // Wait for activation signal from main thread
         let mut ipc = ipc_mutex.lock().unwrap();
-        while matches!(*ipc, (WorkerThreadSignal::None, _)) {
+        while matches!(*ipc, (WorkerThreadSignal::None, _))
+            || matches!(*ipc, (WorkerThreadSignal::ThreadInitialized, _))
+        {
             ipc = cv.wait(ipc).unwrap();
         }
         let (signal, data) = &mut *ipc;
 
         match signal {
             WorkerThreadSignal::EnvAction { env_action_option } => {
-                process_env_action(&mut state, env_action_option.take().unwrap());
+                state.last_3_calls.push_back(WorkerThreadSignal::EnvAction {
+                    env_action_option: None,
+                });
+                process_env_action(&config, &mut state, env_action_option.take().unwrap());
             }
             WorkerThreadSignal::EnvProcessResponse => {
+                state
+                    .last_3_calls
+                    .push_back(WorkerThreadSignal::EnvProcessResponse);
                 set_env_process_data(&config, &mut state, data).unwrap();
             }
-            WorkerThreadSignal::InitialObsData => {
-                set_initial_env_process_data(&config, &mut state, data).unwrap();
-            }
             WorkerThreadSignal::Stop => break,
-            WorkerThreadSignal::None => (),
+            _ => (),
         };
+        if state.last_3_calls.len() > 5 {
+            state.last_3_calls.pop_front();
+        }
+        // println!("worker thread: finished work");
         ipc.0 = WorkerThreadSignal::None; // Reset activation flag
+        drop(ipc);
         cv.notify_one();
     }
 }
 
-fn process_env_action(state: &mut WorkerThreadState, mut env_action: EnvAction) {
-    println!("worker thread: entered process_env_action");
+fn process_env_action(
+    config: &WorkerThreadConfig,
+    state: &mut WorkerThreadState,
+    mut env_action: EnvAction,
+) {
+    // println!("worker thread: entered process_env_action");
     match &mut env_action {
         EnvAction::STEP { .. } => (),
         EnvAction::RESET { .. } => (),
@@ -177,47 +202,7 @@ fn process_env_action(state: &mut WorkerThreadState, mut env_action: EnvAction) 
         }
     };
     state.current_env_action_option = Some(env_action);
-}
-
-fn set_initial_env_process_data(
-    config: &WorkerThreadConfig,
-    state: &mut WorkerThreadState,
-    env_process_data: &mut EnvProcessData,
-) -> PyResult<()> {
-    println!("worker thread: entered set_initial_env_process_data");
-    let shm_slice = &mut state.shm_slice;
-    println!("First 100 bytes of shm: {:x?}", &shm_slice[0..100]);
-    let mut offset = 0;
-    let n_agents;
-    (n_agents, offset) = retrieve_usize(shm_slice, offset)?;
-    println!("worker thread: n_agents: {n_agents}");
-    let mut agent_id_list = Vec::with_capacity(n_agents);
-    let mut obs_list = Vec::with_capacity(n_agents);
-    let mut agent_id;
-    let mut obs;
-    for _ in 0..n_agents {
-        (agent_id, offset) = unsafe { config.agent_id_serde.retrieve_ptr(shm_slice, offset)? };
-        agent_id_list.push(agent_id);
-        (obs, offset) = unsafe { config.obs_serde.retrieve_ptr(shm_slice, offset)? };
-        obs_list.push(obs);
-    }
-
-    let shared_info_option;
-    if let Some(shared_info_serde) = &config.shared_info_serde_option {
-        let shared_info;
-        (shared_info, _) = unsafe { shared_info_serde.retrieve_ptr(shm_slice, offset)? };
-        shared_info_option = Some(shared_info);
-    } else {
-        shared_info_option = None;
-    };
-
-    env_process_data.current_agent_id_list_option = Some(agent_id_list.clone());
-    env_process_data.current_obs_list = obs_list.clone();
-    env_process_data.shared_info_option = shared_info_option;
-
-    state.current_agent_id_list_option = Some(agent_id_list);
-    state.current_obs_list_option = Some(obs_list);
-    Ok(())
+    // println!("{}", config.flink);
 }
 
 // TODO: add back sending StateType
@@ -226,13 +211,18 @@ fn set_env_process_data(
     state: &mut WorkerThreadState,
     env_process_data: &mut EnvProcessData,
 ) -> PyResult<()> {
-    println!("worker thread: entered fn set_env_process_data");
-
+    // println!("worker thread: entered fn set_env_process_data");
+    // sleep(Duration::from_millis(100));
+    // println!(
+    //     "{}: current env action option: {:?}",
+    //     config.flink, state.current_env_action_option
+    // );
     let env_action = state.current_env_action_option.take().ok_or_else(|| {
         InvalidStateError::new_err(
-            "Tried to collect response from env which doesn't have an env action yet",
+            format!("Tried to collect response from env which doesn't have an env action yet. Last 5 calls: {:?}", state.last_3_calls)
         )
     })?;
+    // println!("worker thread: got env_action");
     let env_action_type = env_action.env_action_type();
     let (action_list_option, aald_option) = if let EnvAction::STEP {
         action_list,
@@ -251,6 +241,11 @@ fn set_env_process_data(
     let current_agent_id_list = state.current_agent_id_list_option.take().unwrap();
 
     // Get n_agents for incoming data and instantiate lists
+    // println!("worker thread: retrieving data");
+    // println!(
+    //     "worker thread: first 100 bytes of shm: {:x?}",
+    //     &shm_slice[0..100]
+    // );
     let n_agents;
     let (
         mut agent_id_list,
@@ -312,6 +307,7 @@ fn set_env_process_data(
     } else {
         shared_info_option = None;
     }
+    // println!("worker thread: setting env process data");
 
     env_process_data.env_action_type = env_action_type;
     if non_step || config.recalculate_agent_id_every_step {
@@ -345,6 +341,7 @@ fn set_env_process_data(
             .extend(current_timestep_id_list.drain(..).map(Some));
     }
 
+    // println!("worker thread: updating state");
     state.current_agent_id_list_option = Some(agent_id_list);
     state.current_obs_list_option = Some(obs_list);
     Ok(())

@@ -28,7 +28,6 @@ use crate::env_process_interface_worker_thread::EnvProcessData;
 use crate::env_process_interface_worker_thread::StepData;
 use crate::env_process_interface_worker_thread::WorkerThreadParameters;
 use crate::env_process_interface_worker_thread::WorkerThreadSignal;
-use crate::misc::clone_list;
 use crate::synchronization::{append_header, get_flink, recvfrom_byte, sendto_byte, Header};
 
 fn sync_with_env_process<'py>(
@@ -105,7 +104,7 @@ pub struct EnvProcessInterface {
     pid_idx_ipc_and_cv_list: Vec<Arc<(Mutex<(WorkerThreadSignal, EnvProcessData)>, Condvar)>>,
     pid_idx_current_agent_id_list_option: Vec<Option<Vec<PyObject>>>,
     pid_idx_current_obs_list: Vec<Vec<PyObject>>,
-    pid_idx_initial_state_info: Vec<Option<PyObject>>,
+    just_initialized_pid_idx_list: Vec<usize>,
 }
 
 impl EnvProcessInterface {
@@ -127,9 +126,15 @@ impl EnvProcessInterface {
             recalculate_agent_id_every_step: self.recalculate_agent_id_every_step,
             flink,
         };
-        println!("spawning thread");
+        // println!("spawning thread");
         thread::spawn(move || worker_thread_loop(thread_params));
-        println!("thread spawned");
+        // println!("thread spawned");
+        let (ipc_mutex, cv) = &*ipc_and_cv.clone();
+        let mut ipc = ipc_mutex.lock().unwrap();
+        while !matches!(*ipc, (WorkerThreadSignal::ThreadInitialized, _)) {
+            ipc = cv.wait(ipc).unwrap();
+        }
+        // println!("thread initialized");
         self.pid_idx_ipc_and_cv_list.push(ipc_and_cv);
     }
 
@@ -140,82 +145,11 @@ impl EnvProcessInterface {
         }
     }
 
-    fn get_initial_obs_data_proc<'py>(
-        &mut self,
-        py: Python<'py>,
-        pid_idx: usize,
-    ) -> PyResult<((Vec<PyObject>, Vec<PyObject>), Option<PyObject>)> {
-        println!("get_initial_obs_data_proc");
-        let (parent_end, _, _, _) = self.proc_packages.get_mut(pid_idx).unwrap();
-        recvfrom_byte(parent_end.bind(py))?;
-        let (ipc_mutex, _) = &*self.pid_idx_ipc_and_cv_list[pid_idx];
-        let mut ipc = ipc_mutex.lock().map_err(|err| {
-            InvalidStateError::new_err(format!(
-                "Worker thread IPC mutex was poisoned: {}",
-                err.to_string()
-            ))
-        })?;
-        let (_, env_process_data) = &mut *ipc;
-
-        let agent_id_list = retrieve_list_from_ptr(
-            py,
-            env_process_data
-                .current_agent_id_list_option
-                .as_mut()
-                .unwrap(),
-            &self.agent_id_serde,
-        )?
-        .into_iter()
-        .map(|v| v.unbind())
-        .collect();
-        let obs_list =
-            retrieve_list_from_ptr(py, &mut env_process_data.current_obs_list, &self.obs_serde)?
-                .into_iter()
-                .map(|v| v.unbind())
-                .collect();
-        let shared_info_option = env_process_data
-            .shared_info_option
-            .take()
-            .map(|p| {
-                retrieve_from_ptr(py, p, self.shared_info_serde_option.as_ref().unwrap())
-                    .map(|v| v.unbind())
-            })
-            .transpose()?;
-
-        Ok(((agent_id_list, obs_list), shared_info_option))
-    }
-
-    fn update_with_initial_obs<'py>(&mut self, py: Python<'py>) -> PyResult<()> {
-        println!("update_with_initial_obs");
-        for pid_idx in 0..self.proc_packages.len() {
-            let (ipc_mutex, cv) = &*self.pid_idx_ipc_and_cv_list[pid_idx];
-            let mut ipc = ipc_mutex.lock().map_err(|err| {
-                InvalidStateError::new_err(format!(
-                    "Worker thread IPC mutex was poisoned: {}",
-                    err.to_string()
-                ))
-            })?;
-            let (signal, _) = &mut *ipc;
-            *signal = WorkerThreadSignal::InitialObsData;
-            cv.notify_one();
-        }
-        for pid_idx in 0..self.proc_packages.len() {
-            let ((agent_id_list, obs_list), state_info) =
-                self.get_initial_obs_data_proc(py, pid_idx)?;
-            self.pid_idx_current_agent_id_list_option
-                .push(Some(clone_list(py, &agent_id_list)));
-            self.pid_idx_current_obs_list
-                .push(clone_list(py, &obs_list));
-            self.pid_idx_initial_state_info.push(state_info);
-        }
-        Ok(())
-    }
-
     fn get_space_types<'py>(
         &mut self,
         py: Python<'py>,
     ) -> PyResult<(Bound<'py, PyAny>, Bound<'py, PyAny>)> {
-        println!("get_space_types");
+        // println!("get_space_types");
         let (parent_end, shmem, _, _) = self.proc_packages.get_mut(0).unwrap();
         let (ep_evt, used_bytes) = unsafe {
             Event::from_existing(shmem.as_ptr()).map_err(|err| {
@@ -290,14 +224,19 @@ impl EnvProcessInterface {
         py: Python<'py>,
         pid_idx: usize,
     ) -> PyResult<(usize, ObsDataKV<'py>, TimestepDataKV<'py>, StateInfoKV<'py>)> {
-        println!("collecting response");
-        let (ipc_mutex, _) = &*self.pid_idx_ipc_and_cv_list[pid_idx];
+        // println!("collecting response");
+        let (ipc_mutex, cv) = &*self.pid_idx_ipc_and_cv_list[pid_idx];
         let mut ipc = ipc_mutex.lock().map_err(|err| {
             InvalidStateError::new_err(format!(
-                "Worker thread IPC mutex was poisoned: {}",
+                "I'm in collect response for pid_idx {pid_idx}!\nWorker thread IPC mutex was poisoned: {}",
                 err.to_string()
             ))
         })?;
+        // println!("got lock, waiting for worker thread to finish");
+        while !matches!(ipc.0, WorkerThreadSignal::None) {
+            ipc = cv.wait(ipc).unwrap();
+        }
+        // println!("worker thread finished, building step data");
         let (_, env_process_data) = &mut *ipc;
 
         // Get common data
@@ -510,7 +449,7 @@ impl EnvProcessInterface {
             pid_idx_ipc_and_cv_list: Vec::new(),
             pid_idx_current_agent_id_list_option: Vec::new(),
             pid_idx_current_obs_list: Vec::new(),
-            pid_idx_initial_state_info: Vec::new(),
+            just_initialized_pid_idx_list: Vec::new(),
         })
     }
 
@@ -530,9 +469,23 @@ impl EnvProcessInterface {
                 self.add_proc_package(py, proc_package_def)
             })?;
         self.spawn_deserialization_threads();
-        self.update_with_initial_obs(py)?;
         let (obs_space, action_space) = self.get_space_types(py)?;
 
+        // Send initial reset message
+        let mut env_actions = HashMap::with_capacity(self.proc_packages.len());
+        for (_, _, _, proc_id) in &self.proc_packages {
+            env_actions.insert(
+                proc_id.clone(),
+                EnvAction::RESET {
+                    shared_info_setter_option: None,
+                },
+            );
+        }
+        self.send_env_actions(py, env_actions)?;
+        self.pid_idx_current_agent_id_list_option = vec![None; self.proc_packages.len()];
+        self.pid_idx_current_obs_list = vec![Vec::new(); self.proc_packages.len()];
+        self.just_initialized_pid_idx_list
+            .append(&mut (0..self.proc_packages.len()).collect());
         Ok((obs_space, action_space))
     }
 
@@ -549,12 +502,14 @@ impl EnvProcessInterface {
         let pid_idx = self.proc_packages.len();
         self.add_proc_package(py, proc_package_def)?;
         self.spawn_deserialization_thread(pid_idx);
-        let ((agent_id_list, obs_list), state_info) =
-            self.get_initial_obs_data_proc(py, pid_idx)?;
-        self.pid_idx_current_agent_id_list_option
-            .push(Some(agent_id_list));
-        self.pid_idx_current_obs_list.push(obs_list);
-        self.pid_idx_initial_state_info.push(state_info);
+        let mut env_actions = HashMap::with_capacity(1);
+        env_actions.insert(
+            self.proc_packages[pid_idx].3.clone(),
+            EnvAction::RESET {
+                shared_info_setter_option: None,
+            },
+        );
+        self.just_initialized_pid_idx_list.push(pid_idx);
         Ok(())
     }
 
@@ -566,7 +521,6 @@ impl EnvProcessInterface {
         self.pid_idx_py_proc_id.pop();
         self.pid_idx_current_agent_id_list_option.pop();
         self.pid_idx_current_obs_list.pop();
-        self.pid_idx_initial_state_info.pop();
 
         // Shut down worker thread
         let (ipc_mutex, cv) = &*self.pid_idx_ipc_and_cv_list.pop().unwrap();
@@ -578,6 +532,7 @@ impl EnvProcessInterface {
         })?;
         let (signal, _) = &mut *ipc;
         *signal = WorkerThreadSignal::Stop;
+        drop(ipc);
         cv.notify_one();
 
         // Shut down env_process
@@ -617,6 +572,7 @@ impl EnvProcessInterface {
     }
 
     pub fn cleanup(&mut self) -> PyResult<()> {
+        // println!("cleanup");
         for _ in 0..self.proc_packages.len() {
             self.delete_process()?;
             // This sleep seems to be needed for the shared memory to get set/read correctly
@@ -635,12 +591,32 @@ impl EnvProcessInterface {
         Bound<'py, PyDict>,
         Bound<'py, PyDict>,
     )> {
-        let mut ready_pid_idxs_count = 0;
+        // println!("collect_step_data");
         let mut total_timesteps_collected = 0;
         let mut obs_data_kv_list = Vec::with_capacity(self.min_process_steps_per_inference);
         let mut timestep_data_kv_list = Vec::with_capacity(self.min_process_steps_per_inference);
         let mut state_info_kv_list = Vec::with_capacity(self.min_process_steps_per_inference);
         let mut ready_pid_idxs = Vec::with_capacity(self.min_process_steps_per_inference);
+        for &pid_idx in &self.just_initialized_pid_idx_list {
+            let (parent_end, _, _, _) = &self.proc_packages[pid_idx];
+            recvfrom_byte(parent_end.bind(py))?;
+            // println!("Acquiring lock and notifying worker thread");
+            let (ipc_mutex, cv) = &*self.pid_idx_ipc_and_cv_list[pid_idx];
+            let mut ipc = ipc_mutex.lock().map_err(|err| {
+                InvalidStateError::new_err(format!(
+                    "I'm in just initialized pid idx list loop!\nWorker thread IPC mutex for pid_idx {} was poisoned: {}\n\nCurrent ready pid_idxs: {:?}",
+                    pid_idx,
+                    err.to_string(),
+                    ready_pid_idxs.clone()
+                ))
+            })?;
+            let (signal, _) = &mut *ipc;
+            *signal = WorkerThreadSignal::EnvProcessResponse;
+            drop(ipc);
+            cv.notify_one();
+        }
+        ready_pid_idxs.append(&mut self.just_initialized_pid_idx_list);
+        let mut ready_pid_idxs_count = ready_pid_idxs.len();
         while ready_pid_idxs_count < self.min_process_steps_per_inference {
             for (key, event) in self
                 .selector
@@ -651,30 +627,45 @@ impl EnvProcessInterface {
                 if event & SELECTORS_EVENT_READ.get(py).unwrap() == 0 {
                     continue;
                 }
+                // println!("got selector event from while loop");
                 let (parent_end, _, _, pid_idx) =
                     key.extract::<(PyObject, PyObject, PyObject, usize)>(py)?;
                 recvfrom_byte(parent_end.bind(py))?;
 
                 // Start worker thread on deserialization
-                println!("Acquiring lock and notifying worker thread");
+                // println!("Acquiring lock and notifying worker thread");
                 let (ipc_mutex, cv) = &*self.pid_idx_ipc_and_cv_list[pid_idx];
                 let mut ipc = ipc_mutex.lock().map_err(|err| {
                     InvalidStateError::new_err(format!(
-                        "Worker thread IPC mutex was poisoned: {}",
-                        err.to_string()
+                        "Worker thread IPC mutex for pid_idx {} was poisoned: {}\n\nCurrent ready pid_idxs: {:?}",
+                        pid_idx,
+                        err.to_string(),
+                        ready_pid_idxs.clone()
                     ))
                 })?;
+                // First make sure it finished whatever it was doing
+                while !matches!(ipc.0, WorkerThreadSignal::None) {
+                    ipc = cv.wait(ipc).unwrap();
+                }
                 let (signal, _) = &mut *ipc;
                 *signal = WorkerThreadSignal::EnvProcessResponse;
+                drop(ipc);
                 cv.notify_one();
 
                 ready_pid_idxs.push(pid_idx);
                 ready_pid_idxs_count += 1;
             }
         }
+        // println!("starting to collect responses");
+        let debug_ready_pid_idxs = ready_pid_idxs.clone();
         for pid_idx in ready_pid_idxs.into_iter() {
             let (n_timesteps, obs_data_kv, timestep_data_kv, state_info_kv) =
-                self.collect_response(py, pid_idx)?;
+                self.collect_response(py, pid_idx).map_err(|err| {
+                    InvalidStateError::new_err(format!(
+                        "{err}\n\nready_pid_idxs list: {:?}",
+                        debug_ready_pid_idxs
+                    ))
+                })?;
             obs_data_kv_list.push(obs_data_kv);
             timestep_data_kv_list.push(timestep_data_kv);
             state_info_kv_list.push(state_info_kv);
@@ -693,7 +684,7 @@ impl EnvProcessInterface {
         py: Python<'py>,
         env_actions: HashMap<String, EnvAction>,
     ) -> PyResult<()> {
-        println!("Sending env actions");
+        // println!("Sending env actions");
         for (proc_id, env_action) in env_actions.into_iter() {
             let &pid_idx = self.proc_id_pid_idx_map.get(&proc_id).unwrap();
             let (_, shmem, _, _) = self.proc_packages.get_mut(pid_idx).unwrap();
@@ -735,6 +726,7 @@ impl EnvProcessInterface {
             *signal = WorkerThreadSignal::EnvAction {
                 env_action_option: Some(env_action),
             };
+            drop(ipc);
             cv.notify_one();
         }
         Ok(())
