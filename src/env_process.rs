@@ -163,27 +163,28 @@ pub fn env_process<'py>(
         }
 
         // Write reset message
-        let mut offset = 0;
-        offset = append_usize(shm_slice, offset, n_agents);
-        for agent_id in agent_id_list.iter() {
-            offset = agent_id_serde.append(shm_slice, offset, agent_id)?;
-            offset = obs_serde.append(
-                shm_slice,
-                offset,
-                &reset_obs
-                    .get_item(agent_id)?
-                    .ok_or(InvalidStateError::new_err(
-                        "Reset obs python dict did not contain AgentID as key",
-                    ))?,
-            )?;
-        }
+        // let mut offset = 0;
+        // offset = append_usize(shm_slice, offset, n_agents);
+        // for agent_id in agent_id_list.iter() {
+        //     offset = agent_id_serde.append(shm_slice, offset, agent_id)?;
+        //     offset = obs_serde.append(
+        //         shm_slice,
+        //         offset,
+        //         &reset_obs
+        //             .get_item(agent_id)?
+        //             .ok_or(InvalidStateError::new_err(
+        //                 "Reset obs python dict did not contain AgentID as key",
+        //             ))?,
+        //     )?;
+        // }
 
-        if let Some(shared_info_serde) = shared_info_serde_option {
-            _ = shared_info_serde.append(shm_slice, offset, &env_shared_info(&env)?)?;
-        }
-        sendto_byte(&child_end, &parent_sockname)?;
+        // if let Some(shared_info_serde) = shared_info_serde_option {
+        //     _ = shared_info_serde.append(shm_slice, offset, &env_shared_info(&env)?)?;
+        // }
+        // sendto_byte(&child_end, &parent_sockname)?;
 
         // Start main loop
+        let mut offset;
         let mut has_received_env_action = false;
         loop {
             epi_evt

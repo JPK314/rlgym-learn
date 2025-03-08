@@ -111,8 +111,6 @@ class EnvProcessInterface(
     def init_processes(
         self, proc_package_defs: List[Process, socket, _RetAddress, str]
     ) -> Tuple[
-        Dict[str, Tuple[List[AgentID], List[ObsType]]],
-        Dict[str, Tuple[Optional[StateType], None, None]],
         ObsSpaceType,
         ActionSpaceType,
     ]: ...

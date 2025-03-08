@@ -114,15 +114,6 @@ class EnvProcessInterface(
         render=False,
         render_delay: Optional[float] = None,
     ) -> Tuple[
-        Dict[str, Tuple[List[AgentID], List[ObsType]]],
-        Dict[
-            str,
-            Tuple[
-                Optional[StateType],
-                Optional[Dict[AgentID, bool]],
-                Optional[Dict[AgentID, bool]],
-            ],
-        ],
         ObsSpaceType,
         ActionSpaceType,
     ]:

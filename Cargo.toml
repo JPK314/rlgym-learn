@@ -21,7 +21,6 @@ paste = "1.0.15"
 pyany-serde = "0.2.2"
 pyo3 = { version = "0.23.4", features = ["extension-module", "py-clone"] }
 raw_sync = "0.1.5"
-rayon = "1.10.0"
 shared_memory = "0.12.4"
 
 [dev-dependencies]

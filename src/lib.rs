@@ -1,7 +1,5 @@
 use pyo3::prelude::*;
 
-extern crate rayon;
-
 pub mod agent_manager;
 pub mod env_action;
 pub mod env_process;

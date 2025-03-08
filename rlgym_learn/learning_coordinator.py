@@ -97,8 +97,6 @@ class LearningCoordinator(
             self.config.process_config.recalculate_agent_id_every_step,
         )
         (
-            initial_env_obs_data_dict,
-            initial_state_info,
             obs_space,
             action_space,
         ) = self.env_process_interface.init_processes(
@@ -115,10 +113,6 @@ class LearningCoordinator(
         )
         self.agent_manager.set_space_types(obs_space, action_space)
         self.agent_manager.load_agent_controllers(self.config)
-        # Handle actions for observations created on process init
-        self.initial_env_actions = self.agent_manager.get_env_actions(
-            initial_env_obs_data_dict, initial_state_info
-        )
         print("Learner successfully initialized!")
         # TODO: delete and remove import
         self.prof = cProfile.Profile()
@@ -160,8 +154,6 @@ class LearningCoordinator(
 
         # Class to watch for keyboard hits
         kb = KBHit()
-        # Handle actions for observations created on process init
-        self.env_process_interface.send_env_actions(self.initial_env_actions)
 
         # Collect the desired number of timesteps from our environments.
         loop_iterations = 0
