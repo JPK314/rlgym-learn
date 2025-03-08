@@ -1,6 +1,6 @@
 [package]
 name = "rlgym-learn"
-version = "0.1.6"
+version = "0.1.7"
 edition = "2021"
 description = "Rust backend for the more expensive parts of the rlgym-learn python module"
 license="Apache-2.0"
@@ -18,7 +18,7 @@ num-derive = "0.4.2"
 num-traits = "0.2.19"
 numpy = "0.23.0"
 paste = "1.0.15"
-pyany-serde = {path = "../pyany-serde"}
+pyany-serde = "0.2.3"
 pyo3 = { version = "0.23.4", features = ["extension-module", "py-clone"] }
 raw_sync = "0.1.5"
 shared_memory = "0.12.4"
