@@ -16,10 +16,9 @@ from ..api import (
     AgentController,
     DerivedAgentControllerConfig,
 )
-from ..experience import Timestep
 from ..learning_coordinator_config import LearningCoordinatorConfigModel
 from ..rlgym_learn import AgentManager as RustAgentManager
-from ..rlgym_learn import EnvAction
+from ..rlgym_learn import EnvAction, Timestep
 
 
 class AgentManager(

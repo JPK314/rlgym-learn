@@ -17,7 +17,6 @@ use pyany_serde::{
 use pyo3::types::PyString;
 use pyo3::{
     exceptions::asyncio::InvalidStateError, intern, prelude::*, sync::GILOnceCell, types::PyDict,
-    IntoPyObjectExt,
 };
 use raw_sync::events::Event;
 use raw_sync::events::EventInit;
@@ -28,6 +27,7 @@ use shared_memory::ShmemConf;
 use crate::env_action::append_env_action;
 use crate::env_action::EnvAction;
 use crate::synchronization::{append_header, get_flink, recvfrom_byte, sendto_byte, Header};
+use crate::timestep::Timestep;
 
 fn sync_with_env_process<'py>(
     socket: &Bound<'py, PyAny>,
@@ -44,11 +44,7 @@ type ObsDataKV<'py> = (
 
 type TimestepDataKV<'py> = (
     Bound<'py, PyString>,
-    (
-        Vec<Bound<'py, PyAny>>,
-        Option<PyObject>,
-        Option<Bound<'py, PyAny>>,
-    ),
+    (Vec<Timestep>, Option<PyObject>, Option<Bound<'py, PyAny>>),
 );
 
 type StateInfoKV<'py> = (
@@ -78,7 +74,6 @@ pub struct EnvProcessInterface {
     proc_packages: Vec<(PyObject, Shmem, usize, String)>,
     min_process_steps_per_inference: usize,
     selector: PyObject,
-    timestep_class: PyObject,
     proc_id_pid_idx_map: HashMap<String, usize>,
     pid_idx_current_env_action: Vec<Option<EnvAction>>,
     pid_idx_current_agent_id_list_option: Vec<Option<Vec<PyObject>>>,
@@ -246,7 +241,7 @@ impl EnvProcessInterface {
         }
 
         let shared_info_option;
-        if let Some(shared_info_serde) = &self.shared_info_serde_option {
+        if let Some(shared_info_serde) = &mut self.shared_info_serde_option {
             let shared_info;
             (shared_info, _) = shared_info_serde.retrieve(py, shm_slice, offset)?;
             shared_info_option = Some(shared_info);
@@ -254,6 +249,7 @@ impl EnvProcessInterface {
             shared_info_option = None;
         }
 
+        // Populate timestep_list
         let prev_timestep_id_option_list_option =
             &mut self.pid_idx_prev_timestep_id_option_list_option[pid_idx];
         if let None = prev_timestep_id_option_list_option {
@@ -262,11 +258,10 @@ impl EnvProcessInterface {
         let timestep_id_list_option;
         let mut timestep_list;
         if is_step_action {
-            let timestep_class = self.timestep_class.bind(py);
             let mut timestep_id_list = Vec::with_capacity(n_agents);
             timestep_list = Vec::with_capacity(n_agents);
             for (
-                prev_timestep_id,
+                previous_timestep_id,
                 agent_id,
                 obs,
                 next_obs,
@@ -275,29 +270,32 @@ impl EnvProcessInterface {
                 &terminated,
                 &truncated,
             ) in izip!(
-                prev_timestep_id_option_list_option.as_ref().unwrap(),
+                prev_timestep_id_option_list_option
+                    .as_mut()
+                    .unwrap()
+                    .drain(..),
                 &agent_id_list,
                 &self.pid_idx_current_obs_list[pid_idx],
                 &obs_list,
                 &self.pid_idx_current_action_list[pid_idx],
-                reward_list_option.as_ref().unwrap(),
+                reward_list_option.unwrap(),
                 terminated_list_option.as_ref().unwrap(),
                 truncated_list_option.as_ref().unwrap()
             ) {
                 let timestep_id = fastrand::u128(..);
                 timestep_id_list.push(Some(timestep_id));
-                timestep_list.push(timestep_class.call1((
-                    proc_id.into_py_any(py)?,
+                timestep_list.push(Timestep {
+                    env_id: proc_id.clone(),
                     timestep_id,
-                    prev_timestep_id,
-                    agent_id.clone_ref(py),
-                    obs,
-                    next_obs,
-                    action,
-                    reward,
+                    previous_timestep_id,
+                    agent_id: agent_id.clone_ref(py),
+                    obs: obs.clone_ref(py),
+                    next_obs: next_obs.clone().unbind(),
+                    action: action.clone_ref(py),
+                    reward: reward.unbind(),
                     terminated,
                     truncated,
-                ))?);
+                });
             }
             timestep_id_list_option = Some(timestep_id_list);
         } else {
@@ -331,9 +329,7 @@ impl EnvProcessInterface {
         }
 
         // Set prev_timestep_id_list for proc
-        let prev_timestep_id_list = self.pid_idx_prev_timestep_id_option_list_option[pid_idx]
-            .as_mut()
-            .unwrap();
+        let prev_timestep_id_list = prev_timestep_id_option_list_option.as_mut().unwrap();
         if is_step_action {
             prev_timestep_id_list.clear();
             prev_timestep_id_list.append(&mut timestep_id_list_option.unwrap());
@@ -419,9 +415,6 @@ impl EnvProcessInterface {
         flinks_folder: String,
         min_process_steps_per_inference: usize,
     ) -> PyResult<Self> {
-        let timestep_class = PyModule::import(py, "rlgym_learn.experience.timestep")?
-            .getattr("Timestep")?
-            .unbind();
         let selector = PyModule::import(py, "selectors")?
             .getattr("DefaultSelector")?
             .call0()?
@@ -441,7 +434,6 @@ impl EnvProcessInterface {
             proc_packages: Vec::new(),
             min_process_steps_per_inference,
             selector,
-            timestep_class,
             proc_id_pid_idx_map: HashMap::new(),
             pid_idx_current_env_action: Vec::new(),
             pid_idx_current_agent_id_list_option: Vec::new(),
@@ -700,9 +692,9 @@ impl EnvProcessInterface {
                 shm_slice,
                 offset,
                 &env_action,
-                &self.action_serde,
-                &self.shared_info_setter_serde_option.as_ref(),
-                &self.state_serde_option.as_ref(),
+                &mut self.action_serde,
+                &mut self.shared_info_setter_serde_option.as_mut(),
+                &mut self.state_serde_option.as_mut(),
             )?;
 
             ep_evt

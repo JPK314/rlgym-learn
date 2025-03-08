@@ -160,7 +160,7 @@ if __name__ == "__main__":
         return BasicCritic(obs_space[1], (256, 256, 256), device)
 
     # 80 processes
-    n_proc = 20
+    n_proc = 200
 
     learner_config = PPOLearnerConfigModel(
         n_epochs=1,
@@ -200,8 +200,8 @@ if __name__ == "__main__":
             base_config=BaseConfigModel(
                 serde_types=SerdeTypesModel(
                     agent_id_serde_type=PyAnySerdeType.STRING(),
-                    action_serde_type=PyAnySerdeType.NUMPY(np.int64),
-                    obs_serde_type=PyAnySerdeType.NUMPY(np.float64),
+                    action_serde_type=PyAnySerdeType.NUMPY(np.int64, shape=None),
+                    obs_serde_type=PyAnySerdeType.NUMPY(np.float64, shape=(92,)),
                     reward_serde_type=PyAnySerdeType.FLOAT(),
                     obs_space_serde_type=PyAnySerdeType.TUPLE(
                         (PyAnySerdeType.STRING(), PyAnySerdeType.INT())
@@ -210,7 +210,7 @@ if __name__ == "__main__":
                         (PyAnySerdeType.STRING(), PyAnySerdeType.INT())
                     ),
                 ),
-                timestep_limit=500_000,
+                timestep_limit=500_0000,
                 send_state_to_agent_controllers=False,
             ),
             agent_controllers_config={"PPO1": ppo_agent_controller_config},

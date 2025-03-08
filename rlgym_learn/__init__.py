@@ -18,6 +18,7 @@ from .rlgym_learn import (
     PickleableInitStrategy,
     PickleablePyAnySerdeType,
     PyAnySerdeType,
+    Timestep,
 )
 from .rlgym_learn import env_process as rust_env_process
 from .rlgym_learn import recvfrom_byte, sendto_byte

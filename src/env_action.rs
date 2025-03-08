@@ -96,9 +96,9 @@ pub fn append_env_action<'py>(
     buf: &mut [u8],
     mut offset: usize,
     env_action: &EnvAction,
-    action_serde: &Box<dyn PyAnySerde>,
-    shared_info_setter_serde_option: &Option<&Box<dyn PyAnySerde>>,
-    state_serde_option: &Option<&Box<dyn PyAnySerde>>,
+    action_serde: &mut Box<dyn PyAnySerde>,
+    shared_info_setter_serde_option: &mut Option<&mut Box<dyn PyAnySerde>>,
+    state_serde_option: &mut Option<&mut Box<dyn PyAnySerde>>,
 ) -> PyResult<usize> {
     match env_action {
         EnvAction::STEP {
@@ -150,7 +150,7 @@ pub fn append_env_action<'py>(
         } => {
             buf[offset] = 2;
             offset += 1;
-            offset = state_serde_option
+            offset = state_serde_option.as_deref_mut()
                 .ok_or_else(|| {
                     InvalidStateError::new_err(
                         "Received SET_STATE EnvAction from agent controllers but no state serde was provided",
@@ -179,9 +179,9 @@ pub fn retrieve_env_action<'py>(
     buf: &mut [u8],
     offset: usize,
     n_actions: usize,
-    action_serde: &Box<dyn PyAnySerde>,
-    shared_info_setter_serde_option: &Option<&Box<dyn PyAnySerde>>,
-    state_serde_option: &Option<&Box<dyn PyAnySerde>>,
+    action_serde: &mut Box<dyn PyAnySerde>,
+    shared_info_setter_serde_option: &mut Option<&mut Box<dyn PyAnySerde>>,
+    state_serde_option: &mut Option<&mut Box<dyn PyAnySerde>>,
 ) -> PyResult<(EnvAction, usize)> {
     let env_action_type = buf[offset];
     let mut offset = offset + 1;
@@ -237,7 +237,7 @@ pub fn retrieve_env_action<'py>(
         }
         2 => {
             let state;
-            (state, offset) = state_serde_option
+            (state, offset) = state_serde_option.as_deref_mut()
                 .ok_or_else(|| {
                     InvalidStateError::new_err(
                         "Received SET_STATE EnvAction in env process but no state serde was provided",

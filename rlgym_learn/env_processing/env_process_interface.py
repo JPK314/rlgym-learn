@@ -22,11 +22,10 @@ from rlgym.api import (
 )
 
 from ..api import ActionAssociatedLearningData
-from ..experience import Timestep
 from ..learning_coordinator_config import SerdeTypesModel
 from ..rlgym_learn import EnvAction
 from ..rlgym_learn import EnvProcessInterface as RustEnvProcessInterface
-from ..rlgym_learn import PickleablePyAnySerdeType, recvfrom_byte, sendto_byte
+from ..rlgym_learn import PickleablePyAnySerdeType, Timestep, recvfrom_byte, sendto_byte
 from .env_process import PickleableSerdeTypeConfig, env_process
 
 try:

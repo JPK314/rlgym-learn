@@ -101,12 +101,12 @@ pub fn env_process<'py>(
     build_env_fn: Bound<'py, PyAny>,
     flinks_folder: &str,
     shm_buffer_size: usize,
-    agent_id_serde: Box<dyn PyAnySerde>,
-    action_serde: Box<dyn PyAnySerde>,
-    obs_serde: Box<dyn PyAnySerde>,
-    reward_serde: Box<dyn PyAnySerde>,
-    obs_space_serde: Box<dyn PyAnySerde>,
-    action_space_serde: Box<dyn PyAnySerde>,
+    mut agent_id_serde: Box<dyn PyAnySerde>,
+    mut action_serde: Box<dyn PyAnySerde>,
+    mut obs_serde: Box<dyn PyAnySerde>,
+    mut reward_serde: Box<dyn PyAnySerde>,
+    mut obs_space_serde: Box<dyn PyAnySerde>,
+    mut action_space_serde: Box<dyn PyAnySerde>,
     shared_info_serde_option: DynPyAnySerdeOption,
     shared_info_setter_serde_option: DynPyAnySerdeOption,
     state_serde_option: DynPyAnySerdeOption,
@@ -114,13 +114,13 @@ pub fn env_process<'py>(
     render_delay_option: Option<Duration>,
     recalculate_agent_id_every_step: bool,
 ) -> PyResult<()> {
-    let shared_info_serde_option: Option<Box<dyn PyAnySerde>> = shared_info_serde_option.into();
-    let shared_info_serde_option = shared_info_serde_option.as_ref();
-    let shared_info_setter_serde_option: Option<Box<dyn PyAnySerde>> =
+    let mut shared_info_serde_option: Option<Box<dyn PyAnySerde>> = shared_info_serde_option.into();
+    let mut shared_info_serde_option = shared_info_serde_option.as_mut();
+    let mut shared_info_setter_serde_option: Option<Box<dyn PyAnySerde>> =
         shared_info_setter_serde_option.into();
-    let shared_info_setter_serde_option = shared_info_setter_serde_option.as_ref();
-    let state_serde_option: Option<Box<dyn PyAnySerde>> = state_serde_option.into();
-    let state_serde_option = state_serde_option.as_ref();
+    let mut shared_info_setter_serde_option = shared_info_setter_serde_option.as_mut();
+    let mut state_serde_option: Option<Box<dyn PyAnySerde>> = state_serde_option.into();
+    let mut state_serde_option = state_serde_option.as_mut();
     let flink = get_flink(flinks_folder, proc_id);
     let mut shmem = ShmemConf::new()
         .size(shm_buffer_size)
@@ -205,9 +205,9 @@ pub fn env_process<'py>(
                         shm_slice,
                         offset,
                         agent_id_list.len(),
-                        &action_serde,
-                        &shared_info_setter_serde_option,
-                        &state_serde_option,
+                        &mut action_serde,
+                        &mut shared_info_setter_serde_option,
+                        &mut state_serde_option,
                     )?;
                     // Read actions message
                     let (
@@ -322,7 +322,7 @@ pub fn env_process<'py>(
                         }
                     }
 
-                    if let Some(shared_info_serde) = shared_info_serde_option {
+                    if let Some(shared_info_serde) = &mut shared_info_serde_option {
                         _ = shared_info_serde.append(shm_slice, offset, &env_shared_info(&env)?)?;
                     }
 

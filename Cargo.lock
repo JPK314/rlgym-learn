@@ -283,8 +283,6 @@ dependencies = [
 [[package]]
 name = "pyany-serde"
 version = "0.2.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d1bfc452aea87be627fbfc87f9f31daadd09203de0c5a7dbf558d8908861f528"
 dependencies = [
  "bytemuck",
  "byteorder",

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from abc import abstractmethod
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import timedelta
 from multiprocessing import Process
 from socket import _RetAddress, socket
@@ -35,8 +36,7 @@ from rlgym.api import (
 )
 from rlgym.rocket_league.api import Car, GameConfig, GameState, PhysicsObject
 
-from rlgym_learn.api import ActionAssociatedLearningData, AgentController, StateMetrics
-from rlgym_learn.experience import Timestep
+from rlgym_learn.api import ActionAssociatedLearningData, AgentController
 from rlgym_learn.standard_impl import BatchRewardTypeNumpyConverter
 
 if TYPE_CHECKING:
@@ -131,14 +131,15 @@ class EnvProcessInterface(
             Tuple[
                 List[Timestep],
                 ActionAssociatedLearningData,
-                Optional[StateMetrics],
-                Optional[StateType],
+                Optional[Dict[str, Any]],
+                # Optional[StateType],
             ],
         ],
         Dict[
             str,
             Tuple[
-                Optional[StateType],
+                Optional[Dict[str, Any]],
+                # Optional[StateType],
                 Optional[Dict[AgentID, bool]],
                 Optional[Dict[AgentID, bool]],
             ],
@@ -298,6 +299,8 @@ class PyAnySerdeType(Generic[T]):
     TYPEDDICT: Type[PyAnySerdeType_TYPEDDICT] = ...
     UNION: Type[PyAnySerdeType_UNION] = ...
 
+    def as_pickleable(self): ...
+
 class PyAnySerdeType_BOOL(PyAnySerdeType[bool]):
     def __new__(cls) -> PyAnySerdeType_BOOL: ...
 
@@ -342,7 +345,7 @@ class PyAnySerdeType_LIST(PyAnySerdeType[List[T]]):
 
 class PyAnySerdeType_NUMPY(PyAnySerdeType[ndarray[_ShapeType, DTypeLike]]):
     def __new__(
-        cls, dtype: DTypeLike
+        cls, dtype: DTypeLike, shape: Optional[Tuple[int]] = None
     ) -> PyAnySerdeType_NUMPY[_ShapeType, DTypeLike]: ...
 
 class PyAnySerdeType_OPTION(PyAnySerdeType[Optional[T]]):
@@ -376,3 +379,28 @@ class PyAnySerdeType_UNION(PyAnySerdeType[Union]):
     def __new__(
         option_serde_types: List[PyAnySerdeType], option_choice_fn: Callable[[Any], int]
     ) -> PyAnySerdeType_UNION: ...
+
+@dataclass
+class Timestep(Generic[AgentID, ObsType, ActionType, RewardType]):
+    __slots__ = (
+        "env_id",
+        "timestep_id",
+        "previous_timestep_id",
+        "agent_id",
+        "obs",
+        "next_obs",
+        "action",
+        "reward",
+        "terminated",
+        "truncated",
+    )
+    env_id: str
+    timestep_id: int
+    previous_timestep_id: Optional[int]
+    agent_id: AgentID
+    obs: ObsType
+    next_obs: ObsType
+    action: ActionType
+    reward: RewardType
+    terminated: bool
+    truncated: bool
