@@ -441,6 +441,7 @@ class PPOAgentController(
             env_timesteps,
             env_log_probs,
             env_shared_info,
+            _,
         ) in timestep_data.items():
             if self.obs_standardizer is not None:
                 self.standardize_timestep_observations(env_timesteps)

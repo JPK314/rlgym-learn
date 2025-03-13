@@ -71,6 +71,7 @@ class AgentManager(
                 List[Timestep],
                 Optional[ActionAssociatedLearningData],
                 Optional[Dict[str, Any]],
+                Optional[StateType],
             ],
         ],
     ):
@@ -84,6 +85,7 @@ class AgentManager(
             str,
             Tuple[
                 Optional[Dict[str, Any]],
+                Optional[StateType],
                 Optional[Dict[AgentID, bool]],
                 Optional[Dict[AgentID, bool]],
             ],

@@ -51,6 +51,7 @@ class EnvActionResponseType:
     RESET = ...
     SET_STATE = ...
 
+# TODO: rework env_action.rs so that these actually work with the keywords
 class EnvActionResponse_STEP:
     def __new__(
         cls, shared_info_setter: Optional[Dict[str, Any]] = None
@@ -73,6 +74,7 @@ class EnvActionResponse(Generic[AgentID, StateType]):
     STEP: Type[EnvActionResponse_STEP] = ...
     RESET: Type[EnvActionResponse_RESET] = ...
     SET_STATE: Type[EnvActionResponse_SET_STATE] = ...
+    @property
     def enum_type(self) -> EnvActionResponseType: ...
     def desired_state(self) -> Optional[StateType]: ...
     def prev_timestep_id_dict(self) -> Optional[Dict[AgentID, Optional[int]]]: ...
@@ -132,14 +134,14 @@ class EnvProcessInterface(
                 List[Timestep],
                 ActionAssociatedLearningData,
                 Optional[Dict[str, Any]],
-                # Optional[StateType],
+                Optional[StateType],
             ],
         ],
         Dict[
             str,
             Tuple[
                 Optional[Dict[str, Any]],
-                # Optional[StateType],
+                Optional[StateType],
                 Optional[Dict[AgentID, bool]],
                 Optional[Dict[AgentID, bool]],
             ],
@@ -257,9 +259,9 @@ class PickleableInitStrategy(Generic[T]):
     def __new__(cls, init_strategy: InitStrategy[T]) -> PickleableInitStrategy[T]: ...
 
 class InitStrategy(Generic[T]):
-    ALL: Type[InitStrategy_ALL] = ...
-    SOME: Type[InitStrategy_SOME] = ...
-    NONE: Type[InitStrategy_NONE] = ...
+    ALL = InitStrategy_ALL
+    SOME = InitStrategy_SOME
+    NONE = InitStrategy_NONE
 
 class InitStrategy_ALL(InitStrategy[T]):
     def __new__(cls) -> InitStrategy_ALL: ...
@@ -274,30 +276,54 @@ class InitStrategy_SOME(InitStrategy[T]):
 class InitStrategy_NONE(InitStrategy[T]):
     def __new__(cls) -> InitStrategy_NONE: ...
 
+class PickleableNumpySerdeConfig(Generic[T]):
+    def __new__(cls, config: NumpySerdeConfig[T]) -> PickleableNumpySerdeConfig[T]: ...
+
+class NumpySerdeConfig(Generic[T]):
+    DYNAMIC = NumpySerdeConfig_DYNAMIC
+    STATIC = NumpySerdeConfig_STATIC
+
+class NumpySerdeConfig_DYNAMIC(NumpySerdeConfig[T]):
+    def __new__(
+        cls,
+        preprocessor_fn: Optional[Callable[[T], ndarray]] = None,
+        postprocessor_fn: Optional[Callable[[ndarray], T]] = None,
+    ) -> NumpySerdeConfig_DYNAMIC: ...
+
+class NumpySerdeConfig_STATIC(InitStrategy[T]):
+    def __new__(
+        cls,
+        shape: Tuple[int],
+        preprocessor_fn: Optional[Callable[[T], ndarray]] = None,
+        postprocessor_fn: Optional[Callable[[ndarray], T]] = None,
+        allocation_pool_min_size: int = 0,
+        allocation_pool_max_size: Optional[int] = None,
+    ) -> NumpySerdeConfig_STATIC: ...
+
 class PickleablePyAnySerdeType(Generic[T]):
     def __new__(
         cls, pyany_serde_type: PyAnySerdeType[T]
     ) -> PickleablePyAnySerdeType[T]: ...
 
 class PyAnySerdeType(Generic[T]):
-    BOOL: Type[PyAnySerdeType_BOOL] = ...
-    BYTES: Type[PyAnySerdeType_BYTES] = ...
-    COMPLEX: Type[PyAnySerdeType_COMPLEX] = ...
-    DATACLASS: Type[PyAnySerdeType_DATACLASS] = ...
-    DICT: Type[PyAnySerdeType_DICT] = ...
-    DYNAMIC: Type[PyAnySerdeType_DYNAMIC] = ...
-    FLOAT: Type[PyAnySerdeType_FLOAT] = ...
-    INT: Type[PyAnySerdeType_INT] = ...
-    LIST: Type[PyAnySerdeType_LIST] = ...
-    NUMPY: Type[PyAnySerdeType_NUMPY] = ...
-    OPTION: Type[PyAnySerdeType_OPTION] = ...
-    PICKLE: Type[PyAnySerdeType_PICKLE] = ...
-    PYTHONSERDE: Type[PyAnySerdeType_PYTHONSERDE] = ...
-    SET: Type[PyAnySerdeType_SET] = ...
-    STRING: Type[PyAnySerdeType_STRING] = ...
-    TUPLE: Type[PyAnySerdeType_TUPLE] = ...
-    TYPEDDICT: Type[PyAnySerdeType_TYPEDDICT] = ...
-    UNION: Type[PyAnySerdeType_UNION] = ...
+    BOOL = PyAnySerdeType_BOOL
+    BYTES = PyAnySerdeType_BYTES
+    COMPLEX = PyAnySerdeType_COMPLEX
+    DATACLASS = PyAnySerdeType_DATACLASS
+    DICT = PyAnySerdeType_DICT
+    DYNAMIC = PyAnySerdeType_DYNAMIC
+    FLOAT = PyAnySerdeType_FLOAT
+    INT = PyAnySerdeType_INT
+    LIST = PyAnySerdeType_LIST
+    NUMPY = PyAnySerdeType_NUMPY
+    OPTION = PyAnySerdeType_OPTION
+    PICKLE = PyAnySerdeType_PICKLE
+    PYTHONSERDE = PyAnySerdeType_PYTHONSERDE
+    SET = PyAnySerdeType_SET
+    STRING = PyAnySerdeType_STRING
+    TUPLE = PyAnySerdeType_TUPLE
+    TYPEDDICT = PyAnySerdeType_TYPEDDICT
+    UNION = PyAnySerdeType_UNION
 
     def as_pickleable(self): ...
 
@@ -372,7 +398,7 @@ class PyAnySerdeType_TUPLE(PyAnySerdeType[Tuple]):
 
 class PyAnySerdeType_TYPEDDICT(PyAnySerdeType[_TypedDict]):
     def __new__(
-        key_serde_type_dict: Dict[str, PyAnySerdeType]
+        key_serde_type_dict: Dict[str, PyAnySerdeType],
     ) -> PyAnySerdeType_TYPEDDICT: ...
 
 class PyAnySerdeType_UNION(PyAnySerdeType[Union]):

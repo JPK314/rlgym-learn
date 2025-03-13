@@ -288,11 +288,17 @@ class EnvProcessInterface(
                 List[Timestep],
                 Optional[ActionAssociatedLearningData],
                 Optional[Dict[str, Any]],
+                Optional[StateType],
             ],
         ],
         Dict[
             str,
-            Tuple[Optional[Dict[str, Any]], Dict[AgentID, bool], Dict[AgentID, bool]],
+            Tuple[
+                Optional[Dict[str, Any]],
+                Optional[StateType],
+                Optional[Dict[AgentID, bool]],
+                Optional[Dict[AgentID, bool]],
+            ],
         ],
     ]:
         """

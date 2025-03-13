@@ -1,6 +1,6 @@
 [package]
 name = "rlgym-learn"
-version = "0.1.7"
+version = "0.1.8"
 edition = "2021"
 description = "Rust backend for the more expensive parts of the rlgym-learn python module"
 license="Apache-2.0"
@@ -11,19 +11,10 @@ name = "rlgym_learn"
 crate-type = ["cdylib"]
 
 [dependencies]
-dyn-clone = "1.0.17"
 fastrand = "2.2.0"
 itertools = "0.13.0"
-num-derive = "0.4.2"
-num-traits = "0.2.19"
 numpy = "0.23.0"
-paste = "1.0.15"
-pyany-serde = "0.2.3"
+pyany-serde = "0.3.1"
 pyo3 = { version = "0.23.4", features = ["extension-module", "py-clone"] }
 raw_sync = "0.1.5"
 shared_memory = "0.12.4"
-
-[dev-dependencies]
-libc = "0.2.169"
-which = "7.0.1"
-widestring = "1.1.0"

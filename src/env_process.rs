@@ -43,6 +43,10 @@ fn env_shared_info<'py>(env: &'py Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAn
     env.getattr(intern!(env.py(), "shared_info"))
 }
 
+fn env_state<'py>(env: &'py Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+    env.getattr(intern!(env.py(), "state"))
+}
+
 fn env_obs_spaces<'py>(env: &'py Bound<'py, PyAny>) -> PyResult<Bound<'py, PyDict>> {
     Ok(env
         .getattr(intern!(env.py(), "observation_spaces"))?
@@ -162,27 +166,6 @@ pub fn env_process<'py>(
             agent_id_list.push(agent_id);
         }
 
-        // Write reset message
-        // let mut offset = 0;
-        // offset = append_usize(shm_slice, offset, n_agents);
-        // for agent_id in agent_id_list.iter() {
-        //     offset = agent_id_serde.append(shm_slice, offset, agent_id)?;
-        //     offset = obs_serde.append(
-        //         shm_slice,
-        //         offset,
-        //         &reset_obs
-        //             .get_item(agent_id)?
-        //             .ok_or(InvalidStateError::new_err(
-        //                 "Reset obs python dict did not contain AgentID as key",
-        //             ))?,
-        //     )?;
-        // }
-
-        // if let Some(shared_info_serde) = shared_info_serde_option {
-        //     _ = shared_info_serde.append(shm_slice, offset, &env_shared_info(&env)?)?;
-        // }
-        // sendto_byte(&child_end, &parent_sockname)?;
-
         // Start main loop
         let mut offset;
         let mut has_received_env_action = false;
@@ -215,7 +198,7 @@ pub fn env_process<'py>(
                         rew_dict_option,
                         terminated_dict_option,
                         truncated_dict_option,
-                        is_step_action,
+                        is_step,
                     );
                     let shared_info_setter_option = match &env_action {
                         EnvAction::STEP {
@@ -236,17 +219,21 @@ pub fn env_process<'py>(
                             rew_dict_option = Some(rew_dict);
                             terminated_dict_option = Some(terminated_dict);
                             truncated_dict_option = Some(truncated_dict);
-                            is_step_action = true;
+                            is_step = true;
                             shared_info_setter_option
                         }
                         EnvAction::RESET {
                             shared_info_setter_option,
                         } => {
                             obs_dict = env_reset(&env)?;
+                            agent_id_list.clear();
+                            for agent_id in obs_dict.keys().iter() {
+                                agent_id_list.push(agent_id);
+                            }
                             rew_dict_option = None;
                             terminated_dict_option = None;
                             truncated_dict_option = None;
-                            is_step_action = false;
+                            is_step = false;
                             shared_info_setter_option
                         }
                         EnvAction::SET_STATE {
@@ -255,10 +242,14 @@ pub fn env_process<'py>(
                             ..
                         } => {
                             obs_dict = env_set_state(&env, desired_state.bind(py))?;
+                            agent_id_list.clear();
+                            for agent_id in obs_dict.keys().iter() {
+                                agent_id_list.push(agent_id);
+                            }
                             rew_dict_option = None;
                             terminated_dict_option = None;
                             truncated_dict_option = None;
-                            is_step_action = false;
+                            is_step = false;
                             shared_info_setter_option
                         }
                     };
@@ -269,19 +260,26 @@ pub fn env_process<'py>(
                                 .as_mapping(),
                         )?;
                     }
-                    let new_episode = !is_step_action;
+                    let non_step = !is_step;
 
-                    if new_episode {
+                    if non_step {
                         n_agents = obs_dict.len();
                     }
 
-                    // Write env step message
+                    if recalculate_agent_id_every_step || non_step {
+                        agent_id_list.clear();
+                        for agent_id in obs_dict.keys().iter() {
+                            agent_id_list.push(agent_id);
+                        }
+                    }
+
+                    // Write message
                     offset = 0;
-                    if new_episode {
+                    if non_step {
                         offset = append_usize(shm_slice, offset, n_agents);
                     }
                     for agent_id in agent_id_list.iter() {
-                        if recalculate_agent_id_every_step || new_episode {
+                        if recalculate_agent_id_every_step || non_step {
                             offset = agent_id_serde.append(shm_slice, offset, agent_id)?;
                         }
                         offset = obs_serde.append(
@@ -289,7 +287,7 @@ pub fn env_process<'py>(
                             offset,
                             &obs_dict.get_item(agent_id)?.unwrap(),
                         )?;
-                        if is_step_action {
+                        if is_step {
                             offset = reward_serde.append(
                                 shm_slice,
                                 offset,
@@ -321,9 +319,13 @@ pub fn env_process<'py>(
                             );
                         }
                     }
+                    if let Some(shared_info_serde) = shared_info_serde_option.as_deref_mut() {
+                        offset =
+                            shared_info_serde.append(shm_slice, offset, &env_shared_info(&env)?)?;
+                    }
 
-                    if let Some(shared_info_serde) = &mut shared_info_serde_option {
-                        _ = shared_info_serde.append(shm_slice, offset, &env_shared_info(&env)?)?;
+                    if let Some(state_serde) = state_serde_option.as_deref_mut() {
+                        _ = state_serde.append(shm_slice, offset, &env_state(&env)?)?;
                     }
 
                     sendto_byte(&child_end, &parent_sockname)?;

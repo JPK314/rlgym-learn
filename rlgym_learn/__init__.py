@@ -7,15 +7,13 @@ from .learning_coordinator_config import (
     generate_config,
 )
 from .rlgym_learn import AgentManager as RustAgentManager
-from .rlgym_learn import (
-    DerivedGAETrajectoryProcessorConfig as RustDerivedGAETrajectoryProcessorConfig,
-)
 from .rlgym_learn import EnvAction, EnvActionResponse, EnvActionResponseType
 from .rlgym_learn import EnvProcessInterface as RustEnvProcessInterface
-from .rlgym_learn import GAETrajectoryProcessor as RustGAETrajectoryProcessor
 from .rlgym_learn import (
     InitStrategy,
+    NumpySerdeConfig,
     PickleableInitStrategy,
+    PickleableNumpySerdeConfig,
     PickleablePyAnySerdeType,
     PyAnySerdeType,
     Timestep,

@@ -44,12 +44,18 @@ type ObsDataKV<'py> = (
 
 type TimestepDataKV<'py> = (
     Bound<'py, PyString>,
-    (Vec<Timestep>, Option<PyObject>, Option<Bound<'py, PyAny>>),
+    (
+        Vec<Timestep>,
+        Option<PyObject>,
+        Option<Bound<'py, PyAny>>,
+        Option<Bound<'py, PyAny>>,
+    ),
 );
 
 type StateInfoKV<'py> = (
     Bound<'py, PyString>,
     (
+        Option<Bound<'py, PyAny>>,
         Option<Bound<'py, PyAny>>,
         Option<Bound<'py, PyDict>>,
         Option<Bound<'py, PyDict>>,
@@ -243,10 +249,19 @@ impl EnvProcessInterface {
         let shared_info_option;
         if let Some(shared_info_serde) = &mut self.shared_info_serde_option {
             let shared_info;
-            (shared_info, _) = shared_info_serde.retrieve(py, shm_slice, offset)?;
+            (shared_info, offset) = shared_info_serde.retrieve(py, shm_slice, offset)?;
             shared_info_option = Some(shared_info);
         } else {
             shared_info_option = None;
+        }
+
+        let state_option;
+        if let Some(state_serde) = &mut self.state_serde_option {
+            let state;
+            (state, _) = state_serde.retrieve(py, shm_slice, offset)?;
+            state_option = Some(state);
+        } else {
+            state_option = None;
         }
 
         // Populate timestep_list
@@ -368,12 +383,14 @@ impl EnvProcessInterface {
                 timestep_list,
                 self.pid_idx_current_aald_option[pid_idx].clone(),
                 shared_info_option.clone(),
+                state_option.clone(),
             ),
         );
         let state_info_kv = (
             py_proc_id,
             (
                 shared_info_option,
+                state_option,
                 terminated_dict_option,
                 truncated_dict_option,
             ),

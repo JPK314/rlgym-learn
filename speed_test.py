@@ -127,6 +127,7 @@ if __name__ == "__main__":
         BaseConfigModel,
         LearningCoordinator,
         LearningCoordinatorConfigModel,
+        NumpySerdeConfig,
         ProcessConfigModel,
         PyAnySerdeType,
         SerdeTypesModel,
@@ -142,7 +143,6 @@ if __name__ == "__main__":
         ExperienceBufferConfigModel,
         GAETrajectoryProcessor,
         GAETrajectoryProcessorConfigModel,
-        GAETrajectoryProcessorPurePython,
         NumpyExperienceBuffer,
         PPOAgentController,
         PPOAgentControllerConfigModel,
@@ -200,8 +200,15 @@ if __name__ == "__main__":
             base_config=BaseConfigModel(
                 serde_types=SerdeTypesModel(
                     agent_id_serde_type=PyAnySerdeType.STRING(),
-                    action_serde_type=PyAnySerdeType.NUMPY(np.int64, shape=None),
-                    obs_serde_type=PyAnySerdeType.NUMPY(np.float64, shape=(92,)),
+                    action_serde_type=PyAnySerdeType.NUMPY(
+                        np.int64, config=NumpySerdeConfig.STATIC(shape=(1,))
+                    ),
+                    obs_serde_type=PyAnySerdeType.NUMPY(
+                        np.float64,
+                        config=NumpySerdeConfig.STATIC(
+                            shape=(92,), allocation_pool_min_size=50
+                        ),
+                    ),
                     reward_serde_type=PyAnySerdeType.FLOAT(),
                     obs_space_serde_type=PyAnySerdeType.TUPLE(
                         (PyAnySerdeType.STRING(), PyAnySerdeType.INT())
