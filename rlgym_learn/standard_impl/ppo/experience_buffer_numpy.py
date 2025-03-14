@@ -116,7 +116,8 @@ class NumpyExperienceBuffer(
         :param batch_size: size of each batch yielded by the generator.
         :return:
         """
-        torch.cuda.current_stream().synchronize()
+        if torch.cuda.is_available():
+            torch.cuda.current_stream().synchronize()
         total_samples = self.values.shape[0]
         indices = self.rng.permutation(total_samples)
         start_idx = 0
