@@ -7,7 +7,6 @@ from datetime import timedelta
 from multiprocessing import Process
 from socket import _RetAddress, socket
 from typing import (
-    TYPE_CHECKING,
     Any,
     Callable,
     Dict,
@@ -37,12 +36,6 @@ from rlgym.api import (
 from rlgym.rocket_league.api import Car, GameConfig, GameState, PhysicsObject
 
 from rlgym_learn.api import ActionAssociatedLearningData, AgentController
-from rlgym_learn.standard_impl import BatchRewardTypeNumpyConverter
-
-if TYPE_CHECKING:
-    from torch import Tensor
-
-    from rlgym_learn.standard_impl.ppo import Trajectory
 
 class EnvAction: ...
 
@@ -78,11 +71,6 @@ class EnvActionResponse(Generic[AgentID, StateType]):
     def enum_type(self) -> EnvActionResponseType: ...
     def desired_state(self) -> Optional[StateType]: ...
     def prev_timestep_id_dict(self) -> Optional[Dict[AgentID, Optional[int]]]: ...
-
-class DerivedGAETrajectoryProcessorConfig:
-    def __new__(
-        cls, gamma: float, lmbda: float, dtype: dtype
-    ) -> DerivedGAETrajectoryProcessorConfig: ...
 
 class EnvProcessInterface(
     Generic[
@@ -180,26 +168,6 @@ class AgentManager(
     def get_env_actions(
         self, env_obs_data_dict: Dict[str, Tuple[List[AgentID], List[ObsType]]]
     ) -> Dict[str, EnvAction]: ...
-
-class GAETrajectoryProcessor(Generic[AgentID, ObsType, ActionType, RewardType]):
-    def __new__(
-        cls, batch_reward_type_numpy_converter: BatchRewardTypeNumpyConverter
-    ) -> GAETrajectoryProcessor: ...
-    def load(self, config: DerivedGAETrajectoryProcessorConfig): ...
-    def process_trajectories(
-        self,
-        trajectories: List[Trajectory[AgentID, ObsType, ActionType, RewardType]],
-        return_std: ndarray,
-    ) -> Tuple[
-        List[AgentID],
-        List[ObsType],
-        List[ActionType],
-        Tensor,
-        Tensor,
-        ndarray,
-        ndarray,
-        float,
-    ]: ...
 
 def env_process(
     proc_id: str,

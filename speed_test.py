@@ -123,21 +123,11 @@ def env_create_function():
 
 
 if __name__ == "__main__":
-    from rlgym_learn import (
-        BaseConfigModel,
-        LearningCoordinator,
-        LearningCoordinatorConfigModel,
-        NumpySerdeConfig,
-        ProcessConfigModel,
-        PyAnySerdeType,
-        SerdeTypesModel,
-        generate_config,
-    )
-    from rlgym_learn.standard_impl import (
+    from rlgym_learn_algos.logging import (
         WandbMetricsLogger,
         WandbMetricsLoggerConfigModel,
     )
-    from rlgym_learn.standard_impl.ppo import (
+    from rlgym_learn_algos.ppo import (
         BasicCritic,
         DiscreteFF,
         ExperienceBufferConfigModel,
@@ -148,6 +138,17 @@ if __name__ == "__main__":
         PPOAgentControllerConfigModel,
         PPOLearnerConfigModel,
         PPOMetricsLogger,
+    )
+
+    from rlgym_learn import (
+        BaseConfigModel,
+        LearningCoordinator,
+        LearningCoordinatorConfigModel,
+        NumpySerdeConfig,
+        ProcessConfigModel,
+        PyAnySerdeType,
+        SerdeTypesModel,
+        generate_config,
     )
     from rlgym_learn.standard_impl.rocket_league import game_state_serde
 

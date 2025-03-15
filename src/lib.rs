@@ -20,8 +20,6 @@ fn rlgym_learn(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<timestep::Timestep>()?;
     m.add_class::<env_process_interface::EnvProcessInterface>()?;
     m.add_class::<agent_manager::AgentManager>()?;
-    m.add_class::<standard_impl::ppo::gae_trajectory_processor::GAETrajectoryProcessor>()?;
-    m.add_class::<standard_impl::ppo::gae_trajectory_processor::DerivedGAETrajectoryProcessorConfig>()?;
     // m.add_class::<standard_impl::rocket_league::rocket_league_serde_factory::RocketLeagueDynPyAnySerdeFactory>()?;
     m.add_class::<env_action::EnvActionResponse>()?;
     m.add_class::<env_action::EnvActionResponseType>()?;
@@ -30,6 +28,8 @@ fn rlgym_learn(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<pyany_serde::PickleablePyAnySerdeType>()?;
     m.add_class::<pyany_serde::pyany_serde_impl::InitStrategy>()?;
     m.add_class::<pyany_serde::pyany_serde_impl::PickleableInitStrategy>()?;
+    m.add_class::<pyany_serde::pyany_serde_impl::NumpySerdeConfig>()?;
+    m.add_class::<pyany_serde::pyany_serde_impl::PickleableNumpySerdeConfig>()?;
 
     m.getattr("PyAnySerdeType")?
         .setattr("__module__", "rlgym_learn")?;
@@ -38,6 +38,10 @@ fn rlgym_learn(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.getattr("InitStrategy")?
         .setattr("__module__", "rlgym_learn")?;
     m.getattr("PickleableInitStrategy")?
+        .setattr("__module__", "rlgym_learn")?;
+    m.getattr("NumpySerdeConfig")?
+        .setattr("__module__", "rlgym_learn")?;
+    m.getattr("PickleableNumpySerdeConfig")?
         .setattr("__module__", "rlgym_learn")?;
 
     Ok(())

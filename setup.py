@@ -43,7 +43,6 @@ setup(
         "gym",
         "reinforcement-learning",
         "simulation",
-        "ppo",
         "rlgym",
         "rocketsim",
     ],
