@@ -495,6 +495,7 @@ impl EnvProcessInterface {
                 proc_id.clone(),
                 EnvAction::RESET {
                     shared_info_setter_option: None,
+                    send_state: false,
                 },
             );
         }
@@ -531,6 +532,7 @@ impl EnvProcessInterface {
             self.proc_packages[pid_idx].3.clone(),
             EnvAction::RESET {
                 shared_info_setter_option: None,
+                send_state: false,
             },
         );
 

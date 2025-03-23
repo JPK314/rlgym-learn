@@ -260,7 +260,10 @@ impl AgentManager {
             let mut should_get_actions = false;
             for (env_id, env_action_response) in env_action_responses.into_iter() {
                 match env_action_response.extract::<EnvActionResponse>()? {
-                    EnvActionResponse::STEP(shared_info_setter_option) => {
+                    EnvActionResponse::STEP {
+                        shared_info_setter,
+                        send_state,
+                    } => {
                         should_get_actions = true;
                         let Some((env_agent_id_list, env_obs_list)) =
                             env_obs_data_dict.remove(&env_id)
@@ -271,7 +274,8 @@ impl AgentManager {
                         };
                         env_id_list_range_list.push((
                             env_id,
-                            shared_info_setter_option,
+                            shared_info_setter,
+                            send_state,
                             total_len,
                             total_len + env_agent_id_list.len(),
                         ));
@@ -279,22 +283,28 @@ impl AgentManager {
                         env_agent_id_list_list.push(env_agent_id_list);
                         env_obs_list_list.push(env_obs_list);
                     }
-                    EnvActionResponse::RESET(shared_info_setter_option) => env_actions.push((
+                    EnvActionResponse::RESET {
+                        shared_info_setter,
+                        send_state,
+                    } => env_actions.push((
                         env_id,
                         EnvAction::RESET {
-                            shared_info_setter_option,
+                            shared_info_setter_option: shared_info_setter,
+                            send_state,
                         },
                     )),
-                    EnvActionResponse::SET_STATE(
+                    EnvActionResponse::SET_STATE {
                         desired_state,
-                        shared_info_setter_option,
-                        prev_timestep_id_dict_option,
-                    ) => env_actions.push((
+                        shared_info_setter,
+                        send_state,
+                        prev_timestep_id_dict,
+                    } => env_actions.push((
                         env_id,
                         EnvAction::SET_STATE {
                             desired_state,
-                            shared_info_setter_option,
-                            prev_timestep_id_dict_option,
+                            shared_info_setter_option: shared_info_setter,
+                            send_state,
+                            prev_timestep_id_dict_option: prev_timestep_id_dict,
                         },
                     )),
                 };
@@ -304,13 +314,14 @@ impl AgentManager {
                 let obs_list = env_obs_list_list.into_iter().flatten().collect_vec();
                 let (action_list, action_associated_learning_data) =
                     self.get_actions(py, agent_id_list, obs_list)?;
-                for (env_id, shared_info_setter_option, start, stop) in
+                for (env_id, shared_info_setter_option, send_state, start, stop) in
                     env_id_list_range_list.into_iter()
                 {
                     env_actions.push((
                         env_id,
                         EnvAction::STEP {
                             shared_info_setter_option,
+                            send_state,
                             action_list: PyList::new(py, &action_list[start..stop])?.unbind(),
                             action_associated_learning_data: match &action_associated_learning_data
                             {

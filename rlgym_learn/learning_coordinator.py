@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import cProfile
+import json
 import os
 from collections.abc import Callable
-from typing import Any, Dict, Generic, Optional, Union
+from typing import Any, Dict, Generic, Optional
 
 from rlgym.api import (
     ActionSpaceType,
@@ -70,16 +71,22 @@ class LearningCoordinator(
                 Any,
             ],
         ],
-        config_location: str = None,
+        config: Optional[LearningCoordinatorConfigModel] = None,
+        config_location: Optional[str] = None,
     ):
-        if config_location is None:
-            config_location = os.path.join(os.getcwd(), DEFAULT_CONFIG_FILENAME)
-        assert os.path.isfile(
-            config_location
-        ), f"{config_location} is not a valid location from which to read config, aborting."
+        if config is not None:
+            self.config = config
+        else:
+            if config_location is None:
+                config_location = os.path.join(os.getcwd(), DEFAULT_CONFIG_FILENAME)
+            assert os.path.isfile(
+                config_location
+            ), f"{config_location} is not a valid location from which to read config, aborting."
 
-        with open(config_location, "rt") as f:
-            self.config = LearningCoordinatorConfigModel.model_validate_json(f.read())
+            with open(config_location, "rt") as f:
+                self.config = LearningCoordinatorConfigModel.model_validate_json(
+                    f.read()
+                )
 
         self.agent_manager = AgentManager(
             agent_controllers,

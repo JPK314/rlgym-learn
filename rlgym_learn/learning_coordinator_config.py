@@ -31,14 +31,12 @@ class SerdeTypesModel(BaseModel):
     obs_space_serde_type: PyAnySerdeType
     action_space_serde_type: PyAnySerdeType
     shared_info_serde_type: Optional[PyAnySerdeType] = (
-        None  # serde used to receive data from env processes in agent controllers
+        None  # serde used to receive shared info fields from env processes in agent controllers
     )
     shared_info_setter_serde_type: Optional[PyAnySerdeType] = (
         None  # serde used to set shared info fields in agent controllers
     )
-    state_serde_type: Optional[PyAnySerdeType] = (
-        None  # Needed only for env action set state
-    )
+    state_serde_type: Optional[PyAnySerdeType] = None
 
     class Config:
         json_encoders = {PyAnySerdeType: lambda x: x.to_json()}

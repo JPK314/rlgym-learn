@@ -199,10 +199,12 @@ pub fn env_process<'py>(
                         terminated_dict_option,
                         truncated_dict_option,
                         is_step,
+                        should_send_state,
                     );
                     let shared_info_setter_option = match &env_action {
                         EnvAction::STEP {
                             shared_info_setter_option,
+                            send_state,
                             action_list,
                             ..
                         } => {
@@ -220,10 +222,12 @@ pub fn env_process<'py>(
                             terminated_dict_option = Some(terminated_dict);
                             truncated_dict_option = Some(truncated_dict);
                             is_step = true;
+                            should_send_state = *send_state;
                             shared_info_setter_option
                         }
                         EnvAction::RESET {
                             shared_info_setter_option,
+                            send_state,
                         } => {
                             obs_dict = env_reset(&env)?;
                             agent_id_list.clear();
@@ -234,11 +238,13 @@ pub fn env_process<'py>(
                             terminated_dict_option = None;
                             truncated_dict_option = None;
                             is_step = false;
+                            should_send_state = *send_state;
                             shared_info_setter_option
                         }
                         EnvAction::SET_STATE {
                             desired_state,
                             shared_info_setter_option,
+                            send_state,
                             ..
                         } => {
                             obs_dict = env_set_state(&env, desired_state.bind(py))?;
@@ -250,6 +256,7 @@ pub fn env_process<'py>(
                             terminated_dict_option = None;
                             truncated_dict_option = None;
                             is_step = false;
+                            should_send_state = *send_state;
                             shared_info_setter_option
                         }
                     };
@@ -285,7 +292,7 @@ pub fn env_process<'py>(
                         offset = obs_serde.append(
                             shm_slice,
                             offset,
-                            &obs_dict.get_item(agent_id)?.unwrap(),
+                            &obs_dict.get_item(agent_id)?.ok_or_else(|| InvalidStateError::new_err(format!("Env process {} tried to access the obs dict entry for agent id {}, but there was no such entry", proc_id, agent_id.repr().unwrap().to_string())))?
                         )?;
                         if is_step {
                             offset = reward_serde.append(
@@ -295,7 +302,7 @@ pub fn env_process<'py>(
                                     .as_ref()
                                     .unwrap()
                                     .get_item(agent_id)?
-                                    .unwrap(),
+                                    .ok_or_else(|| InvalidStateError::new_err(format!("Env process {} tried to access the reward dict entry for agent id {}, but there was no such entry", proc_id, agent_id.repr().unwrap().to_string())))?,
                             )?;
                             offset = append_bool(
                                 shm_slice,
@@ -304,7 +311,7 @@ pub fn env_process<'py>(
                                     .as_ref()
                                     .unwrap()
                                     .get_item(agent_id)?
-                                    .unwrap()
+                                    .ok_or_else(|| InvalidStateError::new_err(format!("Env process {} tried to access the terminated dict entry for agent id {}, but there was no such entry", proc_id, agent_id.repr().unwrap().to_string())))?
                                     .extract::<bool>()?,
                             );
                             offset = append_bool(
@@ -314,7 +321,7 @@ pub fn env_process<'py>(
                                     .as_ref()
                                     .unwrap()
                                     .get_item(agent_id)?
-                                    .unwrap()
+                                    .ok_or_else(|| InvalidStateError::new_err(format!("Env process {} tried to access the truncated dict entry for agent id {}, but there was no such entry", proc_id, agent_id.repr().unwrap().to_string())))?
                                     .extract::<bool>()?,
                             );
                         }
@@ -324,8 +331,12 @@ pub fn env_process<'py>(
                             shared_info_serde.append(shm_slice, offset, &env_shared_info(&env)?)?;
                     }
 
-                    if let Some(state_serde) = state_serde_option.as_deref_mut() {
-                        _ = state_serde.append(shm_slice, offset, &env_state(&env)?)?;
+                    if should_send_state {
+                        state_serde_option.as_deref_mut().ok_or_else(|| {
+                            InvalidStateError::new_err(format!(
+                                "Env process {} received an env action with send_state = true, but no state serde was provided", proc_id
+                            ))
+                        })?.append(shm_slice, offset, &env_state(&env)?)?;
                     }
 
                     sendto_byte(&child_end, &parent_sockname)?;

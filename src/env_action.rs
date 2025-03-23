@@ -1,7 +1,7 @@
 use pyo3::{exceptions::asyncio::InvalidStateError, prelude::*, types::PyList, IntoPyObjectExt};
 
 use pyany_serde::{
-    communication::{append_python_option, retrieve_python_option},
+    communication::{append_bool, append_python_option, retrieve_bool, retrieve_python_option},
     PyAnySerde,
 };
 
@@ -9,12 +9,23 @@ use pyany_serde::{
 #[pyclass]
 #[derive(Clone, Debug)]
 pub enum EnvActionResponse {
-    #[pyo3(constructor = (_0 = None))]
-    STEP(Option<PyObject>),
-    #[pyo3(constructor = (_0 = None))]
-    RESET(Option<PyObject>),
-    #[pyo3(constructor = (_0, _1 = None, _2 = None))]
-    SET_STATE(PyObject, Option<PyObject>, Option<PyObject>),
+    #[pyo3(constructor = (shared_info_setter = None, send_state = false))]
+    STEP {
+        shared_info_setter: Option<PyObject>,
+        send_state: bool,
+    },
+    #[pyo3(constructor = (shared_info_setter = None, send_state = false))]
+    RESET {
+        shared_info_setter: Option<PyObject>,
+        send_state: bool,
+    },
+    #[pyo3(constructor = (desired_state, shared_info_setter = None, send_state = false, prev_timestep_id_dict = None))]
+    SET_STATE {
+        desired_state: PyObject,
+        shared_info_setter: Option<PyObject>,
+        send_state: bool,
+        prev_timestep_id_dict: Option<PyObject>,
+    },
 }
 
 #[allow(non_camel_case_types)]
@@ -31,30 +42,30 @@ impl EnvActionResponse {
     #[getter]
     fn enum_type(&self) -> EnvActionResponseType {
         match self {
-            EnvActionResponse::STEP(_) => EnvActionResponseType::STEP,
-            EnvActionResponse::RESET(_) => EnvActionResponseType::RESET,
-            EnvActionResponse::SET_STATE(_, _, _) => EnvActionResponseType::SET_STATE,
+            EnvActionResponse::STEP { .. } => EnvActionResponseType::STEP,
+            EnvActionResponse::RESET { .. } => EnvActionResponseType::RESET,
+            EnvActionResponse::SET_STATE { .. } => EnvActionResponseType::SET_STATE,
         }
     }
 
     #[getter]
     fn shared_info_setter<'py>(&self, py: Python<'py>) -> PyResult<Option<PyObject>> {
         Ok(match self {
-            EnvActionResponse::STEP(shared_info_setter) => {
-                shared_info_setter.as_ref().map(|v| v.clone_ref(py))
-            }
-            EnvActionResponse::RESET(shared_info_setter) => {
-                shared_info_setter.as_ref().map(|v| v.clone_ref(py))
-            }
-            EnvActionResponse::SET_STATE(_, shared_info_setter, _) => {
-                shared_info_setter.as_ref().map(|v| v.clone_ref(py))
-            }
+            EnvActionResponse::STEP {
+                shared_info_setter, ..
+            } => shared_info_setter.as_ref().map(|v| v.clone_ref(py)),
+            EnvActionResponse::RESET {
+                shared_info_setter, ..
+            } => shared_info_setter.as_ref().map(|v| v.clone_ref(py)),
+            EnvActionResponse::SET_STATE {
+                shared_info_setter, ..
+            } => shared_info_setter.as_ref().map(|v| v.clone_ref(py)),
         })
     }
 
     #[getter]
     fn desired_state<'py>(&self, py: Python<'py>) -> PyResult<Option<PyObject>> {
-        if let EnvActionResponse::SET_STATE(desired_state, _, _) = self {
+        if let EnvActionResponse::SET_STATE { desired_state, .. } = self {
             Ok(Some(desired_state.clone_ref(py)))
         } else {
             Ok(None)
@@ -63,7 +74,11 @@ impl EnvActionResponse {
 
     #[getter]
     fn prev_timestep_id_dict<'py>(&self, py: Python<'py>) -> PyResult<Option<PyObject>> {
-        if let EnvActionResponse::SET_STATE(_, _, prev_timestep_id_dict) = self {
+        if let EnvActionResponse::SET_STATE {
+            prev_timestep_id_dict,
+            ..
+        } = self
+        {
             Ok(prev_timestep_id_dict.as_ref().map(|v| v.clone_ref(py)))
         } else {
             Ok(None)
@@ -78,15 +93,18 @@ impl EnvActionResponse {
 pub enum EnvAction {
     STEP {
         shared_info_setter_option: Option<PyObject>,
+        send_state: bool,
         action_list: Py<PyList>,
         action_associated_learning_data: PyObject,
     },
     RESET {
         shared_info_setter_option: Option<PyObject>,
+        send_state: bool,
     },
     SET_STATE {
         desired_state: PyObject,
         shared_info_setter_option: Option<PyObject>,
+        send_state: bool,
         prev_timestep_id_dict_option: Option<PyObject>,
     },
 }
@@ -103,11 +121,13 @@ pub fn append_env_action<'py>(
     match env_action {
         EnvAction::STEP {
             shared_info_setter_option,
+            send_state,
             action_list,
             ..
         } => {
             buf[offset] = 0;
             offset += 1;
+            offset = append_bool(buf, offset, *send_state);
             offset = append_python_option(
                 py,
                 buf,
@@ -127,9 +147,11 @@ pub fn append_env_action<'py>(
         }
         EnvAction::RESET {
             shared_info_setter_option,
+            send_state,
         } => {
             buf[offset] = 1;
             offset += 1;
+            offset = append_bool(buf, offset, *send_state);
             offset = append_python_option(
                 py,
                 buf,
@@ -146,10 +168,12 @@ pub fn append_env_action<'py>(
         EnvAction::SET_STATE {
             desired_state,
             shared_info_setter_option,
+            send_state,
             ..
         } => {
             buf[offset] = 2;
             offset += 1;
+            offset = append_bool(buf, offset, *send_state);
             offset = state_serde_option.as_deref_mut()
                 .ok_or_else(|| {
                     InvalidStateError::new_err(
@@ -187,6 +211,8 @@ pub fn retrieve_env_action<'py>(
     let mut offset = offset + 1;
     match env_action_type {
         0 => {
+            let send_state;
+            (send_state, offset) = retrieve_bool(buf, offset)?;
             let shared_info_setter_option;
             (shared_info_setter_option, offset) = retrieve_python_option(
                 py,
@@ -208,6 +234,7 @@ pub fn retrieve_env_action<'py>(
             Ok((
                 EnvAction::STEP {
                     shared_info_setter_option: shared_info_setter_option.map(|v| v.unbind()),
+                    send_state,
                     action_list: pyo3::types::PyList::new(py, action_list)?.unbind(),
                     action_associated_learning_data: pyo3::types::PyNone::get(py)
                         .into_py_any(py)?,
@@ -216,6 +243,8 @@ pub fn retrieve_env_action<'py>(
             ))
         }
         1 => {
+            let send_state;
+            (send_state, offset) = retrieve_bool(buf, offset)?;
             let shared_info_setter_option;
             (shared_info_setter_option, offset) = retrieve_python_option(
                 py,
@@ -231,11 +260,14 @@ pub fn retrieve_env_action<'py>(
             Ok((
                 EnvAction::RESET {
                     shared_info_setter_option: shared_info_setter_option.map(|v| v.unbind()),
+                    send_state,
                 },
                 offset,
             ))
         }
         2 => {
+            let send_state;
+            (send_state, offset) = retrieve_bool(buf, offset)?;
             let state;
             (state, offset) = state_serde_option.as_deref_mut()
                 .ok_or_else(|| {
@@ -261,6 +293,7 @@ pub fn retrieve_env_action<'py>(
                     desired_state: state.unbind(),
                     shared_info_setter_option: shared_info_setter_option.map(|v| v.unbind()),
                     prev_timestep_id_dict_option: None,
+                    send_state,
                 },
                 offset,
             ))

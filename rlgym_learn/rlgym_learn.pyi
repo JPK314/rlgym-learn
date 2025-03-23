@@ -21,7 +21,7 @@ from typing import (
     _TypedDict,
 )
 
-from numpy import DTypeLike, _ShapeType, dtype, ndarray
+from numpy import DTypeLike, _ShapeType, ndarray
 from rlgym.api import (
     ActionSpaceType,
     ActionType,
@@ -44,15 +44,14 @@ class EnvActionResponseType:
     RESET = ...
     SET_STATE = ...
 
-# TODO: rework env_action.rs so that these actually work with the keywords
 class EnvActionResponse_STEP:
     def __new__(
-        cls, shared_info_setter: Optional[Dict[str, Any]] = None
+        cls, shared_info_setter: Optional[Dict[str, Any]] = None, send_state=False
     ) -> EnvActionResponse_STEP: ...
 
 class EnvActionResponse_RESET:
     def __new__(
-        cls, shared_info_setter: Optional[Dict[str, Any]] = None
+        cls, shared_info_setter: Optional[Dict[str, Any]] = None, send_state=False
     ) -> EnvActionResponse_RESET: ...
 
 class EnvActionResponse_SET_STATE(Generic[AgentID, StateType]):
@@ -60,6 +59,7 @@ class EnvActionResponse_SET_STATE(Generic[AgentID, StateType]):
         cls,
         desired_state: StateType,
         shared_info_setter: Optional[Dict[str, Any]] = None,
+        send_state=False,
         prev_timestep_id_dict: Optional[Dict[AgentID, Optional[int]]] = None,
     ) -> EnvActionResponse_SET_STATE[AgentID, StateType]: ...
 
@@ -208,20 +208,39 @@ ValuesT = TypeVar("ValuesT")
 
 class PythonSerde(Generic[T]):
     @abstractmethod
-    def to_bytes(self, obj: T) -> bytes:
+    def append(self, buf: bytes, offset: int, obj: T) -> int:
         """
-        Function to convert obj to bytes, for passing between batched agent and the agent manager.
-        :return: bytes b such that from_bytes(b) == obj.
+        Appends bytes of obj to buf starting at offset.
+        :param buf: a memoryview to write into (DO NOT hold a reference to this memory view after this function ends!)
+        :param offset: an offset into the memory view to start writing
+        :param obj: the obj to write as bytes
+        :return: new offset after appending bytes
         """
         raise NotImplementedError
 
     @abstractmethod
-    def from_bytes(self, byts: bytes) -> T:
+    def get_bytes(self, start_addr: Optional[int], obj: T) -> bytes:
         """
-        Function to convert bytes to T, for passing between batched agent and the agent manager.
-        :return: T obj such that from_bytes(to_bytes(obj)) == obj.
+        :param start_addr: the starting address for where the returned bytes will be written. May be None in contexts where there is no guaranteed start address.
+        :param obj: the obj to write as bytes
+        :return: bytes for obj
         """
         raise NotImplementedError
+
+    @abstractmethod
+    def retrieve(self, buf: bytes, offset: int) -> Tuple[T, int]:
+        """
+        Retrieves obj encoded using self.append or self.get_bytes from the buffer starting at offset.
+        :param buf: a memoryview to read from (DO NOT hold a reference to this memory view after this function ends!)
+        :param offset: an offset into the memory view to start reading
+        :return: Tuple of obj and the offset into the memory view after retrieving obj
+        """
+        raise NotImplementedError
+
+class CarPythonSerde(PythonSerde[Car]): ...
+class GameConfigPythonSerde(PythonSerde[GameConfig]): ...
+class GameStatePythonSerde(PythonSerde[GameState]): ...
+class PhysicsObjectPythonSerde(PythonSerde[PhysicsObject]): ...
 
 class PickleableInitStrategy(Generic[T]):
     def __new__(cls, init_strategy: InitStrategy[T]) -> PickleableInitStrategy[T]: ...

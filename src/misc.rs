@@ -1,17 +1,9 @@
-use std::mem::align_of;
-
 use pyo3::{
     intern,
     sync::GILOnceCell,
     types::{PyAnyMethods, PyDict},
     Bound, IntoPyObject, PyAny, PyErr, PyObject, PyResult, Python,
 };
-
-pub fn get_bytes_to_alignment<T>(addr: usize) -> usize {
-    let alignment = align_of::<T>();
-    let aligned_addr = addr.wrapping_add(alignment - 1) & 0usize.wrapping_sub(alignment);
-    aligned_addr.wrapping_sub(addr)
-}
 
 pub fn clone_list<'py>(py: Python<'py>, list: &Vec<PyObject>) -> Vec<PyObject> {
     list.iter().map(|obj| obj.clone_ref(py)).collect()
