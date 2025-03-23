@@ -34,6 +34,8 @@ jobs:
             target: ppc64le
     steps:
       - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: taiki-e/install-action@nextest
       - uses: actions/setup-python@v5
         with:
           python-version: 3.x
@@ -70,6 +72,8 @@ jobs:
             target: armv7
     steps:
       - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: taiki-e/install-action@nextest
       - uses: actions/setup-python@v5
         with:
           python-version: 3.x
@@ -103,6 +107,8 @@ jobs:
         python-version: ["3.8", "3.9", "3.10", "3.11", "3.12"]
     steps:
       - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: taiki-e/install-action@nextest
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
@@ -133,6 +139,8 @@ jobs:
             target: aarch64
     steps:
       - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: taiki-e/install-action@nextest
       - uses: actions/setup-python@v5
         with:
           python-version: 3.x
