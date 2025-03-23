@@ -195,34 +195,36 @@ if __name__ == "__main__":
         # metrics_logger_config=wandb_config,
     )
 
-    generate_config(
-        learner_config=LearningCoordinatorConfigModel(
-            process_config=ProcessConfigModel(n_proc=n_proc, render=False),
-            base_config=BaseConfigModel(
-                serde_types=SerdeTypesModel(
-                    agent_id_serde_type=PyAnySerdeType.STRING(),
-                    action_serde_type=PyAnySerdeType.NUMPY(
-                        np.int64, config=NumpySerdeConfig.STATIC(shape=(1,))
-                    ),
-                    obs_serde_type=PyAnySerdeType.NUMPY(
-                        np.float64,
-                        config=NumpySerdeConfig.STATIC(
-                            shape=(92,), allocation_pool_min_size=50
-                        ),
-                    ),
-                    reward_serde_type=PyAnySerdeType.FLOAT(),
-                    obs_space_serde_type=PyAnySerdeType.TUPLE(
-                        (PyAnySerdeType.STRING(), PyAnySerdeType.INT())
-                    ),
-                    action_space_serde_type=PyAnySerdeType.TUPLE(
-                        (PyAnySerdeType.STRING(), PyAnySerdeType.INT())
+    config = LearningCoordinatorConfigModel(
+        process_config=ProcessConfigModel(n_proc=n_proc, render=False),
+        base_config=BaseConfigModel(
+            serde_types=SerdeTypesModel(
+                agent_id_serde_type=PyAnySerdeType.STRING(),
+                action_serde_type=PyAnySerdeType.NUMPY(
+                    np.int64, config=NumpySerdeConfig.STATIC(shape=(1,))
+                ),
+                obs_serde_type=PyAnySerdeType.NUMPY(
+                    np.float64,
+                    config=NumpySerdeConfig.STATIC(
+                        shape=(92,), allocation_pool_min_size=50
                     ),
                 ),
-                timestep_limit=500_000,
-                send_state_to_agent_controllers=False,
+                reward_serde_type=PyAnySerdeType.FLOAT(),
+                obs_space_serde_type=PyAnySerdeType.TUPLE(
+                    (PyAnySerdeType.STRING(), PyAnySerdeType.INT())
+                ),
+                action_space_serde_type=PyAnySerdeType.TUPLE(
+                    (PyAnySerdeType.STRING(), PyAnySerdeType.INT())
+                ),
             ),
-            agent_controllers_config={"PPO1": ppo_agent_controller_config},
+            timestep_limit=500_000,
+            send_state_to_agent_controllers=False,
         ),
+        agent_controllers_config={"PPO1": ppo_agent_controller_config},
+    )
+
+    generate_config(
+        learner_config=config,
         config_location="config.json",
         force_overwrite=True,
     )
@@ -240,6 +242,6 @@ if __name__ == "__main__":
     coordinator = LearningCoordinator(
         env_create_function=env_create_function,
         agent_controllers=agent_controllers,
-        config_location="config.json",
+        config=config,
     )
     coordinator.start()
