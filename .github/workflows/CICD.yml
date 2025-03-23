@@ -37,6 +37,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: 3.x
+          cache: 'pip'
+          cache-dependency-path: '**/test_requirements.txt'
+      - run: pip install -r test_requirements.txt
+      - name: 'Build and test'
+        run: cargo nextest run --workspace --all-targets
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
@@ -68,6 +73,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: 3.x
+          cache: 'pip'
+          cache-dependency-path: '**/test_requirements.txt'
+      - run: pip install -r test_requirements.txt
+      - name: 'Build and test'
+        run: cargo nextest run --workspace --all-targets
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
@@ -97,6 +107,11 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
           architecture: ${{ matrix.platform.target }}
+          cache: 'pip'
+          cache-dependency-path: '**/test_requirements.txt'
+      - run: pip install -r test_requirements.txt
+      - name: 'Build and test'
+        run: cargo nextest run --workspace --all-targets
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
@@ -121,6 +136,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: 3.x
+          cache: 'pip'
+          cache-dependency-path: '**/test_requirements.txt'
+      - run: pip install -r test_requirements.txt
+      - name: 'Build and test'
+        run: cargo nextest run --workspace --all-targets
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
