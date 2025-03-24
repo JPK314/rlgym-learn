@@ -93,7 +93,7 @@ class AgentController(
 
         shared info for the environment (if shared_info_serde_type is non-None),
 
-        and the state (if state_serde_type is non-None).
+        and the state (if EnvActionResponse from previous call(s) to choose_env_actions set send_state=True).
 
         Do not modify this dict as it will be passed by reference to other agent controllers.
         """
@@ -113,7 +113,7 @@ class AgentController(
     ) -> Dict[str, Optional[EnvActionResponse]]:
         """
         Function to choose EnvActionResponse per environment based on environment information. Called after process_timestep_data.
-        :param state_info: Dictionary with environment ids as keys and tuples of shared info (if shared_info_serde_type is non-None), StateType (if state_serde_type is non-None), the present terminated dict for the env (None if env was just reset), and the present truncated dict for the env (None if env was just reset).
+        :param state_info: Dictionary with environment ids as keys and tuples of shared info (if shared_info_serde_type is non-None), StateType (if EnvActionResponse from previous call(s) to choose_env_actions set send_state=True), the present terminated dict for the env (None if env was just reset), and the present truncated dict for the env (None if env was just reset).
         :return: Dictionary with environment ids as keys and EnvActionResponse as values. If STEP_RESPONSE is sent for an environment (and the agent manager agrees to use step as the env action for that environment),
         then choose_agents and get_actions will be called asking for the actions for the agents in those environments.
         If None is used as a value in the returned dict, or an environment id key from the state_info dict is not present in the returned dict, the agent manager will ask the other agent controllers for the env action for that environment.
