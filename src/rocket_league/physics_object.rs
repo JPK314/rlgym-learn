@@ -98,7 +98,7 @@ impl<'py> PhysicsObject<'py> {
 }
 
 impl PhysicsObjectInner {
-    pub fn as_outer<'py>(self, py: Python<'py>) -> PyResult<PhysicsObject> {
+    pub fn as_outer<'py>(self, py: Python<'py>) -> PyResult<PhysicsObject<'py>> {
         Ok(PhysicsObject {
             position: PyArray1::from_array(py, &Array1::from_vec(self.position)),
             linear_velocity: PyArray1::from_array(py, &Array1::from_vec(self.linear_velocity)),

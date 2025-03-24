@@ -86,6 +86,7 @@ pub fn rotation_to_quaternion(rot: &[f32; 9], quat: &mut [f32; 4]) {
     // w = cos(t/2), (x,y,z) = (a/||a||) * sin(t/2)
     // Logic taken from https://math.stackexchange.com/a/895033 which cites
     // https://malcolmdshuster.com/Pub_1993h_J_Repsurv_scan.pdf
+    // Note that the matrix in the link there is for RIGHT MULTIPLYING and so we want the transpose of it
     // Essentially, there are many ways of doing this but we want to pick one based on which
     // will be most numerically stable. The problematic operation is the square root and so we
     // pick the implementation which will have the largest square root for stability. Once we
@@ -103,34 +104,34 @@ pub fn rotation_to_quaternion(rot: &[f32; 9], quat: &mut [f32; 4]) {
     if v0 >= 0.0 {
         w = (v0 + 1.0).sqrt() * 0.5;
         let coef = 0.25 / w;
-        x = coef * (rot[5] - rot[7]);
-        y = coef * (rot[6] - rot[2]);
-        z = coef * (rot[1] - rot[3]);
+        x = coef * (rot[7] - rot[5]);
+        y = coef * (rot[2] - rot[6]);
+        z = coef * (rot[3] - rot[1]);
     } else {
         // This is equivalent to checking x^2 >= 1/4
         let v1 = rot[0] - rot[4] - rot[8];
         if v1 >= 0.0 {
             x = (v1 + 1.0).sqrt() * 0.5;
             let coef = 0.25 / x;
-            w = coef * (rot[5] - rot[7]);
-            y = coef * (rot[1] + rot[3]);
-            z = coef * (rot[2] + rot[6]);
+            w = coef * (rot[7] - rot[5]);
+            y = coef * (rot[3] + rot[1]);
+            z = coef * (rot[6] + rot[2]);
         } else {
             // This is equivalent to checking y^2 >= 1/4
             let v2 = rot[4] - rot[0] - rot[8];
             if v2 >= 0.0 {
                 y = (v2 + 1.0).sqrt() * 0.5;
                 let coef = 0.25 / y;
-                w = coef * (rot[6] - rot[2]);
-                x = coef * (rot[3] + rot[1]);
-                z = coef * (rot[5] + rot[7]);
+                w = coef * (rot[2] - rot[6]);
+                x = coef * (rot[1] + rot[3]);
+                z = coef * (rot[7] + rot[5]);
             } else {
                 // must be z^2 >= 1/4
                 z = (rot[8] - rot[0] - rot[4] + 1.0).sqrt() * 0.5;
                 let coef = 0.25 / z;
-                w = coef * (rot[1] - rot[3]);
-                x = coef * (rot[6] + rot[2]);
-                y = coef * (rot[7] + rot[5]);
+                w = coef * (rot[3] - rot[1]);
+                x = coef * (rot[2] + rot[6]);
+                y = coef * (rot[5] + rot[7]);
             }
         }
     }
@@ -150,13 +151,13 @@ pub fn quaternion_to_rotation(quat: &[f32; 4], rot: &mut [f32; 9]) {
     let yz = quat[2] * quat[3];
     let wx = quat[0] * quat[1];
     rot[0] = w2 + x2 - y2 - z2;
-    rot[1] = 2.0 * (xy + wz);
-    rot[2] = 2.0 * (xz - wy);
-    rot[3] = 2.0 * (xy - wz);
+    rot[1] = 2.0 * (xy - wz);
+    rot[2] = 2.0 * (xz + wy);
+    rot[3] = 2.0 * (xy + wz);
     rot[4] = w2 - x2 + y2 - z2;
-    rot[5] = 2.0 * (yz + wx);
-    rot[6] = 2.0 * (xz + wy);
-    rot[7] = 2.0 * (yz - wx);
+    rot[5] = 2.0 * (yz - wx);
+    rot[6] = 2.0 * (xz - wy);
+    rot[7] = 2.0 * (yz + wx);
     rot[8] = w2 - x2 - y2 + z2;
 }
 
@@ -201,12 +202,12 @@ pub fn rotation_to_euler(rot: &[f32; 9], euler: &mut [f32; 3]) {
         } else {
             p = -f32::consts::FRAC_PI_2;
             y = 0.0;
-            r = rot[5].atan2(-rot[2]);
+            r = rot[5].atan2(rot[2]);
         }
     } else {
         p = f32::consts::FRAC_PI_2;
         y = 0.0;
-        r = rot[5].atan2(rot[2]);
+        r = rot[5].atan2(-rot[2]);
     }
     euler[0] = p;
     euler[1] = y;
@@ -218,7 +219,7 @@ pub fn quaternion_to_euler(quat: &[f32; 4], euler: &mut [f32; 3]) {
     let (p, y, r);
     let xz = quat[1] * quat[3];
     let wy = quat[0] * quat[2];
-    let rot6 = 2.0 * (xz + wy);
+    let rot6 = 2.0 * (xz - wy);
     if rot6 < 1.0 {
         if rot6 > -1.0 {
             let [w2, x2, y2, z2] = quat.map(|v| v * v);
@@ -227,21 +228,21 @@ pub fn quaternion_to_euler(quat: &[f32; 4], euler: &mut [f32; 3]) {
             let yz = quat[2] * quat[3];
             let wx = quat[0] * quat[1];
             p = rot6.asin();
-            y = (2.0 * (xy - wz)).atan2(w2 + x2 - y2 - z2);
-            r = (2.0 * (wx - yz)).atan2(w2 - x2 - y2 + z2);
+            y = (2.0 * (xy + wz)).atan2(w2 + x2 - y2 - z2);
+            r = (-2.0 * (yz + wx)).atan2(w2 - x2 - y2 + z2);
         } else {
             let yz = quat[2] * quat[3];
             let wx = quat[0] * quat[1];
             p = -f32::consts::FRAC_PI_2;
             y = 0.0;
-            r = (yz + wx).atan2(-(xz - wy));
+            r = (yz - wx).atan2(xz + wy);
         }
     } else {
         let yz = quat[2] * quat[3];
         let wx = quat[0] * quat[1];
         p = f32::consts::FRAC_PI_2;
         y = 0.0;
-        r = (yz + wx).atan2(xz - wy);
+        r = (yz - wx).atan2(-(xz + wy));
     }
     euler[0] = p;
     euler[1] = y;
@@ -267,16 +268,16 @@ pub fn euler_to_quaternion(euler: &[f32; 3], quat: &mut [f32; 4]) {
     if v0 >= 0.0 {
         w = (v0 + 1.0).sqrt() * 0.5;
         let coef = 0.25 / w;
-        x = coef * (rot5 - rot7);
-        y = coef * (rot6 - rot2);
-        z = coef * (rot1 - rot3);
+        x = coef * (rot7 - rot5);
+        y = coef * (rot2 - rot6);
+        z = coef * (rot3 - rot1);
     } else {
         // This is equivalent to checking x^2 >= 1/4
         let v1 = rot0 - rot4 - rot8;
         if v1 >= 0.0 {
             x = (v1 + 1.0).sqrt() * 0.5;
             let coef = 0.25 / x;
-            w = coef * (rot5 - rot7);
+            w = coef * (rot7 - rot5);
             y = coef * (rot1 + rot3);
             z = coef * (rot2 + rot6);
         } else {
@@ -285,14 +286,14 @@ pub fn euler_to_quaternion(euler: &[f32; 3], quat: &mut [f32; 4]) {
             if v2 >= 0.0 {
                 y = (v2 + 1.0).sqrt() * 0.5;
                 let coef = 0.25 / y;
-                w = coef * (rot6 - rot2);
+                w = coef * (rot2 - rot6);
                 x = coef * (rot3 + rot1);
                 z = coef * (rot5 + rot7);
             } else {
                 // must be z^2 >= 1/4
                 z = (rot8 - rot0 - rot4 + 1.0).sqrt() * 0.5;
                 let coef = 0.25 / z;
-                w = coef * (rot1 - rot3);
+                w = coef * (rot3 - rot1);
                 x = coef * (rot6 + rot2);
                 y = coef * (rot7 + rot5);
             }
@@ -419,11 +420,6 @@ mod tests {
         assert!(
             TOL > euler_dist_sq,
             "Failure converting quaternion to and from euler angles starting with {:?} (ended with {:?}, distance squared: {})",
-            euler_start, euler_rot_end, euler_dist_sq
-        );
-        assert!(
-            TOL > euler_dist_sq,
-            "Failure converting euler angles to and from rotation starting with {:?} (ended with {:?}, distance squared: {})",
             euler_start, euler_rot_end, euler_dist_sq
         );
     }

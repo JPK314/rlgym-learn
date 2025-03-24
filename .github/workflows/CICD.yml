@@ -102,8 +102,10 @@ jobs:
         platform:
           - runner: windows-latest
             target: x64
+            rust-target: x86_64-pc-windows-msvc
           - runner: windows-latest
             target: x86
+            rust-target: i686-pc-windows-msvc
         python-version: ["3.8", "3.9", "3.10", "3.11", "3.12"]
     steps:
       - uses: actions/checkout@v4
@@ -117,7 +119,7 @@ jobs:
           cache-dependency-path: '**/test_requirements.txt'
       - run: pip install -r test_requirements.txt
       - name: 'Build and test'
-        run: cargo nextest run --workspace --all-targets
+        run: cargo nextest run --workspace --target ${{ matrix.platform.rust-target }}
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
