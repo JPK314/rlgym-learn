@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import cProfile
-import json
 import os
 from collections.abc import Callable
 from typing import Any, Dict, Generic, Optional
@@ -121,9 +119,6 @@ class LearningCoordinator(
         self.agent_manager.set_space_types(obs_space, action_space)
         self.agent_manager.load_agent_controllers(self.config)
         print("Learner successfully initialized!")
-        # TODO: delete and remove import
-        self.prof = cProfile.Profile()
-        self.prof.enable()
 
     def start(self):
         """
@@ -149,8 +144,6 @@ class LearningCoordinator(
                 traceback.print_exc()
 
         finally:
-            self.prof.disable()
-            self.prof.dump_stats("ppo_prof.prof")
             self.cleanup()
 
     def _run(self):

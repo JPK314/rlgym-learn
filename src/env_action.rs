@@ -86,7 +86,6 @@ impl EnvActionResponse {
     }
 }
 
-// TODO: does this need to be a pyclass?? Can I make everything in here Bound?
 #[allow(non_camel_case_types)]
 #[pyclass]
 #[derive(Clone, Debug)]
