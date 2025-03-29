@@ -3,8 +3,6 @@ import os
 # needed to prevent numpy from using a ton of memory in env processes and causing them to throttle each other
 os.environ["OPENBLAS_NUM_THREADS"] = "1"
 
-from rlgym_learn.standard_impl.ppo import PPOMetricsLogger
-
 
 def build_rlgym_v2_env():
     import numpy as np
@@ -77,44 +75,17 @@ def build_rlgym_v2_env():
     )
 
 
-# The obs_space_type and action_space_type are determined by your choice of ObsBuilder and ActionParser respectively.
-# The logic used here assumes you are using the types defined by the DefaultObs and LookupTableAction above.
-def actor_factory(obs_space_type, action_space_type, device):
-    from rlgym_learn.standard_impl.ppo import DiscreteFF
-
-    obs_space_size = obs_space_type[1]
-    action_space_size = action_space_type[1]
-    return DiscreteFF(
-        obs_space_size, action_space_size, [2048, 2048, 1024, 1024], device
-    )
-
-
-# The obs_space_type is determined by your choice of ObsBuilder.
-# The logic used here assumes you are using the types defined by the DefaultObs above.
-def critic_factory(obs_space_type, device):
-    from rlgym_learn.standard_impl.ppo import BasicCritic
-
-    obs_space_size = obs_space_type[1]
-    return BasicCritic(obs_space_size, [2048, 2048, 1024, 1024], device)
-
-
 if __name__ == "__main__":
-    import numpy as np
+    from typing import Tuple
 
-    from rlgym_learn.learning_coordinator import LearningCoordinator
-    from rlgym_learn.learning_coordinator_config import (
-        BaseConfigModel,
-        LearningCoordinatorConfigModel,
-        ProcessConfigModel,
-        PyAnySerdeType,
-        SerdeTypesModel,
-        generate_config,
-    )
-    from rlgym_learn.standard_impl import (
+    import numpy as np
+    from rlgym_learn_algos.logging import (
         WandbMetricsLogger,
         WandbMetricsLoggerConfigModel,
     )
-    from rlgym_learn.standard_impl.ppo import (
+    from rlgym_learn_algos.ppo import (
+        BasicCritic,
+        DiscreteFF,
         ExperienceBufferConfigModel,
         GAETrajectoryProcessor,
         GAETrajectoryProcessorConfigModel,
@@ -122,7 +93,35 @@ if __name__ == "__main__":
         PPOAgentController,
         PPOAgentControllerConfigModel,
         PPOLearnerConfigModel,
+        PPOMetricsLogger,
     )
+
+    from rlgym_learn import (
+        BaseConfigModel,
+        LearningCoordinator,
+        LearningCoordinatorConfigModel,
+        NumpySerdeConfig,
+        ProcessConfigModel,
+        PyAnySerdeType,
+        SerdeTypesModel,
+        generate_config,
+    )
+    from rlgym_learn.standard_impl.rocket_league import game_state_serde
+
+    # The obs_space_type and action_space_type are determined by your choice of ObsBuilder and ActionParser respectively.
+    # The logic used here assumes you are using the types defined by the DefaultObs and LookupTableAction above.
+    DefaultObsSpaceType = Tuple[str, int]
+    DefaultActionSpaceType = Tuple[str, int]
+
+    def actor_factory(
+        obs_space: DefaultObsSpaceType,
+        action_space: DefaultActionSpaceType,
+        device: str,
+    ):
+        return DiscreteFF(obs_space[1], action_space[1], (256, 256, 256), device)
+
+    def critic_factory(obs_space: DefaultObsSpaceType, device: str):
+        return BasicCritic(obs_space[1], (256, 256, 256), device)
 
     # Create the config that will be used for the run
     config = LearningCoordinatorConfigModel(
@@ -137,9 +136,6 @@ if __name__ == "__main__":
                 ),
                 action_space_serde_type=PyAnySerdeType.TUPLE(
                     (PyAnySerdeType.STRING(), PyAnySerdeType.INT())
-                ),
-                state_metrics_serde_type=PyAnySerdeType.LIST(
-                    PyAnySerdeType.NUMPY(np.float64)
                 ),
             ),
             timestep_limit=1_000_000_000,  # Train for 1B steps
@@ -167,7 +163,9 @@ if __name__ == "__main__":
         agent_controllers_save_folder="agent_controllers_checkpoints",  # (default value) WARNING: THIS PROCESS MAY DELETE ANYTHING INSIDE THIS FOLDER. This determines the parent folder for the runs for each agent controller. The runs folder for the agent controller will be this folder and then the agent controller config key as a subfolder.
     )
 
-    # Generate the config file
+    # Generate the config file for reference (this file location can be
+    # passed to the learning coordinator via config_location instead of defining
+    # the config object in code and passing that)
     generate_config(
         learner_config=config,
         config_location="config.json",
@@ -185,6 +183,6 @@ if __name__ == "__main__":
                 obs_standardizer=None,
             )
         },
-        config_location="config.json",
+        config=config,
     )
     learning_coordinator.start()

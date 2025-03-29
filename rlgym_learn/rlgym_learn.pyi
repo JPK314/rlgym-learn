@@ -358,7 +358,9 @@ class PyAnySerdeType_LIST(PyAnySerdeType[List[T]]):
 
 class PyAnySerdeType_NUMPY(PyAnySerdeType[ndarray[_ShapeType, DTypeLike]]):
     def __new__(
-        cls, dtype: DTypeLike, shape: Optional[Tuple[int]] = None
+        cls,
+        dtype: DTypeLike,
+        config: Optional[NumpySerdeConfig[T]] = NumpySerdeConfig_DYNAMIC[T],
     ) -> PyAnySerdeType_NUMPY[_ShapeType, DTypeLike]: ...
 
 class PyAnySerdeType_OPTION(PyAnySerdeType[Optional[T]]):
