@@ -7,19 +7,11 @@ from .learning_coordinator_config import (
     generate_config,
 )
 from .rlgym_learn import AgentManager as RustAgentManager
-from .rlgym_learn import (
-    CarPythonSerde,
-    EnvAction,
-    EnvActionResponse,
-    EnvActionResponseType,
-)
+from .rlgym_learn import EnvAction, EnvActionResponse, EnvActionResponseType
 from .rlgym_learn import EnvProcessInterface as RustEnvProcessInterface
 from .rlgym_learn import (
-    GameConfigPythonSerde,
-    GameStatePythonSerde,
     InitStrategy,
     NumpySerdeConfig,
-    PhysicsObjectPythonSerde,
     PickleableInitStrategy,
     PickleableNumpySerdeConfig,
     PickleablePyAnySerdeType,
@@ -28,3 +20,8 @@ from .rlgym_learn import (
 )
 from .rlgym_learn import env_process as rust_env_process
 from .rlgym_learn import recvfrom_byte, sendto_byte
+
+try:
+    from . import rocket_league
+except ImportError:
+    pass

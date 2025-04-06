@@ -21,7 +21,12 @@ from typing import (
     _TypedDict,
 )
 
-from numpy import DTypeLike, _ShapeType, ndarray
+try:
+    from numpy import DTypeLike, _ShapeType, ndarray
+except:
+    DTypeLike = Any
+    _ShapeType = Any
+    ndarray = Any
 from rlgym.api import (
     ActionSpaceType,
     ActionType,
@@ -273,16 +278,16 @@ class NumpySerdeConfig(Generic[T]):
 class NumpySerdeConfig_DYNAMIC(NumpySerdeConfig[T]):
     def __new__(
         cls,
-        preprocessor_fn: Optional[Callable[[T], ndarray]] = None,
-        postprocessor_fn: Optional[Callable[[ndarray, int], T]] = None,
+        preprocessor_fn: Optional[Callable[[T], ndarray]] = None,  # type: ignore
+        postprocessor_fn: Optional[Callable[[ndarray, int], T]] = None,  # type: ignore
     ) -> NumpySerdeConfig_DYNAMIC: ...
 
 class NumpySerdeConfig_STATIC(InitStrategy[T]):
     def __new__(
         cls,
         shape: Tuple[int],
-        preprocessor_fn: Optional[Callable[[T], ndarray]] = None,
-        postprocessor_fn: Optional[Callable[[ndarray, int], T]] = None,
+        preprocessor_fn: Optional[Callable[[T], ndarray]] = None,  # type: ignore
+        postprocessor_fn: Optional[Callable[[ndarray, int], T]] = None,  # type: ignore
         allocation_pool_min_size: int = 0,
         allocation_pool_max_size: Optional[int] = None,
     ) -> NumpySerdeConfig_STATIC: ...
@@ -359,9 +364,9 @@ class PyAnySerdeType_LIST(PyAnySerdeType[List[T]]):
 class PyAnySerdeType_NUMPY(PyAnySerdeType[ndarray[_ShapeType, DTypeLike]]):
     def __new__(
         cls,
-        dtype: DTypeLike,
+        dtype: DTypeLike,  # type: ignore
         config: Optional[NumpySerdeConfig[T]] = NumpySerdeConfig_DYNAMIC[T],
-    ) -> PyAnySerdeType_NUMPY[_ShapeType, DTypeLike]: ...
+    ) -> PyAnySerdeType_NUMPY[_ShapeType, DTypeLike]: ...  # type: ignore
 
 class PyAnySerdeType_OPTION(PyAnySerdeType[Optional[T]]):
     def __new__(

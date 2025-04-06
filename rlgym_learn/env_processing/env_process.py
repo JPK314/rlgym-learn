@@ -8,7 +8,13 @@ from dataclasses import dataclass
 from datetime import timedelta
 from typing import Optional
 
-import numpy as np
+try:
+    import numpy as np
+
+    NUMPY_AVAILABLE = True
+except ImportError:
+    NUMPY_AVAILABLE = False
+
 from rlgym.api import (
     ActionSpaceType,
     ActionType,
@@ -68,7 +74,8 @@ def env_process(
     child_end.bind(("127.0.0.1", 0))
 
     random.seed(seed)
-    np.random.seed(seed)
+    if NUMPY_AVAILABLE:
+        np.random.seed(seed)
 
     sendto_byte(child_end, parent_sockname)
     recvfrom_byte(child_end)

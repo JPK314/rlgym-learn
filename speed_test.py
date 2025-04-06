@@ -150,7 +150,6 @@ if __name__ == "__main__":
         SerdeTypesModel,
         generate_config,
     )
-    from rlgym_learn.standard_impl.rocket_league import game_state_serde
 
     def actor_factory(
         obs_space: Tuple[str, int], action_space: Tuple[str, int], device: str
