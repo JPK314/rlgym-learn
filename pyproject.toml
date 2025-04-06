@@ -10,5 +10,12 @@ classifiers = [
     "Programming Language :: Python :: Implementation :: CPython",
 ]
 dynamic = ["version"]
+dependencies = [
+    "pydantic>=2.8.2",
+    "numpy>1.21",
+    "torch>1.13",
+    "typing_extensions>4.6",
+    "wandb>0.15",
+]
 [tool.maturin]
 features = ["pyo3/extension-module"]
