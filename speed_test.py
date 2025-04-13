@@ -178,9 +178,7 @@ if __name__ == "__main__":
             standardize_returns=True
         ),
     )
-    wandb_config = WandbMetricsLoggerConfigModel(
-        group="rlgym-learn-testing", resume=True
-    )
+    wandb_config = WandbMetricsLoggerConfigModel(group="rlgym-learn-testing")
     ppo_agent_controller_config = PPOAgentControllerConfigModel(
         timesteps_per_iteration=50_000,
         save_every_ts=600_000,

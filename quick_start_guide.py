@@ -163,9 +163,7 @@ if __name__ == "__main__":
                         standardize_returns=True
                     ),
                 ),
-                wandb_config=WandbMetricsLoggerConfigModel(
-                    group="rlgym-learn-testing", resume=True
-                ),
+                wandb_config=WandbMetricsLoggerConfigModel(group="rlgym-learn-testing"),
             )
         },
         agent_controllers_save_folder="agent_controllers_checkpoints",  # (default value) WARNING: THIS PROCESS MAY DELETE ANYTHING INSIDE THIS FOLDER. This determines the parent folder for the runs for each agent controller. The runs folder for the agent controller will be this folder and then the agent controller config key as a subfolder.

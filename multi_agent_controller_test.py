@@ -132,7 +132,7 @@ if __name__ == "__main__":
         SerdeTypesModel,
         generate_config,
     )
-    from rlgym_learn.standard_impl.ppo import (
+    from rlgym_learn_algos.ppo import (
         BasicCritic,
         DiscreteFF,
         ExperienceBufferConfigModel,
