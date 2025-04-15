@@ -142,6 +142,7 @@ class AgentController(
         be called at least once before this method.
         :param config: config derived from learning controller config, including the agent controller specific config.
         """
+        pass
 
     def save_checkpoint(self):
         """
