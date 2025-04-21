@@ -28,4 +28,4 @@ rl = [
 tensor = [ "torch>1.13" ]
 
 [tool.maturin]
-features = ["pyo3/extension-module", { feature = "rl", extra = "rl" }]
+features = ["pyo3/extension-module", "rl"]
