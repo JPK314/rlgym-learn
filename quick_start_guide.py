@@ -106,7 +106,7 @@ if __name__ == "__main__":
         SerdeTypesModel,
         generate_config,
     )
-    from rlgym_learn.standard_impl.rocket_league import game_state_serde
+    from rlgym_learn.rocket_league import GameStatePythonSerde
 
     # The obs_space_type and action_space_type are determined by your choice of ObsBuilder and ActionParser respectively.
     # The logic used here assumes you are using the types defined by the DefaultObs and LookupTableAction above.
@@ -155,9 +155,7 @@ if __name__ == "__main__":
                     max_size=150_000,  # Sets the number of timesteps to store in the experience buffer. Old timesteps will be pruned to only store the most recently obtained timesteps.
                     trajectory_processor_config=GAETrajectoryProcessorConfigModel(),
                 ),
-                wandb_config=WandbMetricsLoggerConfigModel(
-                    group="rlgym-learn-testing", resume=True
-                ),
+                wandb_config=WandbMetricsLoggerConfigModel(group="rlgym-learn-testing"),
             )
         },
         agent_controllers_save_folder="agent_controllers_checkpoints",  # (default value) WARNING: THIS PROCESS MAY DELETE ANYTHING INSIDE THIS FOLDER. This determines the parent folder for the runs for each agent controller. The runs folder for the agent controller will be this folder and then the agent controller config key as a subfolder.
