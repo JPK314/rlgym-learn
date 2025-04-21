@@ -42,14 +42,16 @@ fn rlgym_learn(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<timestep::Timestep>()?;
     m.add_class::<env_process_interface::EnvProcessInterface>()?;
     m.add_class::<agent_manager::AgentManager>()?;
-    // m.add_class::<standard_impl::rocket_league::rocket_league_serde_factory::RocketLeagueDynPyAnySerdeFactory>()?;
     m.add_class::<env_action::EnvActionResponse>()?;
     m.add_class::<env_action::EnvActionResponseType>()?;
     m.add_class::<env_action::EnvAction>()?;
-    m.add_class::<rocket_league::CarPythonSerde>()?;
-    m.add_class::<rocket_league::GameConfigPythonSerde>()?;
-    m.add_class::<rocket_league::GameStatePythonSerde>()?;
-    m.add_class::<rocket_league::PhysicsObjectPythonSerde>()?;
+    #[cfg(feature = "rl")]
+    {
+        m.add_class::<rocket_league::CarPythonSerde>()?;
+        m.add_class::<rocket_league::GameConfigPythonSerde>()?;
+        m.add_class::<rocket_league::GameStatePythonSerde>()?;
+        m.add_class::<rocket_league::PhysicsObjectPythonSerde>()?;
+    }
     m.add_class::<pyany_serde::PyAnySerdeType>()?;
     m.add_class::<pyany_serde::PickleablePyAnySerdeType>()?;
     m.add_class::<pyany_serde::pyany_serde_impl::InitStrategy>()?;

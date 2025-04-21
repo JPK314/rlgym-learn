@@ -123,16 +123,7 @@ def env_create_function():
 
 
 if __name__ == "__main__":
-    from rlgym_learn.learning_coordinator import LearningCoordinator
-    from rlgym_learn.learning_coordinator_config import (
-        BaseConfigModel,
-        LearningCoordinatorConfigModel,
-        ProcessConfigModel,
-        PyAnySerdeType,
-        SerdeTypesModel,
-        generate_config,
-    )
-    from rlgym_learn.standard_impl.ppo import (
+    from rlgym_learn_algos.ppo import (
         BasicCritic,
         DiscreteFF,
         ExperienceBufferConfigModel,
@@ -144,6 +135,16 @@ if __name__ == "__main__":
         PPOAgentControllerConfigModel,
         PPOLearnerConfigModel,
         PPOMetricsLogger,
+    )
+
+    from rlgym_learn.learning_coordinator import LearningCoordinator
+    from rlgym_learn.learning_coordinator_config import (
+        BaseConfigModel,
+        LearningCoordinatorConfigModel,
+        ProcessConfigModel,
+        PyAnySerdeType,
+        SerdeTypesModel,
+        generate_config,
     )
 
     def actor_factory(

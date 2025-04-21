@@ -1,11 +1,10 @@
 [package]
 name = "rlgym-learn"
-version = "1.0.1"
+version = "1.0.2"
 edition = "2021"
-description = "Rust backend for the more expensive parts of the rlgym-learn python module"
+readme = "README.md"
 license="Apache-2.0"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [lib]
 name = "rlgym_learn"
 crate-type = ["cdylib"]
@@ -20,3 +19,6 @@ pyo3 = { version = "0.23.4", features = ["extension-module", "py-clone"] }
 raw_sync = "0.1.5"
 rkyv = "0.8.10"
 shared_memory = "0.12.4"
+
+[features]
+rl = []

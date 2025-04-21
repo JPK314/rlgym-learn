@@ -4,11 +4,28 @@ build-backend = "maturin"
 
 [project]
 name = "rlgym-learn"
+description = "A generic framework for using learning algorithms with effecient parallelization of RLGym environments and an ergonomic API"
 requires-python = ">=3.8,<3.13"
+authors = [
+    { name = "Jonathan Keegan" }
+]
 classifiers = [
     "Programming Language :: Rust",
     "Programming Language :: Python :: Implementation :: CPython",
 ]
-dynamic = ["version"]
+dynamic = ["license", "readme", "version"]
+dependencies = [
+    "rlgym>=2.0.0",
+    "pydantic>=2.8.2",
+    "typing_extensions>4.6",
+]
+
+[project.optional-dependencies]
+rl = [
+    "rlgym[rl]>=2.0.0",
+    "numpy>1.21"
+]
+tensor = [ "torch>1.13" ]
+
 [tool.maturin]
-features = ["pyo3/extension-module"]
+features = ["pyo3/extension-module", "rl"]
