@@ -1,6 +1,6 @@
 [package]
 name = "rlgym-learn"
-version = "1.0.2"
+version = "1.0.3"
 edition = "2021"
 readme = "README.md"
 license="Apache-2.0"
@@ -13,9 +13,9 @@ crate-type = ["cdylib"]
 bytemuck = "1.22.0"
 fastrand = "2.2.0"
 itertools = "0.13.0"
-numpy = "0.23.0"
-pyany-serde = "0.4.0"
-pyo3 = { version = "0.23.4", features = ["extension-module", "py-clone"] }
+numpy = "0.24.0"
+pyany-serde = "0.5.0"
+pyo3 = { version = "0.24.2", features = ["extension-module", "py-clone"] }
 raw_sync = "0.1.5"
 rkyv = "0.8.10"
 shared_memory = "0.12.4"

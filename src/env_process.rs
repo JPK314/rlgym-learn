@@ -146,15 +146,6 @@ pub fn env_process<'py>(
     Python::with_gil::<_, PyResult<()>>(|py| {
         // Initial setup
         let env = build_env_fn.call0()?;
-        let mut game_speed_fn: Box<dyn Fn() -> PyResult<f64>> = Box::new(|| Ok(1.0));
-        let mut game_paused_fn: Box<dyn Fn() -> PyResult<bool>> = Box::new(|| Ok(false));
-        if render {
-            let rlviser = PyModule::import(py, "rlviser_py")?;
-            let get_game_speed = rlviser.getattr("get_game_speed")?;
-            let get_game_paused = rlviser.getattr("get_game_paused")?;
-            game_speed_fn = Box::new(move || Ok(get_game_speed.call0()?.extract::<f64>()?));
-            game_paused_fn = Box::new(move || Ok(get_game_paused.call0()?.extract::<bool>()?));
-        }
 
         // Startup complete
         sync_with_epi(&child_end, &parent_sockname)?;
@@ -346,12 +337,8 @@ pub fn env_process<'py>(
                         env_render(&env)?;
                         if let Some(render_delay) = render_delay_option {
                             sleep(Duration::from_micros(
-                                ((render_delay.as_micros() as f64) * game_speed_fn()?).round()
-                                    as u64,
+                                (render_delay.as_micros() as f64).round() as u64,
                             ));
-                        }
-                        while game_paused_fn()? {
-                            sleep(Duration::from_millis(100));
                         }
                     }
                 }

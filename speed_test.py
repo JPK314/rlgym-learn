@@ -180,7 +180,7 @@ if __name__ == "__main__":
     wandb_config = WandbMetricsLoggerConfigModel(group="rlgym-learn-testing")
     ppo_agent_controller_config = PPOAgentControllerConfigModel(
         timesteps_per_iteration=50_000,
-        save_every_ts=600_000,
+        save_every_ts=1_000_000,
         add_unix_timestamp=True,
         checkpoint_load_folder=None,  # "agents_checkpoints/PPO1/rlgym-learn-run-1723394601682346400/1723394622757846600",
         n_checkpoints_to_keep=5,
@@ -198,12 +198,17 @@ if __name__ == "__main__":
             serde_types=SerdeTypesModel(
                 agent_id_serde_type=PyAnySerdeType.STRING(),
                 action_serde_type=PyAnySerdeType.NUMPY(
-                    np.int64, config=NumpySerdeConfig.STATIC(shape=(1,))
+                    np.int64,
+                    config=NumpySerdeConfig.STATIC(
+                        shape=(1,),
+                        allocation_pool_warning_size=None,
+                    ),
                 ),
                 obs_serde_type=PyAnySerdeType.NUMPY(
                     np.float64,
                     config=NumpySerdeConfig.STATIC(
-                        shape=(92,), allocation_pool_min_size=50
+                        shape=(92,),
+                        allocation_pool_warning_size=None,
                     ),
                 ),
                 reward_serde_type=PyAnySerdeType.FLOAT(),
@@ -214,7 +219,7 @@ if __name__ == "__main__":
                     (PyAnySerdeType.STRING(), PyAnySerdeType.INT())
                 ),
             ),
-            timestep_limit=500_000,
+            timestep_limit=500_000_000,
             send_state_to_agent_controllers=False,
         ),
         agent_controllers_config={"PPO1": ppo_agent_controller_config},
