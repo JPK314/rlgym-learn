@@ -290,7 +290,7 @@ class NumpySerdeConfig_STATIC(InitStrategy[T]):
         postprocessor_fn: Optional[Callable[[ndarray, int], T]] = None,  # type: ignore
         allocation_pool_min_size: int = 0,
         allocation_pool_max_size: Optional[int] = None,
-        allocation_pool_warning_sizze: Optional[int] = 10000,
+        allocation_pool_warning_size: Optional[int] = 10000,
     ) -> NumpySerdeConfig_STATIC: ...
 
 class PickleablePyAnySerdeType(Generic[T]):
