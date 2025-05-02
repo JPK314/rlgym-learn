@@ -171,7 +171,7 @@ impl CarInner {
     }
 }
 
-#[pyclass(module = "rlgym_learn", unsendable)]
+#[pyclass(module = "rlgym_learn.rocket_league", unsendable)]
 pub struct CarPythonSerde {
     agent_id_serde: Option<Box<dyn PyAnySerde>>,
     agent_id_serde_type: Option<PyAnySerdeType>,
@@ -180,8 +180,11 @@ pub struct CarPythonSerde {
 #[pymethods]
 impl CarPythonSerde {
     #[new]
-    #[pyo3(signature = (*args))]
-    fn new<'py>(args: Bound<'py, PyTuple>) -> PyResult<Self> {
+    #[pyo3(signature = (*args, agent_id_serde_type=None))]
+    fn new<'py>(
+        args: Bound<'py, PyTuple>,
+        agent_id_serde_type: Option<PyAnySerdeType>,
+    ) -> PyResult<Self> {
         let vec_args = args.iter().collect::<Vec<_>>();
         if vec_args.len() > 1 {
             return Err(PyValueError::new_err(format!(
@@ -189,11 +192,22 @@ impl CarPythonSerde {
                 args.as_any().repr()?.to_str()?
             )));
         }
-        if vec_args.len() == 1 {
-            let agent_id_serde_type = vec_args[0].extract::<PyAnySerdeType>()?;
+        if vec_args.len() == 1 && agent_id_serde_type.is_some() {
+            return Err(PyValueError::new_err(format!(
+                "CarPythonSerde constructor takes 0 or 1 parameters, received {} (from varargs) and {} (from agent_id_serde_type kwarg)",
+                args.as_any().repr()?.to_str()?, agent_id_serde_type.clone().unwrap().to_string()
+            )));
+        }
+        if vec_args.len() == 1 || agent_id_serde_type.is_some() {
+            let resolved_agent_id_serde_type;
+            if vec_args.len() == 1 {
+                resolved_agent_id_serde_type = vec_args[0].extract::<PyAnySerdeType>()?;
+            } else {
+                resolved_agent_id_serde_type = agent_id_serde_type.unwrap();
+            }
             Ok(CarPythonSerde {
-                agent_id_serde: Some(agent_id_serde_type.clone().try_into()?),
-                agent_id_serde_type: Some(agent_id_serde_type),
+                agent_id_serde: Some(resolved_agent_id_serde_type.clone().try_into()?),
+                agent_id_serde_type: Some(resolved_agent_id_serde_type),
             })
         } else {
             Ok(CarPythonSerde {
