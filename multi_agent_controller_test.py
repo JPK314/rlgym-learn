@@ -187,7 +187,7 @@ if __name__ == "__main__":
     )
 
     generate_config(
-        learner_config=LearningCoordinatorConfigModel(
+        learning_coordinator_config=LearningCoordinatorConfigModel(
             process_config=ProcessConfigModel(n_proc=n_proc, render=False),
             base_config=BaseConfigModel(
                 serde_types=SerdeTypesModel(

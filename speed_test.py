@@ -220,7 +220,6 @@ if __name__ == "__main__":
                 ),
             ),
             timestep_limit=500_000_000,
-            send_state_to_agent_controllers=False,
         ),
         agent_controllers_config={"PPO1": ppo_agent_controller_config},
     )

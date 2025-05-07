@@ -179,7 +179,21 @@ impl EnvProcessInterface {
                     "Tried to collect response from env which doesn't have an env action yet",
                 )
             })?;
-        let is_step_action = matches!(env_action, EnvAction::STEP { .. });
+        let is_step_action;
+        let send_state = match env_action {
+            EnvAction::STEP { send_state, .. } => {
+                is_step_action = true;
+                *send_state
+            }
+            EnvAction::RESET { send_state, .. } => {
+                is_step_action = false;
+                *send_state
+            }
+            EnvAction::SET_STATE { send_state, .. } => {
+                is_step_action = false;
+                *send_state
+            }
+        };
         let new_episode = !is_step_action;
         let (_, shmem, used_bytes, proc_id) = self.proc_packages.get(pid_idx).unwrap();
         let shm_slice = unsafe { &shmem.as_slice()[*used_bytes..] };
@@ -256,7 +270,12 @@ impl EnvProcessInterface {
         }
 
         let state_option;
-        if let Some(state_serde) = &mut self.state_serde_option {
+        if send_state {
+            let state_serde = self.state_serde_option.as_mut().ok_or_else(|| {
+                InvalidStateError::new_err(format!(
+                    "Env process interface sent an env action with send_state = true, but no state serde was provided to use for deserialization"
+                ))
+            })?;
             let state;
             (state, _) = state_serde.retrieve(py, shm_slice, offset)?;
             state_option = Some(state);

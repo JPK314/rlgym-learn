@@ -218,13 +218,12 @@ if __name__ == "__main__":
                 ),
             ),
             timestep_limit=5_000_000,
-            send_state_to_agent_controllers=False,
         ),
         agent_controllers_config={"PPO1": ppo_agent_controller_config},
     )
 
     generate_config(
-        learner_config=config,
+        learning_coordinator_config=config,
         config_location="config.json",
         force_overwrite=True,
     )

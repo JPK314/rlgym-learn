@@ -430,3 +430,15 @@ class Timestep(Generic[AgentID, ObsType, ActionType, RewardType]):
     reward: RewardType
     terminated: bool
     truncated: bool
+    def __new__(
+        env_id: str,
+        timestep_id: int,
+        previous_timestep_id: Optional[int],
+        agent_id: AgentID,
+        obs: ObsType,
+        next_obs: ObsType,
+        action: ActionType,
+        reward: RewardType,
+        terminated: bool,
+        truncated: bool,
+    ) -> Timestep[AgentID, ObsType, ActionType, RewardType]: ...

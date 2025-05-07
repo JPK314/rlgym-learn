@@ -84,7 +84,7 @@ DEFAULT_CONFIG_FILENAME = "config.json"
 
 
 def generate_config(
-    learner_config,
+    learning_coordinator_config: LearningCoordinatorConfigModel,
     config_location: Optional[str] = None,
     force_overwrite: bool = False,
 ):
@@ -100,5 +100,5 @@ def generate_config(
         else:
             print("Proceeding with config creation...")
     with open(config_location, "wt") as f:
-        f.write(learner_config.model_dump_json(indent=4))
+        f.write(learning_coordinator_config.model_dump_json(indent=4))
     print(f"Config created at {config_location}.")

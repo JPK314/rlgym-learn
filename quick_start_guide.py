@@ -155,7 +155,9 @@ if __name__ == "__main__":
                     max_size=150_000,  # Sets the number of timesteps to store in the experience buffer. Old timesteps will be pruned to only store the most recently obtained timesteps.
                     trajectory_processor_config=GAETrajectoryProcessorConfigModel(),
                 ),
-                metrics_logger_config=WandbMetricsLoggerConfigModel(group="rlgym-learn-testing"),
+                metrics_logger_config=WandbMetricsLoggerConfigModel(
+                    group="rlgym-learn-testing"
+                ),
             )
         },
         agent_controllers_save_folder="agent_controllers_checkpoints",  # (default value) WARNING: THIS PROCESS MAY DELETE ANYTHING INSIDE THIS FOLDER. This determines the parent folder for the runs for each agent controller. The runs folder for the agent controller will be this folder and then the agent controller config key as a subfolder.
@@ -165,7 +167,7 @@ if __name__ == "__main__":
     # passed to the learning coordinator via config_location instead of defining
     # the config object in code and passing that)
     generate_config(
-        learner_config=config,
+        learning_coordinator_config=config,
         config_location="config.json",
         force_overwrite=True,
     )

@@ -325,7 +325,7 @@ pub fn env_process<'py>(
                     if should_send_state {
                         state_serde_option.as_deref_mut().ok_or_else(|| {
                             InvalidStateError::new_err(format!(
-                                "Env process {} received an env action with send_state = true, but no state serde was provided", proc_id
+                                "Env process {} received an env action with send_state = true, but no state serde was provided to use for serialization", proc_id
                             ))
                         })?.append(shm_slice, offset, &env_state(&env)?)?;
                     }

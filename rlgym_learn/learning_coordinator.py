@@ -118,7 +118,7 @@ class LearningCoordinator(
         )
         self.agent_manager.set_space_types(obs_space, action_space)
         self.agent_manager.load_agent_controllers(self.config)
-        print("Learner successfully initialized!")
+        print("Learning coordinator successfully initialized!")
 
     def start(self):
         """
