@@ -161,7 +161,7 @@ if __name__ == "__main__":
     learner_config = PPOLearnerConfigModel(
         n_epochs=1,
         batch_size=50_000,
-        minibatch_size=50_000,
+        n_minibatches=1,
         ent_coef=0.001,
         clip_range=0.2,
         actor_lr=0.0003,
