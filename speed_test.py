@@ -186,7 +186,6 @@ if __name__ == "__main__":
         n_checkpoints_to_keep=5,
         random_seed=123,
         device="auto",
-        log_to_wandb=False,
         learner_config=learner_config,
         experience_buffer_config=experience_buffer_config,
         # metrics_logger_config=wandb_config,

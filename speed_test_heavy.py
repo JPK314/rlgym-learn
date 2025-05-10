@@ -189,7 +189,6 @@ if __name__ == "__main__":
         n_checkpoints_to_keep=5,
         random_seed=123,
         device="auto",
-        log_to_wandb=False,
         learner_config=learner_config,
         experience_buffer_config=experience_buffer_config,
         # metrics_logger_config=wandb_config,
@@ -201,12 +200,17 @@ if __name__ == "__main__":
             serde_types=SerdeTypesModel(
                 agent_id_serde_type=PyAnySerdeType.STRING(),
                 action_serde_type=PyAnySerdeType.NUMPY(
-                    np.int64, config=NumpySerdeConfig.STATIC(shape=(1,))
+                    np.int64,
+                    config=NumpySerdeConfig.STATIC(
+                        shape=(1,),
+                        allocation_pool_warning_size=None,
+                    ),
                 ),
                 obs_serde_type=PyAnySerdeType.NUMPY(
                     np.float64,
                     config=NumpySerdeConfig.STATIC(
-                        shape=(92,), allocation_pool_min_size=50
+                        shape=(92,),
+                        allocation_pool_warning_size=None,
                     ),
                 ),
                 reward_serde_type=PyAnySerdeType.FLOAT(),

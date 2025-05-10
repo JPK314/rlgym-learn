@@ -145,7 +145,6 @@ if __name__ == "__main__":
         ),
         agent_controllers_config={
             "PPO1": PPOAgentControllerConfigModel(
-                log_to_wandb=True,  # logs run data to wandb
                 learner_config=PPOLearnerConfigModel(
                     ent_coef=0.01,  # Sets the entropy coefficient used in the PPO algorithm
                     actor_lr=5e-5,  # Sets the learning rate of the actor model

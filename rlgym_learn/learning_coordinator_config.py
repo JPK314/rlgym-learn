@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field, model_validator
 from .rlgym_learn import PyAnySerdeType
 
 
-class ProcessConfigModel(BaseModel):
+class ProcessConfigModel(BaseModel, extra="forbid"):
     n_proc: int = 8
     min_process_steps_per_inference: int = -1
     render: bool = False
@@ -23,7 +23,7 @@ class ProcessConfigModel(BaseModel):
         return self
 
 
-class SerdeTypesModel(BaseModel):
+class SerdeTypesModel(BaseModel, extra="forbid"):
     agent_id_serde_type: PyAnySerdeType
     action_serde_type: PyAnySerdeType
     obs_serde_type: PyAnySerdeType
@@ -42,7 +42,7 @@ class SerdeTypesModel(BaseModel):
         json_encoders = {PyAnySerdeType: lambda x: x.to_json()}
 
 
-class BaseConfigModel(BaseModel):
+class BaseConfigModel(BaseModel, extra="forbid"):
     serde_types: SerdeTypesModel
     device: str = "auto"
     random_seed: int = 123
@@ -52,7 +52,7 @@ class BaseConfigModel(BaseModel):
     batched_tensor_action_associated_learning_data: bool = True
 
 
-class LearningCoordinatorConfigModel(BaseModel):
+class LearningCoordinatorConfigModel(BaseModel, extra="forbid"):
     base_config: BaseConfigModel = Field(default_factory=BaseConfigModel)
     process_config: ProcessConfigModel = Field(default_factory=ProcessConfigModel)
     agent_controllers_config: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
