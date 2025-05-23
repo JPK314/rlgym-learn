@@ -5,7 +5,7 @@ build-backend = "maturin"
 [project]
 name = "rlgym-learn"
 description = "A generic framework for using learning algorithms with effecient parallelization of RLGym environments and an ergonomic API"
-requires-python = ">=3.8,<3.13"
+requires-python = ">=3.8,<3.14"
 authors = [
     { name = "Jonathan Keegan" }
 ]
