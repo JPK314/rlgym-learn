@@ -44,7 +44,6 @@ class SerdeTypesModel(BaseModel, extra="forbid"):
 
 class BaseConfigModel(BaseModel, extra="forbid"):
     serde_types: SerdeTypesModel
-    device: str = "auto"
     random_seed: int = 123
     shm_buffer_size: int = 16384
     flinks_folder: str = "shmem_flinks"

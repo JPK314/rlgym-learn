@@ -159,7 +159,6 @@ if __name__ == "__main__":
     def critic_factory(obs_space: Tuple[str, int], device: str):
         return BasicCritic(obs_space[1], (256, 256, 256), device)
 
-    # 80 processes
     n_proc = 200
 
     learner_config = PPOLearnerConfigModel(
@@ -170,6 +169,7 @@ if __name__ == "__main__":
         clip_range=0.2,
         actor_lr=0.0003,
         critic_lr=0.0003,
+        device="auto",
     )
     experience_buffer_config = ExperienceBufferConfigModel(
         max_size=150_000,
@@ -182,13 +182,12 @@ if __name__ == "__main__":
         timesteps_per_iteration=50_000,
         save_every_ts=1_000_000,
         add_unix_timestamp=True,
-        checkpoint_load_folder=None,  # "agents_checkpoints/PPO1/rlgym-learn-run-1723394601682346400/1723394622757846600",
+        checkpoint_load_folder=None,  # "agent_controllers_checkpoints\\PPO1\\rlgym-learn-run-1748484452329799100\\1748484519173274700",
         n_checkpoints_to_keep=5,
         random_seed=123,
-        device="auto",
         learner_config=learner_config,
         experience_buffer_config=experience_buffer_config,
-        # metrics_logger_config=wandb_config,
+        metrics_logger_config=wandb_config,
     )
 
     config = LearningCoordinatorConfigModel(
@@ -234,8 +233,8 @@ if __name__ == "__main__":
             actor_factory,
             critic_factory,
             NumpyExperienceBuffer(GAETrajectoryProcessor()),
-            # metrics_logger=WandbMetricsLogger(PPOMetricsLogger()),
-            metrics_logger=PPOMetricsLogger(),
+            metrics_logger=WandbMetricsLogger(PPOMetricsLogger()),
+            # metrics_logger=PPOMetricsLogger(),
         )
     }
 

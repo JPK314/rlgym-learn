@@ -162,7 +162,6 @@ if __name__ == "__main__":
     def critic_factory(obs_space: Tuple[str, int], device: str):
         return BasicCritic(obs_space[1], (1024, 1024, 1024, 1024), device)
 
-    # 80 processes
     n_proc = 200
 
     learner_config = PPOLearnerConfigModel(
@@ -173,6 +172,7 @@ if __name__ == "__main__":
         clip_range=0.2,
         actor_lr=0.0003,
         critic_lr=0.0003,
+        device="auto",
     )
     experience_buffer_config = ExperienceBufferConfigModel(
         max_size=1_000_000,
@@ -188,7 +188,6 @@ if __name__ == "__main__":
         checkpoint_load_folder=None,  # "agents_checkpoints/PPO1/rlgym-learn-run-1723394601682346400/1723394622757846600",
         n_checkpoints_to_keep=5,
         random_seed=123,
-        device="auto",
         learner_config=learner_config,
         experience_buffer_config=experience_buffer_config,
         # metrics_logger_config=wandb_config,
