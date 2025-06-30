@@ -136,6 +136,7 @@ impl AgentManager {
                 if agent_controller_indices.len() == new_obs_list.len() {
                     action_list = agent_controller_action_list;
                     if self.batched_tensor_action_associated_learning_data {
+                        // TODO: to cpu? this seems like it should be configurable
                         let agent_controller_aald = agent_controller_aald
                             .call_method1(intern!(py, "to"), (intern!(py, "cpu"),))?;
                         action_associated_learning_data_option = Some(
@@ -159,6 +160,7 @@ impl AgentManager {
                                 &agent_controller_aald.getattr(intern!(py, "dtype"))?,
                             )?));
                     } else {
+                        // TODO: what? Am I ignoring something here that I shouldn't be?
                         action_associated_learning_data_option =
                             Some(ActionAssociatedLearningData::List(vec![None; obs_len]))
                     }

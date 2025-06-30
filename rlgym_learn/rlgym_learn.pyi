@@ -5,8 +5,9 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import timedelta
 from multiprocessing import Process
-from socket import _RetAddress, socket
+from socket import socket
 from typing import (
+    TYPE_CHECKING,
     Any,
     Callable,
     Dict,
@@ -20,6 +21,9 @@ from typing import (
     Union,
     _TypedDict,
 )
+
+if TYPE_CHECKING:
+    from socket import _RetAddress
 
 try:
     from numpy import DTypeLike, _ShapeType, ndarray

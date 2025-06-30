@@ -217,7 +217,7 @@ if __name__ == "__main__":
                     (PyAnySerdeType.STRING(), PyAnySerdeType.INT())
                 ),
             ),
-            timestep_limit=500_000_000,
+            timestep_limit=500_000,
         ),
         agent_controllers_config={"PPO1": ppo_agent_controller_config},
     )
