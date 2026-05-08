@@ -22,7 +22,7 @@ from rlgym.api import (
 )
 
 from ..api import ActionAssociatedLearningData
-from ..learning_coordinator_config import SerdeTypesModel
+from ..config import SerdeTypesModel
 from ..rlgym_learn import EnvAction
 from ..rlgym_learn import EnvProcessInterface as RustEnvProcessInterface
 from ..rlgym_learn import PickleablePyAnySerdeType, Timestep, recvfrom_byte, sendto_byte
@@ -257,7 +257,7 @@ class EnvProcessInterface(
         except Exception:
             print("Failed to send stop signal to child process!")
             traceback.print_exc()
-        (process, parent_end, _, _) = self.processes.pop()
+        process, parent_end, _, _ = self.processes.pop()
 
         try:
             process.join()
@@ -312,7 +312,7 @@ class EnvProcessInterface(
         """
         self.rust_env_process_interface.cleanup()
         for _ in range(len(self.processes)):
-            (process, parent_end, _, _) = self.processes.pop()
+            process, parent_end, _, _ = self.processes.pop()
 
             try:
                 process.join()

@@ -137,14 +137,16 @@ if __name__ == "__main__":
         PPOMetricsLogger,
     )
 
-    from rlgym_learn.learning_coordinator import LearningCoordinator
-    from rlgym_learn.learning_coordinator_config import (
-        BaseConfigModel,
+    from rlgym_learn.learning_coordinator import (
+        LearningCoordinator,
         LearningCoordinatorConfigModel,
+        generate_config,
+    )
+    from rlgym_learn.config import (
+        BaseConfigModel,
         ProcessConfigModel,
         PyAnySerdeType,
         SerdeTypesModel,
-        generate_config,
     )
 
     def actor_factory(

@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import os
 from collections.abc import Callable
-from typing import Any, Dict, Generic, Optional
+from typing import Any, Dict, Generic, Optional, TypeVar, Type
+from typing_extensions import Self
+
+from pydantic import BaseModel, Field, model_validator, RootModel, ValidationInfo
 
 from rlgym.api import (
     ActionSpaceType,
@@ -18,12 +21,58 @@ from rlgym.api import (
 
 from .agent import AgentManager
 from .api import ActionAssociatedLearningData, AgentController
+from .config import BaseConfigModel, ProcessConfigModel
 from .env_processing import EnvProcessInterface
-from .learning_coordinator_config import (
-    DEFAULT_CONFIG_FILENAME,
-    LearningCoordinatorConfigModel,
-)
 from .util import KBHit
+
+DEFAULT_CONFIG_FILENAME = "config.json"
+
+
+class LearningCoordinatorConfigModel(BaseModel, extra="forbid"):
+    base_config: BaseConfigModel = Field(default_factory=BaseConfigModel)
+    process_config: ProcessConfigModel = Field(default_factory=ProcessConfigModel)
+    agent_controllers_config: Dict[str, RootModel[Optional[BaseModel]]] = Field(
+        default_factory=dict
+    )
+    agent_controllers_save_folder: str = "agent_controllers_checkpoints"
+
+    @model_validator(mode="after")
+    def validate_agent_controllers_config(self, info: ValidationInfo) -> Self:
+        agent_controllers: Optional[Dict[str, AgentController]] = info.context
+        if agent_controllers is None:
+            return self
+        _agent_controllers_config = {}
+        for k, v in agent_controllers.items():
+            model: Type[Optional[BaseModel]] = v.config_model
+            if model is type(None):
+                _agent_controllers_config[k] = None
+            else:
+                _agent_controllers_config[k] = model.model_validate(
+                    self.agent_controllers_config[k]
+                )
+
+        self.agent_controllers_config = _agent_controllers_config
+
+
+def generate_config(
+    learning_coordinator_config: LearningCoordinatorConfigModel,
+    config_location: Optional[str] = None,
+    force_overwrite: bool = False,
+):
+    if config_location is None:
+        config_location = os.path.join(os.getcwd(), DEFAULT_CONFIG_FILENAME)
+    if not force_overwrite and os.path.isfile(config_location):
+        confirmation = input(
+            f"File {config_location} exists already. Overwrite? (y)/n: "
+        )
+        if confirmation != "" and confirmation.lower() != "y":
+            print("Aborting config generation, proceeding with existing config...")
+            return
+        else:
+            print("Proceeding with config creation...")
+    with open(config_location, "wt") as f:
+        f.write(learning_coordinator_config.model_dump_json(indent=4))
+    print(f"Config created at {config_location}.")
 
 
 class LearningCoordinator(
@@ -83,7 +132,7 @@ class LearningCoordinator(
 
             with open(config_location, "rt") as f:
                 self.config = LearningCoordinatorConfigModel.model_validate_json(
-                    f.read()
+                    f.read(), context=agent_controllers
                 )
 
         self.agent_manager = AgentManager(

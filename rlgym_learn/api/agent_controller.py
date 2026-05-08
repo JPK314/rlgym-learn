@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Any, Dict, Generic, Iterable, List, Optional, Tuple
+from typing import Any, Dict, Generic, Iterable, List, Optional, Tuple, Type
 
 from rlgym.api import (
     ActionSpaceType,
@@ -11,7 +11,7 @@ from rlgym.api import (
     StateType,
 )
 
-from ..learning_coordinator_config import BaseConfigModel, ProcessConfigModel
+from ..config import BaseConfigModel, ProcessConfigModel
 from ..rlgym_learn import EnvActionResponse, Timestep
 from .typing import (
     ActionAssociatedLearningData,
@@ -45,6 +45,13 @@ class AgentController(
 ):
     def __init__(self, *args, **kwargs):
         pass
+
+    @property
+    def config_model(self) -> Type[AgentControllerConfig]:
+        """
+        Function to return the config model type that your AgentController implementation uses. Defaults to NoneType.
+        """
+        return type(None)
 
     def choose_agents(self, agent_id_list: List[AgentID]) -> List[int]:
         """
@@ -132,9 +139,6 @@ class AgentController(
 
     def set_space_types(self, obs_space: ObsSpaceType, action_space: ActionSpaceType):
         pass
-
-    def validate_config(self, config_obj: Dict[str, Any]) -> AgentControllerConfig:
-        raise NotImplementedError
 
     def load(self, config: DerivedAgentControllerConfig[AgentControllerConfig]):
         """

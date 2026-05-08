@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from typing import Any, Dict, Generic, Optional, TypeVar
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, model_validator, RootModel, ValidationInfo
 
 from .rlgym_learn import PyAnySerdeType
 
@@ -49,37 +49,6 @@ class BaseConfigModel(BaseModel, extra="forbid"):
     flinks_folder: str = "shmem_flinks"
     timestep_limit: int = 5_000_000_000
     batched_tensor_action_associated_learning_data: bool = True
-
-
-class LearningCoordinatorConfigModel(BaseModel, extra="forbid"):
-    base_config: BaseConfigModel = Field(default_factory=BaseConfigModel)
-    process_config: ProcessConfigModel = Field(default_factory=ProcessConfigModel)
-    agent_controllers_config: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
-    agent_controllers_save_folder: str = "agent_controllers_checkpoints"
-
-    @model_validator(mode="before")
-    @classmethod
-    def set_agent_controllers_config(cls, data):
-        if isinstance(data, LearningCoordinatorConfigModel):
-            agent_controllers_config = {}
-            for k, v in data.agent_controllers_config.items():
-                if isinstance(v, BaseModel):
-                    agent_controllers_config[k] = v.model_dump()
-                else:
-                    agent_controllers_config[k] = v
-            data.agent_controllers_config = agent_controllers_config
-        elif isinstance(data, dict) and "agent_controllers_config" in data:
-            agent_controllers_config = {}
-            for k, v in data["agent_controllers_config"].items():
-                if isinstance(v, BaseModel):
-                    agent_controllers_config[k] = v.model_dump()
-                else:
-                    agent_controllers_config[k] = v
-            data["agent_controllers_config"] = agent_controllers_config
-        return data
-
-
-DEFAULT_CONFIG_FILENAME = "config.json"
 
 
 def generate_config(

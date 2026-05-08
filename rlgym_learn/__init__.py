@@ -1,10 +1,12 @@
-from .learning_coordinator import LearningCoordinator
-from .learning_coordinator_config import (
-    BaseConfigModel,
+from .learning_coordinator import (
+    generate_config,
+    LearningCoordinator,
     LearningCoordinatorConfigModel,
+)
+from .config import (
+    BaseConfigModel,
     ProcessConfigModel,
     SerdeTypesModel,
-    generate_config,
 )
 from .rlgym_learn import AgentManager as RustAgentManager
 from .rlgym_learn import EnvAction, EnvActionResponse, EnvActionResponseType
