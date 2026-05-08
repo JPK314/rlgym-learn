@@ -2,7 +2,7 @@ import os
 from typing import Dict, Optional, Type, Any
 from typing_extensions import Self
 
-from pydantic import BaseModel, Field, model_validator, RootModel, ValidationInfo
+from pydantic import BaseModel, Field, model_validator, InstanceOf, ValidationInfo
 
 
 from .api import AgentController
@@ -14,7 +14,7 @@ DEFAULT_CONFIG_FILENAME = "config.json"
 class LearningCoordinatorConfigModel(BaseModel, extra="forbid"):
     base_config: BaseConfigModel = Field(default_factory=BaseConfigModel)
     process_config: ProcessConfigModel = Field(default_factory=ProcessConfigModel)
-    agent_controllers_config: Dict[str, Optional[BaseModel]] = Field(
+    agent_controllers_config: Dict[str, Optional[InstanceOf[BaseModel]]] = Field(
         default_factory=dict
     )
     agent_controllers_save_folder: str = "agent_controllers_checkpoints"
