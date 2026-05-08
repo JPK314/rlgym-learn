@@ -1,9 +1,6 @@
-from .learning_coordinator import (
-    generate_config,
-    LearningCoordinator,
-    LearningCoordinatorConfigModel,
-)
-from .config import (
+from .learning_coordinator import LearningCoordinator
+from .learning_coordinator_config import LearningCoordinatorConfigModel, generate_config
+from .basic_config import (
     BaseConfigModel,
     ProcessConfigModel,
     SerdeTypesModel,

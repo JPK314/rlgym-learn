@@ -11,7 +11,7 @@ from rlgym.api import (
     StateType,
 )
 
-from ..config import BaseConfigModel, ProcessConfigModel
+from ..basic_config import BaseConfigModel, ProcessConfigModel
 from ..rlgym_learn import EnvActionResponse, Timestep
 from .typing import (
     ActionAssociatedLearningData,

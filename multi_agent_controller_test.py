@@ -142,7 +142,7 @@ if __name__ == "__main__":
         LearningCoordinatorConfigModel,
         generate_config,
     )
-    from rlgym_learn.config import (
+    from rlgym_learn.basic_config import (
         BaseConfigModel,
         ProcessConfigModel,
         PyAnySerdeType,

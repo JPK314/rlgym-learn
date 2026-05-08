@@ -49,24 +49,3 @@ class BaseConfigModel(BaseModel, extra="forbid"):
     flinks_folder: str = "shmem_flinks"
     timestep_limit: int = 5_000_000_000
     batched_tensor_action_associated_learning_data: bool = True
-
-
-def generate_config(
-    learning_coordinator_config: LearningCoordinatorConfigModel,
-    config_location: Optional[str] = None,
-    force_overwrite: bool = False,
-):
-    if config_location is None:
-        config_location = os.path.join(os.getcwd(), DEFAULT_CONFIG_FILENAME)
-    if not force_overwrite and os.path.isfile(config_location):
-        confirmation = input(
-            f"File {config_location} exists already. Overwrite? (y)/n: "
-        )
-        if confirmation != "" and confirmation.lower() != "y":
-            print("Aborting config generation, proceeding with existing config...")
-            return
-        else:
-            print("Proceeding with config creation...")
-    with open(config_location, "wt") as f:
-        f.write(learning_coordinator_config.model_dump_json(indent=4))
-    print(f"Config created at {config_location}.")
