@@ -76,7 +76,9 @@ class LearningCoordinator(
         config_location: Optional[str] = None,
     ):
         if config is not None:
-            self.config = config
+            self.config = LearningCoordinatorConfigModel.model_validate(
+                config, context=agent_controllers
+            )
         else:
             if config_location is None:
                 config_location = os.path.join(os.getcwd(), DEFAULT_CONFIG_FILENAME)
