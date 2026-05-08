@@ -42,6 +42,12 @@ class LearningCoordinatorConfigModel(BaseModel, extra="forbid"):
                     else:
                         agent_controllers_config[k] = v
             data["agent_controllers_config"] = agent_controllers_config
+        elif isinstance(data, LearningCoordinatorConfigModel):
+            data.agent_controllers_config = {
+                k: v
+                for k, v in data.agent_controllers_config.items()
+                if k in agent_controllers
+            }
         return data
 
     @model_validator(mode="after")
