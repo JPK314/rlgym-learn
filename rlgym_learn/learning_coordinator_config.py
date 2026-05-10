@@ -2,7 +2,14 @@ import os
 from typing import Dict, Optional, Type, Any
 from typing_extensions import Self
 
-from pydantic import BaseModel, Field, model_validator, InstanceOf, ValidationInfo
+from pydantic import (
+    BaseModel,
+    Field,
+    model_validator,
+    InstanceOf,
+    ValidationInfo,
+    field_serializer,
+)
 
 
 from .api import AgentController
@@ -68,6 +75,15 @@ class LearningCoordinatorConfigModel(BaseModel, extra="forbid"):
                 len(agent_controller_keys_not_in_config) == 0
             ), f"some agent controllers do not have keys present in agent_controllers_config. The following keys from agent_controllers are not present in agent_controllers_config: {agent_controller_keys_not_in_config}"
         return self
+
+    @field_serializer("agent_controllers_config")
+    def ser_agent_controllers_config(
+        self, agent_controllers_config: Dict[str, Optional[BaseModel]]
+    ) -> Dict[str, Dict[str, Any]]:
+        return {
+            k: None if v is None else v.model_dump()
+            for (k, v) in agent_controllers_config.items()
+        }
 
 
 def generate_config(
