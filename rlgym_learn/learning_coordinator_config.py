@@ -55,7 +55,7 @@ class LearningCoordinatorConfigModel(BaseModel, extra="forbid"):
         agent_controllers: Optional[Dict[str, AgentController]] = info.context
         if agent_controllers is not None:
             agent_controller_keys_not_in_config = [
-                v for v in self.agent_controllers_config if v not in agent_controllers
+                v for v in agent_controllers if v not in self.agent_controllers_config
             ]
             assert (
                 len(agent_controller_keys_not_in_config) == 0
