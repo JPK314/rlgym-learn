@@ -11,6 +11,7 @@ from .basic_config import BaseConfigModel, ProcessConfigModel
 DEFAULT_CONFIG_FILENAME = "config.json"
 
 
+# TODO: use polymorphic serialization? - https://github.com/pydantic/pydantic/issues/13164
 class LearningCoordinatorConfigModel(BaseModel, extra="forbid"):
     base_config: BaseConfigModel = Field(default_factory=BaseConfigModel)
     process_config: ProcessConfigModel = Field(default_factory=ProcessConfigModel)
@@ -34,14 +35,17 @@ class LearningCoordinatorConfigModel(BaseModel, extra="forbid"):
                 if k in agent_controllers:
                     if isinstance(v, dict):
                         agent_controller = agent_controllers[k]
-                        agent_controller_config_model: Type[Optional[BaseModel]] = (
-                            agent_controller.config_model
-                        )
-                        agent_controllers_config[k] = (
-                            agent_controller_config_model.model_validate(
-                                v, context=agent_controller
+                        agent_controller_config_model_type: Type[
+                            Optional[BaseModel]
+                        ] = agent_controller.config_model
+                        if agent_controller_config_model_type == type(None):
+                            agent_controllers_config[k] = None
+                        else:
+                            agent_controllers_config[k] = (
+                                agent_controller_config_model_type.model_validate(
+                                    v, context=agent_controller
+                                )
                             )
-                        )
                     else:
                         agent_controllers_config[k] = v
             data["agent_controllers_config"] = agent_controllers_config
