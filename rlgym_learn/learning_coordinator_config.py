@@ -18,7 +18,6 @@ from .basic_config import BaseConfigModel, ProcessConfigModel
 DEFAULT_CONFIG_FILENAME = "config.json"
 
 
-# TODO: use polymorphic serialization? - https://github.com/pydantic/pydantic/issues/13164
 class LearningCoordinatorConfigModel(BaseModel, extra="forbid"):
     base_config: BaseConfigModel = Field(default_factory=BaseConfigModel)
     process_config: ProcessConfigModel = Field(default_factory=ProcessConfigModel)
@@ -76,15 +75,6 @@ class LearningCoordinatorConfigModel(BaseModel, extra="forbid"):
             ), f"some agent controllers do not have keys present in agent_controllers_config. The following keys from agent_controllers are not present in agent_controllers_config: {agent_controller_keys_not_in_config}"
         return self
 
-    @field_serializer("agent_controllers_config")
-    def ser_agent_controllers_config(
-        self, agent_controllers_config: Dict[str, Optional[BaseModel]]
-    ) -> Dict[str, Dict[str, Any]]:
-        return {
-            k: None if v is None else v.model_dump()
-            for (k, v) in agent_controllers_config.items()
-        }
-
 
 def generate_config(
     learning_coordinator_config: LearningCoordinatorConfigModel,
@@ -103,5 +93,9 @@ def generate_config(
         else:
             print("Proceeding with config creation...")
     with open(config_location, "wt") as f:
-        f.write(learning_coordinator_config.model_dump_json(indent=4))
+        f.write(
+            learning_coordinator_config.model_dump_json(
+                indent=4, polymorphic_serialization=True
+            )
+        )
     print(f"Config created at {config_location}.")
