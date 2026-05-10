@@ -105,23 +105,19 @@ class AgentManager(
 
     def load_agent_controllers(
         self,
-        learner_config: LearningCoordinatorConfigModel,
+        config: LearningCoordinatorConfigModel,
     ):
         for agent_controller_name, agent_controller in self.agent_controllers.items():
-            assert (
-                agent_controller_name in learner_config.agent_controllers_config
-            ), f"Agent {agent_controller_name} not present in agent_controllers_config"
-            agent_controller_config = agent_controller.validate_config(
-                learner_config.agent_controllers_config[agent_controller_name]
-            )
             agent_controller.load(
                 DerivedAgentControllerConfig(
                     agent_controller_name=agent_controller_name,
-                    agent_controller_config=agent_controller_config,
-                    base_config=learner_config.base_config,
-                    process_config=learner_config.process_config,
+                    agent_controller_config=config.agent_controllers_config[
+                        agent_controller_name
+                    ],
+                    base_config=config.base_config,
+                    process_config=config.process_config,
                     save_folder=os.path.join(
-                        learner_config.agent_controllers_save_folder,
+                        config.agent_controllers_save_folder,
                         agent_controller_name,
                     ),
                 )
