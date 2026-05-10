@@ -33,11 +33,14 @@ class LearningCoordinatorConfigModel(BaseModel, extra="forbid"):
             for k, v in agent_controllers_config_raw.items():
                 if k in agent_controllers:
                     if isinstance(v, dict):
+                        agent_controller = agent_controllers[k]
                         agent_controller_config_model: Type[Optional[BaseModel]] = (
-                            agent_controllers[k].config_model
+                            agent_controller.config_model
                         )
                         agent_controllers_config[k] = (
-                            agent_controller_config_model.model_validate(v)
+                            agent_controller_config_model.model_validate(
+                                v, context=agent_controller
+                            )
                         )
                     else:
                         agent_controllers_config[k] = v
