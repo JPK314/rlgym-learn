@@ -123,9 +123,10 @@ def env_create_function():
 
 
 if __name__ == "__main__":
-    from rlgym_learn_algos.logging import (
+    from rlgym_learn_algos.logging.wandb import (
         WandbMetricsLogger,
         WandbMetricsLoggerConfigModel,
+        ppo_additional_derived_config_factory,
     )
     from rlgym_learn_algos.ppo import (
         BasicCritic,
@@ -181,7 +182,6 @@ if __name__ == "__main__":
     ppo_agent_controller_config = PPOAgentControllerConfigModel(
         timesteps_per_iteration=50_000,
         save_every_ts=1_000_000,
-        add_unix_timestamp=True,
         checkpoint_load_folder=None,  # "agent_controllers_checkpoints\\PPO1\\rlgym-learn-run-1748484452329799100\\1748484519173274700",
         n_checkpoints_to_keep=5,
         random_seed=123,
@@ -233,7 +233,9 @@ if __name__ == "__main__":
             actor_factory,
             critic_factory,
             NumpyExperienceBuffer(GAETrajectoryProcessor()),
-            metrics_logger=WandbMetricsLogger(PPOMetricsLogger()),
+            metrics_logger=WandbMetricsLogger(
+                PPOMetricsLogger(), ppo_additional_derived_config_factory
+            ),
             # metrics_logger=PPOMetricsLogger(),
         )
     }

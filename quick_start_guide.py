@@ -79,9 +79,10 @@ if __name__ == "__main__":
     from typing import Tuple
 
     import numpy as np
-    from rlgym_learn_algos.logging import (
+    from rlgym_learn_algos.logging.wandb import (
         WandbMetricsLogger,
         WandbMetricsLoggerConfigModel,
+        ppo_additional_derived_config_factory,
     )
     from rlgym_learn_algos.ppo import (
         BasicCritic,
@@ -178,7 +179,9 @@ if __name__ == "__main__":
                 actor_factory=actor_factory,
                 critic_factory=critic_factory,
                 experience_buffer=NumpyExperienceBuffer(GAETrajectoryProcessor()),
-                metrics_logger=WandbMetricsLogger(PPOMetricsLogger()),
+                metrics_logger=WandbMetricsLogger(
+                    PPOMetricsLogger(), ppo_additional_derived_config_factory
+                ),
                 obs_standardizer=None,
             )
         },
