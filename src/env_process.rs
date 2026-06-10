@@ -20,9 +20,7 @@ fn sync_with_epi<'py>(socket: &Bound<'py, PyAny>, address: &Bound<'py, PyAny>) -
 }
 
 fn env_reset<'py>(env: &'py Bound<'py, PyAny>) -> PyResult<Bound<'py, PyDict>> {
-    Ok(env
-        .call_method0(intern!(env.py(), "reset"))?
-        .downcast_into()?)
+    Ok(env.call_method0(intern!(env.py(), "reset"))?.cast_into()?)
 }
 
 fn env_set_state<'py>(
@@ -31,7 +29,7 @@ fn env_set_state<'py>(
 ) -> PyResult<Bound<'py, PyDict>> {
     Ok(env
         .call_method1(intern!(env.py(), "set_state"), (desired_state,))?
-        .downcast_into()?)
+        .cast_into()?)
 }
 
 fn env_render<'py>(env: &'py Bound<'py, PyAny>) -> PyResult<()> {
@@ -50,13 +48,13 @@ fn env_state<'py>(env: &'py Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
 fn env_obs_spaces<'py>(env: &'py Bound<'py, PyAny>) -> PyResult<Bound<'py, PyDict>> {
     Ok(env
         .getattr(intern!(env.py(), "observation_spaces"))?
-        .downcast_into()?)
+        .cast_into()?)
 }
 
 fn env_action_spaces<'py>(env: &'py Bound<'py, PyAny>) -> PyResult<Bound<'py, PyDict>> {
     Ok(env
         .getattr(intern!(env.py(), "action_spaces"))?
-        .downcast_into()?)
+        .cast_into()?)
 }
 
 fn env_step<'py>(
@@ -70,12 +68,12 @@ fn env_step<'py>(
 )> {
     let result: Bound<'py, PyTuple> = env
         .call_method1(intern!(env.py(), "step"), (actions_dict,))?
-        .downcast_into()?;
+        .cast_into()?;
     Ok((
-        result.get_item(0)?.downcast_into()?,
-        result.get_item(1)?.downcast_into()?,
-        result.get_item(2)?.downcast_into()?,
-        result.get_item(3)?.downcast_into()?,
+        result.get_item(0)?.cast_into()?,
+        result.get_item(1)?.cast_into()?,
+        result.get_item(2)?.cast_into()?,
+        result.get_item(3)?.cast_into()?,
     ))
 }
 
@@ -143,7 +141,7 @@ pub fn env_process<'py>(
     };
     let shm_slice = unsafe { &mut shmem.as_slice_mut()[used_bytes..] };
 
-    Python::with_gil::<_, PyResult<()>>(|py| {
+    Python::attach::<_, PyResult<()>>(|py| {
         // Initial setup
         let env = build_env_fn.call0()?;
 
@@ -252,11 +250,9 @@ pub fn env_process<'py>(
                         }
                     };
                     if let Some(shared_info_setter) = shared_info_setter_option {
-                        env_shared_info(&env)?.downcast::<PyDict>()?.update(
-                            shared_info_setter
-                                .downcast_bound::<PyDict>(py)?
-                                .as_mapping(),
-                        )?;
+                        env_shared_info(&env)?
+                            .cast::<PyDict>()?
+                            .update(shared_info_setter.cast_bound::<PyDict>(py)?.as_mapping())?;
                     }
                     let non_step = !is_step;
 

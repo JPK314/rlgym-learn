@@ -1,16 +1,15 @@
 import os
-from typing import Dict, Optional, Type, Any
-from typing_extensions import Self
+from typing import Any, Dict, Optional, Type
 
 from pydantic import (
     BaseModel,
     Field,
-    model_validator,
     InstanceOf,
     ValidationInfo,
     field_serializer,
+    model_validator,
 )
-
+from typing_extensions import Self
 
 from .api import AgentController
 from .basic_config import BaseConfigModel, ProcessConfigModel
@@ -44,7 +43,7 @@ class LearningCoordinatorConfigModel(BaseModel, extra="forbid"):
                         agent_controller_config_model_type: Type[
                             Optional[BaseModel]
                         ] = agent_controller.config_model
-                        if agent_controller_config_model_type == type(None):
+                        if agent_controller_config_model_type is type(None):
                             agent_controllers_config[k] = None
                         else:
                             agent_controllers_config[k] = (
@@ -70,9 +69,9 @@ class LearningCoordinatorConfigModel(BaseModel, extra="forbid"):
             agent_controller_keys_not_in_config = [
                 v for v in agent_controllers if v not in self.agent_controllers_config
             ]
-            assert (
-                len(agent_controller_keys_not_in_config) == 0
-            ), f"some agent controllers do not have keys present in agent_controllers_config. The following keys from agent_controllers are not present in agent_controllers_config: {agent_controller_keys_not_in_config}"
+            assert len(agent_controller_keys_not_in_config) == 0, (
+                f"some agent controllers do not have keys present in agent_controllers_config. The following keys from agent_controllers are not present in agent_controllers_config: {agent_controller_keys_not_in_config}"
+            )
         return self
 
 

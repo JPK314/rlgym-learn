@@ -1,6 +1,6 @@
-use pyo3::{sync::GILOnceCell, PyObject};
+use pyo3::{prelude::*, sync::PyOnceLock};
 
-pub static INTERNED_ROCKET_LEAGUE_API_MODULE: GILOnceCell<PyObject> = GILOnceCell::new();
+pub static INTERNED_ROCKET_LEAGUE_API_MODULE: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 
 #[macro_export]
 macro_rules! get_class {

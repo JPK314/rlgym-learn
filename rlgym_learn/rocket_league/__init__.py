@@ -1,4 +1,10 @@
 try:
+    __all__ = [
+        "CarPythonSerde",
+        "GameConfigPythonSerde",
+        "GameStatePythonSerde",
+        "PhysicsObjectPythonSerde",
+    ]
     from ..rlgym_learn import (
         CarPythonSerde,
         GameConfigPythonSerde,

@@ -43,15 +43,12 @@ class AgentController(
         AgentControllerData,
     ]
 ):
-    def __init__(self, *args, **kwargs):
-        pass
-
     @property
-    def config_model(self) -> Type[AgentControllerConfig]:
+    def config_model(self) -> type[AgentControllerConfig] | None:
         """
-        Function to return the config model type that your AgentController implementation uses. Defaults to NoneType.
+        Function to return the config model type that your AgentController implementation uses. Defaults to None.
         """
-        return type(None)
+        return None
 
     def choose_agents(self, agent_id_list: List[AgentID]) -> List[int]:
         """

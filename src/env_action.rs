@@ -6,30 +6,30 @@ use pyany_serde::{
 };
 
 #[allow(non_camel_case_types)]
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone, Debug)]
 pub enum EnvActionResponse {
     #[pyo3(constructor = (shared_info_setter = None, send_state = false))]
     STEP {
-        shared_info_setter: Option<PyObject>,
+        shared_info_setter: Option<Py<PyAny>>,
         send_state: bool,
     },
     #[pyo3(constructor = (shared_info_setter = None, send_state = false))]
     RESET {
-        shared_info_setter: Option<PyObject>,
+        shared_info_setter: Option<Py<PyAny>>,
         send_state: bool,
     },
     #[pyo3(constructor = (desired_state, shared_info_setter = None, send_state = false, prev_timestep_id_dict = None))]
     SET_STATE {
-        desired_state: PyObject,
-        shared_info_setter: Option<PyObject>,
+        desired_state: Py<PyAny>,
+        shared_info_setter: Option<Py<PyAny>>,
         send_state: bool,
-        prev_timestep_id_dict: Option<PyObject>,
+        prev_timestep_id_dict: Option<Py<PyAny>>,
     },
 }
 
 #[allow(non_camel_case_types)]
-#[pyclass(eq, eq_int)]
+#[pyclass(eq, eq_int, from_py_object)]
 #[derive(Clone, Debug, PartialEq)]
 pub enum EnvActionResponseType {
     STEP,
@@ -49,7 +49,7 @@ impl EnvActionResponse {
     }
 
     #[getter]
-    fn shared_info_setter<'py>(&self, py: Python<'py>) -> PyResult<Option<PyObject>> {
+    fn shared_info_setter<'py>(&self, py: Python<'py>) -> PyResult<Option<Py<PyAny>>> {
         Ok(match self {
             EnvActionResponse::STEP {
                 shared_info_setter, ..
@@ -64,7 +64,7 @@ impl EnvActionResponse {
     }
 
     #[getter]
-    fn desired_state<'py>(&self, py: Python<'py>) -> PyResult<Option<PyObject>> {
+    fn desired_state<'py>(&self, py: Python<'py>) -> PyResult<Option<Py<PyAny>>> {
         if let EnvActionResponse::SET_STATE { desired_state, .. } = self {
             Ok(Some(desired_state.clone_ref(py)))
         } else {
@@ -73,7 +73,7 @@ impl EnvActionResponse {
     }
 
     #[getter]
-    fn prev_timestep_id_dict<'py>(&self, py: Python<'py>) -> PyResult<Option<PyObject>> {
+    fn prev_timestep_id_dict<'py>(&self, py: Python<'py>) -> PyResult<Option<Py<PyAny>>> {
         if let EnvActionResponse::SET_STATE {
             prev_timestep_id_dict,
             ..
@@ -87,24 +87,24 @@ impl EnvActionResponse {
 }
 
 #[allow(non_camel_case_types)]
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone, Debug)]
 pub enum EnvAction {
     STEP {
-        shared_info_setter_option: Option<PyObject>,
+        shared_info_setter_option: Option<Py<PyAny>>,
         send_state: bool,
         action_list: Py<PyList>,
-        action_associated_learning_data: PyObject,
+        action_associated_learning_data: Py<PyAny>,
     },
     RESET {
-        shared_info_setter_option: Option<PyObject>,
+        shared_info_setter_option: Option<Py<PyAny>>,
         send_state: bool,
     },
     SET_STATE {
-        desired_state: PyObject,
-        shared_info_setter_option: Option<PyObject>,
+        desired_state: Py<PyAny>,
+        shared_info_setter_option: Option<Py<PyAny>>,
         send_state: bool,
-        prev_timestep_id_dict_option: Option<PyObject>,
+        prev_timestep_id_dict_option: Option<Py<PyAny>>,
     },
 }
 

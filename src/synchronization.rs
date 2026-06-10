@@ -1,5 +1,5 @@
 use pyo3::exceptions::asyncio::InvalidStateError;
-use pyo3::sync::GILOnceCell;
+use pyo3::sync::PyOnceLock;
 use pyo3::types::PyBytes;
 use pyo3::{intern, prelude::*, IntoPyObjectExt};
 use std::fmt::{self, Display, Formatter};
@@ -23,7 +23,7 @@ impl Display for Header {
 
 #[pyfunction]
 pub fn recvfrom_byte<'py>(socket: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
-    static INTERNED_INT_1: GILOnceCell<PyObject> = GILOnceCell::new();
+    static INTERNED_INT_1: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
     let py = socket.py();
     socket.call_method1(
         intern!(py, "recvfrom"),
@@ -33,7 +33,7 @@ pub fn recvfrom_byte<'py>(socket: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyA
 
 #[pyfunction]
 pub fn sendto_byte<'py>(socket: &Bound<'py, PyAny>, address: &Bound<'py, PyAny>) -> PyResult<()> {
-    static INTERNED_BYTES_0: GILOnceCell<PyObject> = GILOnceCell::new();
+    static INTERNED_BYTES_0: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
     let py = socket.py();
     socket.call_method1(
         intern!(py, "sendto"),

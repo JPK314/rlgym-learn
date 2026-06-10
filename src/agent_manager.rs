@@ -3,16 +3,16 @@ use std::collections::HashMap;
 use itertools::Itertools;
 use pyo3::exceptions::PyAssertionError;
 use pyo3::types::{PyDict, PyList};
+use pyo3::IntoPyObjectExt;
 use pyo3::{intern, prelude::*};
-use pyo3::{IntoPyObjectExt, PyObject};
 
 use crate::env_action::{EnvAction, EnvActionResponse};
 use crate::misc::{tensor_slice_1d, torch_empty};
 
 fn get_actions<'py>(
     agent_controller: &Bound<'py, PyAny>,
-    agent_id_list: &Vec<&PyObject>,
-    obs_list: &Vec<&PyObject>,
+    agent_id_list: &Vec<&Py<PyAny>>,
+    obs_list: &Vec<&Py<PyAny>>,
 ) -> PyResult<(Vec<Option<Bound<'py, PyAny>>>, Bound<'py, PyAny>)> {
     Ok(agent_controller
         .call_method1(
@@ -24,7 +24,7 @@ fn get_actions<'py>(
 
 fn choose_agents<'py>(
     agent_controller: &Bound<'py, PyAny>,
-    agent_id_list: &Vec<PyObject>,
+    agent_id_list: &Vec<Py<PyAny>>,
 ) -> PyResult<Vec<usize>> {
     Ok(agent_controller
         .call_method1(
@@ -36,7 +36,7 @@ fn choose_agents<'py>(
 
 fn choose_env_actions<'py>(
     agent_controller: &Bound<'py, PyAny>,
-    state_info: &HashMap<String, PyObject>,
+    state_info: &HashMap<String, Py<PyAny>>,
 ) -> PyResult<HashMap<String, Bound<'py, PyAny>>> {
     Ok(agent_controller
         .call_method1(
@@ -64,7 +64,7 @@ enum ActionAssociatedLearningData<'py> {
 
 #[pyclass(module = "rlgym_learn")]
 pub struct AgentManager {
-    agent_controllers: Vec<PyObject>,
+    agent_controllers: Vec<Py<PyAny>>,
     batched_tensor_action_associated_learning_data: bool,
 }
 
@@ -72,8 +72,8 @@ impl AgentManager {
     fn get_actions<'py>(
         &self,
         py: Python<'py>,
-        agent_id_list: Vec<PyObject>,
-        obs_list: Vec<PyObject>,
+        agent_id_list: Vec<Py<PyAny>>,
+        obs_list: Vec<Py<PyAny>>,
     ) -> PyResult<(
         Vec<Option<Bound<'py, PyAny>>>,
         ActionAssociatedLearningData<'py>,
@@ -119,11 +119,11 @@ impl AgentManager {
 
             let agent_controller = py_agent_controller.bind(py);
             let agent_controller_indices = choose_agents(agent_controller, &new_agent_id_list)?;
-            let agent_controller_agent_id_list: Vec<&PyObject> = agent_controller_indices
+            let agent_controller_agent_id_list: Vec<&Py<PyAny>> = agent_controller_indices
                 .iter()
                 .map(|&idx| new_agent_id_list.get(idx).unwrap())
                 .collect();
-            let agent_controller_obs_list: Vec<&PyObject> = agent_controller_indices
+            let agent_controller_obs_list: Vec<&Py<PyAny>> = agent_controller_indices
                 .iter()
                 .map(|&idx| new_obs_list.get(idx).unwrap())
                 .collect();
@@ -206,7 +206,7 @@ impl AgentManager {
 impl AgentManager {
     #[new]
     pub fn new(
-        agent_controllers: Vec<PyObject>,
+        agent_controllers: Vec<Py<PyAny>>,
         batched_tensor_action_associated_learning_data: bool,
     ) -> Self {
         AgentManager {
@@ -217,10 +217,10 @@ impl AgentManager {
 
     pub fn get_env_actions(
         &self,
-        mut env_obs_data_dict: HashMap<String, (Vec<PyObject>, Vec<PyObject>)>,
-        state_info: HashMap<String, PyObject>,
+        mut env_obs_data_dict: HashMap<String, (Vec<Py<PyAny>>, Vec<Py<PyAny>>)>,
+        state_info: HashMap<String, Py<PyAny>>,
     ) -> PyResult<Py<PyDict>> {
-        Python::with_gil::<_, PyResult<Py<PyDict>>>(|py| {
+        Python::attach::<_, PyResult<Py<PyDict>>>(|py| {
             // Get env action responses from agent controllers
             let mut state_info = state_info;
             let mut env_action_responses = HashMap::with_capacity(state_info.len());

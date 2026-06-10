@@ -16,7 +16,7 @@ use pyany_serde::{
 };
 use pyo3::types::PyString;
 use pyo3::{
-    exceptions::asyncio::InvalidStateError, intern, prelude::*, sync::GILOnceCell, types::PyDict,
+    exceptions::asyncio::InvalidStateError, intern, prelude::*, sync::PyOnceLock, types::PyDict,
 };
 use raw_sync::events::Event;
 use raw_sync::events::EventInit;
@@ -39,14 +39,14 @@ fn sync_with_env_process<'py>(
 
 type ObsDataKV<'py> = (
     Bound<'py, PyString>,
-    (Vec<PyObject>, Vec<Bound<'py, PyAny>>),
+    (Vec<Py<PyAny>>, Vec<Bound<'py, PyAny>>),
 );
 
 type TimestepDataKV<'py> = (
     Bound<'py, PyString>,
     (
         Vec<Timestep>,
-        Option<PyObject>,
+        Option<Py<PyAny>>,
         Option<Bound<'py, PyAny>>,
         Option<Bound<'py, PyAny>>,
     ),
@@ -62,7 +62,7 @@ type StateInfoKV<'py> = (
     ),
 );
 
-static SELECTORS_EVENT_READ: GILOnceCell<u8> = GILOnceCell::new();
+static SELECTORS_EVENT_READ: PyOnceLock<u8> = PyOnceLock::new();
 
 #[pyclass(module = "rlgym_learn", unsendable)]
 pub struct EnvProcessInterface {
@@ -77,16 +77,16 @@ pub struct EnvProcessInterface {
     state_serde_option: Option<Box<dyn PyAnySerde>>,
     recalculate_agent_id_every_step: bool,
     flinks_folder: String,
-    proc_packages: Vec<(PyObject, Shmem, usize, String)>,
+    proc_packages: Vec<(Py<PyAny>, Shmem, usize, String)>,
     min_process_steps_per_inference: usize,
-    selector: PyObject,
+    selector: Py<PyAny>,
     proc_id_pid_idx_map: HashMap<String, usize>,
     pid_idx_current_env_action: Vec<Option<EnvAction>>,
-    pid_idx_current_agent_id_list_option: Vec<Option<Vec<PyObject>>>,
+    pid_idx_current_agent_id_list_option: Vec<Option<Vec<Py<PyAny>>>>,
     pid_idx_prev_timestep_id_option_list_option: Vec<Option<Vec<Option<u128>>>>,
-    pid_idx_current_obs_list: Vec<Vec<PyObject>>,
-    pid_idx_current_action_list: Vec<Vec<PyObject>>,
-    pid_idx_current_aald_option: Vec<Option<PyObject>>,
+    pid_idx_current_obs_list: Vec<Vec<Py<PyAny>>>,
+    pid_idx_current_action_list: Vec<Vec<Py<PyAny>>>,
+    pid_idx_current_aald_option: Vec<Option<Py<PyAny>>>,
     just_initialized_pid_idx_list: Vec<usize>,
 }
 
@@ -372,7 +372,7 @@ impl EnvProcessInterface {
             ..
         } = env_action
         {
-            let prev_timestep_id_dict = prev_timestep_id_dict.downcast_bound::<PyDict>(py)?;
+            let prev_timestep_id_dict = prev_timestep_id_dict.cast_bound::<PyDict>(py)?;
             prev_timestep_id_list.clear();
             for agent_id in agent_id_list.iter() {
                 prev_timestep_id_list.push(
@@ -585,7 +585,7 @@ impl EnvProcessInterface {
             self.min_process_steps_per_inference,
             self.proc_packages.len().try_into().unwrap(),
         );
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             self.selector
                 .call_method1(py, intern!(py, "unregister"), (parent_end,))?;
             Ok(())
@@ -618,7 +618,7 @@ impl EnvProcessInterface {
             ep_evt
                 .set(EventState::Signaled)
                 .map_err(|err| InvalidStateError::new_err(err.to_string()))?;
-            Python::with_gil(|py| {
+            Python::attach(|py| {
                 self.selector
                     .call_method1(py, intern!(py, "unregister"), (parent_end,))
             })?;
@@ -656,13 +656,13 @@ impl EnvProcessInterface {
                 .selector
                 .bind(py)
                 .call_method0(intern!(py, "select"))?
-                .extract::<Vec<(PyObject, u8)>>()?
+                .extract::<Vec<(Py<PyAny>, u8)>>()?
             {
                 if event & SELECTORS_EVENT_READ.get(py).unwrap() == 0 {
                     continue;
                 }
                 let (parent_end, _, _, pid_idx) =
-                    key.extract::<(PyObject, PyObject, PyObject, usize)>(py)?;
+                    key.extract::<(Py<PyAny>, Py<PyAny>, Py<PyAny>, usize)>(py)?;
                 recvfrom_byte(parent_end.bind(py))?;
                 ready_pid_idxs.push(pid_idx);
                 n_process_steps_collected += 1;
