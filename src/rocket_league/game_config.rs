@@ -30,7 +30,7 @@ impl<'py> IntoPyObject<'py> for GameConfig {
     }
 }
 
-#[pyclass(module = "rlgym_learn")]
+#[pyclass(module = "rlgym_learn._rlgym_learn.rocket_league")]
 pub struct GameConfigPythonSerde {}
 
 #[pymethods]

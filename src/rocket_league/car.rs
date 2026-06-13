@@ -171,7 +171,7 @@ impl CarInner {
     }
 }
 
-#[pyclass(module = "rlgym_learn.rocket_league", unsendable)]
+#[pyclass(module = "rlgym_learn._rlgym_learn.rocket_league", unsendable)]
 pub struct CarPythonSerde {
     agent_id_serde: Option<Box<dyn PyAnySerde>>,
     agent_id_serde_type: Option<PyAnySerdeType>,

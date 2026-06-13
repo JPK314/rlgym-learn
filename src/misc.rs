@@ -5,10 +5,6 @@ use pyo3::{
     types::{PyAnyMethods, PyDict},
 };
 
-pub fn clone_list<'py>(py: Python<'py>, list: &Vec<Py<PyAny>>) -> Vec<Py<PyAny>> {
-    list.iter().map(|obj| obj.clone_ref(py)).collect()
-}
-
 pub fn tensor_slice_1d<'py>(
     py: Python<'py>,
     tensor: &Bound<'py, PyAny>,
@@ -16,14 +12,6 @@ pub fn tensor_slice_1d<'py>(
     stop: usize,
 ) -> PyResult<Bound<'py, PyAny>> {
     Ok(tensor.call_method1(intern!(py, "narrow"), (0, start, stop - start))?)
-}
-
-pub fn torch_cat<'py>(py: Python<'py>, obj: &[Bound<'py, PyAny>]) -> PyResult<Bound<'py, PyAny>> {
-    static INTERNED_CAT: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
-    Ok(INTERNED_CAT
-        .get_or_try_init::<_, PyErr>(py, || Ok(py.import("torch")?.getattr("cat")?.unbind()))?
-        .bind(py)
-        .call1((obj,))?)
 }
 
 pub fn torch_empty<'py>(

@@ -15,7 +15,7 @@ fastrand = "2.2.0"
 itertools = "0.13.0"
 numpy = "0.28.0"
 pyany-serde = { path = "/home/jpk/Coding/GitHub/pyany-serde" }
-pyo3 = { version = "0.28.3", features = ["extension-module", "py-clone"] }
+pyo3 = { version = "0.28.3", features = ["py-clone"] }
 raw_sync = "0.1.5"
 rkyv = "0.8.10"
 shared_memory = "0.12.4"

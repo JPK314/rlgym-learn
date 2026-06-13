@@ -110,7 +110,7 @@ impl PhysicsObjectInner {
     }
 }
 
-#[pyclass(module = "rlgym_learn")]
+#[pyclass(module = "rlgym_learn._rlgym_learn.rocket_league")]
 pub struct PhysicsObjectPythonSerde {}
 
 #[pymethods]

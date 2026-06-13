@@ -62,7 +62,7 @@ enum ActionAssociatedLearningData<'py> {
     List(Vec<Option<Bound<'py, PyAny>>>),
 }
 
-#[pyclass(module = "rlgym_learn")]
+#[pyclass(module = "rlgym_learn._rlgym_learn")]
 pub struct AgentManager {
     agent_controllers: Vec<Py<PyAny>>,
     batched_tensor_action_associated_learning_data: bool,

@@ -6,7 +6,7 @@ use pyany_serde::{
 };
 
 #[allow(non_camel_case_types)]
-#[pyclass(from_py_object)]
+#[pyclass(from_py_object, module = "rlgym_learn._rlgym_learn")]
 #[derive(Clone, Debug)]
 pub enum EnvActionResponse {
     #[pyo3(constructor = (shared_info_setter = None, send_state = false))]
@@ -29,7 +29,7 @@ pub enum EnvActionResponse {
 }
 
 #[allow(non_camel_case_types)]
-#[pyclass(eq, eq_int, from_py_object)]
+#[pyclass(eq, eq_int, from_py_object, module = "rlgym_learn._rlgym_learn")]
 #[derive(Clone, Debug, PartialEq)]
 pub enum EnvActionResponseType {
     STEP,
@@ -87,7 +87,7 @@ impl EnvActionResponse {
 }
 
 #[allow(non_camel_case_types)]
-#[pyclass(from_py_object)]
+#[pyclass(from_py_object, module = "rlgym_learn._rlgym_learn")]
 #[derive(Clone, Debug)]
 pub enum EnvAction {
     STEP {

@@ -96,7 +96,7 @@ fn env_step<'py>(
     render=false,
     render_delay_option=None,
     recalculate_agent_id_every_step=false))]
-pub fn env_process<'py>(
+pub fn env_process_fn<'py>(
     proc_id: &str,
     child_end: Bound<'py, PyAny>,
     parent_sockname: Bound<'py, PyAny>,

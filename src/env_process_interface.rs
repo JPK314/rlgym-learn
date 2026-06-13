@@ -64,7 +64,7 @@ type StateInfoKV<'py> = (
 
 static SELECTORS_EVENT_READ: PyOnceLock<u8> = PyOnceLock::new();
 
-#[pyclass(module = "rlgym_learn", unsendable)]
+#[pyclass(module = "rlgym_learn._rlgym_learn", unsendable)]
 pub struct EnvProcessInterface {
     agent_id_serde: Box<dyn PyAnySerde>,
     action_serde: Box<dyn PyAnySerde>,

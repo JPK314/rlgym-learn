@@ -11,14 +11,14 @@ from rlgym.api import (
     StateType,
 )
 
+from .. import AgentManager as RustAgentManager
+from .. import EnvAction, Timestep
 from ..api import (
     ActionAssociatedLearningData,
     AgentController,
     DerivedAgentControllerConfig,
 )
 from ..learning_coordinator_config import LearningCoordinatorConfigModel
-from ..rlgym_learn import AgentManager as RustAgentManager
-from ..rlgym_learn import EnvAction, Timestep
 
 
 class AgentManager(
@@ -59,9 +59,9 @@ class AgentManager(
         self.rust_agent_manager = RustAgentManager(
             self.agent_controllers_list, batched_tensor_action_associated_learning_data
         )
-        assert (
-            self.n_agent_controllers > 0
-        ), "There must be at least one agent controller!"
+        assert self.n_agent_controllers > 0, (
+            "There must be at least one agent controller!"
+        )
 
     def process_timestep_data(
         self,

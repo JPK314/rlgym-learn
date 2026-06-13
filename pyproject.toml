@@ -28,4 +28,13 @@ rl = [
 tensor = [ "torch>1.13" ]
 
 [tool.maturin]
-features = ["pyo3/extension-module", "rl"]
+python-source = "python"
+module-name = "rlgym_learn._rlgym_learn"
+bindings = 'pyo3'
+features = ["rl"]
+
+[tool.basedpyright]
+reportExplicitAny = false
+reportAny = false
+reportMissingTypeStubs = false
+pythonVersion = "3.10"

@@ -27,9 +27,8 @@ from rlgym.api import (
     StateType,
 )
 
-from ..rlgym_learn import PickleablePyAnySerdeType
-from ..rlgym_learn import env_process as rust_env_process
-from ..rlgym_learn import recvfrom_byte, sendto_byte
+from .. import PickleablePyAnySerdeType, recvfrom_byte, sendto_byte
+from .. import env_process as rust_env_process
 
 
 @dataclass
