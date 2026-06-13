@@ -1,6 +1,8 @@
 use pyo3::prelude::*;
+use pyo3_stub_gen::derive::*;
 
-#[pyclass(get_all)]
+#[gen_stub_pyclass]
+#[pyclass(get_all, module = "rlgym_learn._rlgym_learn")]
 pub struct Timestep {
     pub env_id: String,
     pub timestep_id: u128,
@@ -14,6 +16,7 @@ pub struct Timestep {
     pub truncated: bool,
 }
 
+#[gen_stub_pymethods]
 #[pymethods]
 impl Timestep {
     #[new]

@@ -2,6 +2,7 @@ use pyo3::exceptions::asyncio::InvalidStateError;
 use pyo3::sync::PyOnceLock;
 use pyo3::types::PyBytes;
 use pyo3::{intern, prelude::*, IntoPyObjectExt};
+use pyo3_stub_gen::derive::*;
 use std::fmt::{self, Display, Formatter};
 
 #[derive(Debug, PartialEq)]
@@ -21,6 +22,7 @@ impl Display for Header {
     }
 }
 
+#[gen_stub_pyfunction]
 #[pyfunction]
 pub fn recvfrom_byte<'py>(socket: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
     static INTERNED_INT_1: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
@@ -31,6 +33,7 @@ pub fn recvfrom_byte<'py>(socket: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyA
     )
 }
 
+#[gen_stub_pyfunction]
 #[pyfunction]
 pub fn sendto_byte<'py>(socket: &Bound<'py, PyAny>, address: &Bound<'py, PyAny>) -> PyResult<()> {
     static INTERNED_BYTES_0: PyOnceLock<Py<PyAny>> = PyOnceLock::new();

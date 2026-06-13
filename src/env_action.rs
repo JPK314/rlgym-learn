@@ -1,12 +1,16 @@
-use pyo3::{exceptions::asyncio::InvalidStateError, prelude::*, types::PyList, IntoPyObjectExt};
+use std::collections::{HashMap, HashSet};
 
 use pyany_serde::{
     communication::{append_bool, append_python_option, retrieve_bool, retrieve_python_option},
     PyAnySerde,
 };
 
+use pyo3::{exceptions::asyncio::InvalidStateError, prelude::*, types::PyList, IntoPyObjectExt};
+use pyo3_stub_gen::{derive::*, PyStubType, TypeInfo};
+
 #[allow(non_camel_case_types)]
-#[pyclass(from_py_object)]
+#[gen_stub_pyclass_complex_enum]
+#[pyclass(from_py_object, module = "rlgym_learn._rlgym_learn")]
 #[derive(Clone, Debug)]
 pub enum EnvActionResponse {
     #[pyo3(constructor = (shared_info_setter = None, send_state = false))]
@@ -29,7 +33,8 @@ pub enum EnvActionResponse {
 }
 
 #[allow(non_camel_case_types)]
-#[pyclass(eq, eq_int, from_py_object)]
+#[gen_stub_pyclass_enum]
+#[pyclass(eq, eq_int, from_py_object, module = "rlgym_learn._rlgym_learn")]
 #[derive(Clone, Debug, PartialEq)]
 pub enum EnvActionResponseType {
     STEP,
@@ -37,6 +42,7 @@ pub enum EnvActionResponseType {
     SET_STATE,
 }
 
+#[gen_stub_pymethods]
 #[pymethods]
 impl EnvActionResponse {
     #[getter]
@@ -87,7 +93,8 @@ impl EnvActionResponse {
 }
 
 #[allow(non_camel_case_types)]
-#[pyclass(from_py_object)]
+#[gen_stub_pyclass_complex_enum]
+#[pyclass(from_py_object, module = "rlgym_learn._rlgym_learn")]
 #[derive(Clone, Debug)]
 pub enum EnvAction {
     STEP {

@@ -1,3 +1,4 @@
+use std::collections::{HashMap, HashSet};
 use std::slice::{from_raw_parts, from_raw_parts_mut};
 
 use numpy::ndarray::Array1;
@@ -10,6 +11,7 @@ use pyo3::exceptions::asyncio::InvalidStateError;
 use pyo3::exceptions::PyValueError;
 use pyo3::types::{PyBytes, PyDict, PyTuple};
 use pyo3::{intern, prelude::*};
+use pyo3_stub_gen::{derive::*, PyStubType, TypeInfo};
 use rkyv::rancor::Failure;
 use rkyv::ser::writer::Buffer;
 use rkyv::{Archive, Deserialize, Serialize};
@@ -29,6 +31,17 @@ pub struct GameState<'py> {
     pub cars: Bound<'py, PyDict>,
     pub ball: PhysicsObject<'py>,
     pub boost_pad_timers: Bound<'py, PyArray1<f32>>,
+}
+
+impl<'py> PyStubType for GameState<'py> {
+    fn type_output() -> TypeInfo {
+        TypeInfo {
+            name: "rlgym.rocket_league.api.GameState[rlgym.api.AgentID]".into(),
+            source_module: None,
+            import: HashSet::from(["rlgym.rocket_league.api".into(), "rlgym.api".into()]),
+            type_refs: HashMap::new(),
+        }
+    }
 }
 
 impl<'py> IntoPyObject<'py> for GameState<'py> {
@@ -108,12 +121,14 @@ impl GameStateInner {
     }
 }
 
-#[pyclass(module = "rlgym_learn.rocket_league", unsendable)]
+#[gen_stub_pyclass]
+#[pyclass(unsendable)]
 pub struct GameStatePythonSerde {
     agent_id_serde: Option<Box<dyn PyAnySerde>>,
     agent_id_serde_type: Option<PyAnySerdeType>,
 }
 
+#[gen_stub_pymethods]
 #[pymethods]
 impl GameStatePythonSerde {
     #[new]

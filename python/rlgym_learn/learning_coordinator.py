@@ -2,11 +2,9 @@ from __future__ import annotations
 
 import os
 from collections.abc import Callable
-from typing import Any, Dict, Generic, Optional, TypeVar, Type
-from typing_extensions import Self
+from typing import Any, Dict, Generic, Optional, Type, TypeVar
 
-from pydantic import BaseModel, Field, model_validator, RootModel, ValidationInfo
-
+from pydantic import BaseModel, Field, RootModel, ValidationInfo, model_validator
 from rlgym.api import (
     ActionSpaceType,
     ActionType,
@@ -18,14 +16,15 @@ from rlgym.api import (
     RLGym,
     StateType,
 )
+from typing_extensions import Self
 
 from .agent import AgentManager
 from .api import ActionAssociatedLearningData, AgentController
-from .learning_coordinator_config import (
-    LearningCoordinatorConfigModel,
-    DEFAULT_CONFIG_FILENAME,
-)
 from .env_processing import EnvProcessInterface
+from .learning_coordinator_config import (
+    DEFAULT_CONFIG_FILENAME,
+    LearningCoordinatorConfigModel,
+)
 from .util import KBHit
 
 
@@ -57,7 +56,7 @@ class LearningCoordinator(
                 ActionSpaceType,
             ],
         ],
-        agent_controllers: Dict[
+        agent_controllers: dict[
             str,
             AgentController[
                 Any,
@@ -82,9 +81,9 @@ class LearningCoordinator(
         else:
             if config_location is None:
                 config_location = os.path.join(os.getcwd(), DEFAULT_CONFIG_FILENAME)
-            assert os.path.isfile(
-                config_location
-            ), f"{config_location} is not a valid location from which to read config, aborting."
+            assert os.path.isfile(config_location), (
+                f"{config_location} is not a valid location from which to read config, aborting."
+            )
 
             with open(config_location, "rt") as f:
                 self.config = LearningCoordinatorConfigModel.model_validate_json(
@@ -209,16 +208,12 @@ class LearningCoordinator(
                 self.env_process_interface.delete_process()
                 print(f"Process deleted. ({self.env_process_interface.n_procs} total)")
             if c == "j":
-                min_process_steps_per_inference = (
-                    self.env_process_interface.increase_min_process_steps_per_inference()
-                )
+                min_process_steps_per_inference = self.env_process_interface.increase_min_process_steps_per_inference()
                 print(
                     f"Min process steps per inference increased to {min_process_steps_per_inference} ({(100 * min_process_steps_per_inference / self.env_process_interface.n_procs):.2f}% of processes)"
                 )
             if c == "l":
-                min_process_steps_per_inference = (
-                    self.env_process_interface.decrease_min_process_steps_per_inference()
-                )
+                min_process_steps_per_inference = self.env_process_interface.decrease_min_process_steps_per_inference()
                 print(
                     f"Min process steps per inference decreased to {min_process_steps_per_inference} ({(100 * min_process_steps_per_inference / self.env_process_interface.n_procs):.2f}% of processes)"
                 )

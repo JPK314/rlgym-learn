@@ -1,4 +1,7 @@
-use std::slice::{from_raw_parts, from_raw_parts_mut};
+use std::{
+    collections::{HashMap, HashSet},
+    slice::{from_raw_parts, from_raw_parts_mut},
+};
 
 use numpy::{ndarray::Array1, PyArray1, PyArrayMethods};
 use pyany_serde::{
@@ -43,6 +46,17 @@ pub struct Car<'py> {
     pub autoflip_timer: f32,
     pub autoflip_direction: f32,
     pub physics: PhysicsObject<'py>,
+}
+
+impl<'py> PyStubType for Car<'py> {
+    fn type_output() -> TypeInfo {
+        TypeInfo {
+            name: "rlgym.rocket_league.api.Car[rlgym.api.AgentID]".into(),
+            source_module: None,
+            import: HashSet::from(["rlgym.rocket_league.api".into(), "rlgym.api".into()]),
+            type_refs: HashMap::new(),
+        }
+    }
 }
 
 impl<'py> IntoPyObject<'py> for Car<'py> {
@@ -171,12 +185,14 @@ impl CarInner {
     }
 }
 
-#[pyclass(module = "rlgym_learn.rocket_league", unsendable)]
+#[gen_stub_pyclass]
+#[pyclass(unsendable)]
 pub struct CarPythonSerde {
     agent_id_serde: Option<Box<dyn PyAnySerde>>,
     agent_id_serde_type: Option<PyAnySerdeType>,
 }
 
+#[gen_stub_pymethods]
 #[pymethods]
 impl CarPythonSerde {
     #[new]

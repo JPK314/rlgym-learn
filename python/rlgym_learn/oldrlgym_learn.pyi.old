@@ -53,33 +53,33 @@ class EnvActionResponseType:
     RESET = ...
     SET_STATE = ...
 
-class EnvActionResponse_STEP:
+class STEP(EnvActionResponse[AgentID, StateType], Generic[AgentID, StateType]):
     def __new__(
-        cls, shared_info_setter: Optional[Dict[str, Any]] = None, send_state=False
-    ) -> EnvActionResponse_STEP: ...
+        cls, shared_info_setter: Optional[dict[str, Any]] = None, send_state=False
+    ) -> STEP[AgentID, StateType]: ...
 
-class EnvActionResponse_RESET:
+class RESET(EnvActionResponse[AgentID, StateType], Generic[AgentID, StateType]):
     def __new__(
-        cls, shared_info_setter: Optional[Dict[str, Any]] = None, send_state=False
-    ) -> EnvActionResponse_RESET: ...
+        cls, shared_info_setter: Optional[dict[str, Any]] = None, send_state=False
+    ) -> RESET[AgentID, StateType]: ...
 
-class EnvActionResponse_SET_STATE(Generic[AgentID, StateType]):
+class SET_STATE(EnvActionResponse[AgentID, StateType], Generic[AgentID, StateType]):
     def __new__(
         cls,
         desired_state: StateType,
-        shared_info_setter: Optional[Dict[str, Any]] = None,
+        shared_info_setter: Optional[dict[str, Any]] = None,
         send_state=False,
-        prev_timestep_id_dict: Optional[Dict[AgentID, Optional[int]]] = None,
-    ) -> EnvActionResponse_SET_STATE[AgentID, StateType]: ...
+        prev_timestep_id_dict: Optional[dict[AgentID, Optional[int]]] = None,
+    ) -> SET_STATE[AgentID, StateType]: ...
 
 class EnvActionResponse(Generic[AgentID, StateType]):
-    STEP: Type[EnvActionResponse_STEP] = ...
-    RESET: Type[EnvActionResponse_RESET] = ...
-    SET_STATE: Type[EnvActionResponse_SET_STATE] = ...
+    STEP: Type[STEP[AgentID, StateType]] = ...
+    RESET: Type[RESET[AgentID, StateType]] = ...
+    SET_STATE: Type[SET_STATE[AgentID, StateType]] = ...
     @property
     def enum_type(self) -> EnvActionResponseType: ...
     def desired_state(self) -> Optional[StateType]: ...
-    def prev_timestep_id_dict(self) -> Optional[Dict[AgentID, Optional[int]]]: ...
+    def prev_timestep_id_dict(self) -> Optional[dict[AgentID, Optional[int]]]: ...
 
 class EnvProcessInterface(
     Generic[
@@ -102,19 +102,19 @@ class EnvProcessInterface(
         reward_serde: PyAnySerdeType[RewardType],
         obs_space_serde: PyAnySerdeType[ObsSpaceType],
         action_space_serde: PyAnySerdeType[ActionSpaceType],
-        shared_info_serde_option: Optional[PyAnySerdeType[Dict[str, Any]]],
+        shared_info_serde_option: Optional[PyAnySerdeType[dict[str, Any]]],
         recalculate_agent_id_every_step: bool,
         flinks_folder_option: str,
         min_process_steps_per_inference: int,
     ) -> EnvProcessInterface: ...
     def init_processes(
         self, proc_package_defs: List[Process, socket, _RetAddress, str]
-    ) -> Tuple[
+    ) -> tuple[
         ObsSpaceType,
         ActionSpaceType,
     ]: ...
     def add_process(
-        self, proc_package_def: Tuple[Process, socket, _RetAddress, str]
+        self, proc_package_def: tuple[Process, socket, _RetAddress, str]
     ): ...
     def delete_process(self): ...
     def increase_min_process_steps_per_inference(self) -> int: ...
@@ -122,29 +122,29 @@ class EnvProcessInterface(
     def cleanup(self): ...
     def collect_step_data(
         self,
-    ) -> Tuple[
+    ) -> tuple[
         int,
-        Dict[str, Tuple[List[AgentID], List[ObsType]]],
-        Dict[
+        dict[str, tuple[List[AgentID], List[ObsType]]],
+        dict[
             str,
-            Tuple[
+            tuple[
                 List[Timestep],
                 ActionAssociatedLearningData,
-                Optional[Dict[str, Any]],
+                Optional[dict[str, Any]],
                 Optional[StateType],
             ],
         ],
-        Dict[
+        dict[
             str,
-            Tuple[
-                Optional[Dict[str, Any]],
+            tuple[
+                Optional[dict[str, Any]],
                 Optional[StateType],
-                Optional[Dict[AgentID, bool]],
-                Optional[Dict[AgentID, bool]],
+                Optional[dict[AgentID, bool]],
+                Optional[dict[AgentID, bool]],
             ],
         ],
     ]: ...
-    def send_env_actions(self, env_actions: Dict[str, EnvAction]): ...
+    def send_env_actions(self, env_actions: dict[str, EnvAction]): ...
 
 class AgentManager(
     Generic[
@@ -175,8 +175,8 @@ class AgentManager(
         batched_tensor_action_associated_learning_data: bool,
     ) -> AgentManager: ...
     def get_env_actions(
-        self, env_obs_data_dict: Dict[str, Tuple[List[AgentID], List[ObsType]]]
-    ) -> Dict[str, EnvAction]: ...
+        self, env_obs_data_dict: dict[str, tuple[List[AgentID], List[ObsType]]]
+    ) -> dict[str, EnvAction]: ...
 
 def env_process(
     proc_id: str,
@@ -203,7 +203,7 @@ def env_process(
     reward_serde: PyAnySerdeType[RewardType],
     obs_space_serde: PyAnySerdeType[ObsSpaceType],
     action_space_serde: PyAnySerdeType[ActionSpaceType],
-    shared_info_serde_option: Optional[PyAnySerdeType[Dict[str, Any]]],
+    shared_info_serde_option: Optional[PyAnySerdeType[dict[str, Any]]],
     render: bool,
     render_delay_option: Optional[timedelta],
     recalculate_agent_id_every_step: bool,
@@ -237,7 +237,7 @@ class PythonSerde(Generic[T]):
         raise NotImplementedError
 
     @abstractmethod
-    def retrieve(self, buf: bytes, offset: int) -> Tuple[T, int]:
+    def retrieve(self, buf: bytes, offset: int) -> tuple[T, int]:
         """
         Retrieves obj encoded using self.append or self.get_bytes from the buffer starting at offset.
         :param buf: a memoryview to read from (DO NOT hold a reference to this memory view after this function ends!)
@@ -294,7 +294,7 @@ class NumpySerdeConfig_DYNAMIC(NumpySerdeConfig[T]):
 class NumpySerdeConfig_STATIC(InitStrategy[T]):
     def __new__(
         cls,
-        shape: Tuple[int],
+        shape: tuple[int],
         preprocessor_fn: Optional[Callable[[T], ndarray]] = None,  # type: ignore
         postprocessor_fn: Optional[Callable[[ndarray, int], T]] = None,  # type: ignore
         allocation_pool_min_size: int = 0,
@@ -343,7 +343,7 @@ class PyAnySerdeType_DATACLASS(PyAnySerdeType[T]):
         cls,
         clazz: T,
         init_strategy: InitStrategy,
-        field_serde_type_dict: Dict[str, PyAnySerdeType],
+        field_serde_type_dict: dict[str, PyAnySerdeType],
     ) -> PyAnySerdeType_DATACLASS[T]:
         """
         clazz: the dataclass to be serialized
@@ -352,7 +352,7 @@ class PyAnySerdeType_DATACLASS(PyAnySerdeType[T]):
         """
         ...
 
-class PyAnySerdeType_DICT(PyAnySerdeType[Dict[KeysT, ValuesT]]):
+class PyAnySerdeType_DICT(PyAnySerdeType[dict[KeysT, ValuesT]]):
     def __new__(
         cls,
         keys_serde_type: PyAnySerdeType[KeysT],
@@ -398,11 +398,11 @@ class PyAnySerdeType_STRING(PyAnySerdeType[str]):
     def __new__(cls) -> PyAnySerdeType_STRING: ...
 
 class PyAnySerdeType_TUPLE(PyAnySerdeType[Tuple]):
-    def __new__(item_serde_types: Tuple[PyAnySerdeType]) -> PyAnySerdeType_TUPLE: ...
+    def __new__(item_serde_types: tuple[PyAnySerdeType]) -> PyAnySerdeType_TUPLE: ...
 
 class PyAnySerdeType_TYPEDDICT(PyAnySerdeType[_TypedDict]):
     def __new__(
-        key_serde_type_dict: Dict[str, PyAnySerdeType],
+        key_serde_type_dict: dict[str, PyAnySerdeType],
     ) -> PyAnySerdeType_TYPEDDICT: ...
 
 class PyAnySerdeType_UNION(PyAnySerdeType[Union]):

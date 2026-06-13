@@ -1,7 +1,9 @@
 use core::f32;
 use numpy::{PyArray1, PyArray2, PyArrayMethods};
 use pyo3::prelude::*;
+use pyo3_stub_gen::derive::*;
 
+#[gen_stub_pyfunction]
 #[pyfunction]
 #[pyo3(name = "rotation_to_quaternion")]
 pub fn rotation_to_quaternion_py<'py>(
@@ -15,6 +17,7 @@ pub fn rotation_to_quaternion_py<'py>(
     Ok(quat)
 }
 
+#[gen_stub_pyfunction]
 #[pyfunction]
 #[pyo3(name = "quaternion_to_rotation")]
 pub fn quaternion_to_rotation_py<'py>(
@@ -28,6 +31,7 @@ pub fn quaternion_to_rotation_py<'py>(
     Ok(rot)
 }
 
+#[gen_stub_pyfunction]
 #[pyfunction]
 #[pyo3(name = "euler_to_rotation")]
 pub fn euler_to_rotation_py<'py>(
@@ -41,6 +45,7 @@ pub fn euler_to_rotation_py<'py>(
     Ok(rot)
 }
 
+#[gen_stub_pyfunction]
 #[pyfunction]
 #[pyo3(name = "rotation_to_euler")]
 pub fn rotation_to_euler_py<'py>(
@@ -54,6 +59,7 @@ pub fn rotation_to_euler_py<'py>(
     Ok(euler)
 }
 
+#[gen_stub_pyfunction]
 #[pyfunction]
 #[pyo3(name = "quaternion_to_euler")]
 pub fn quaternion_to_euler_py<'py>(
@@ -67,6 +73,7 @@ pub fn quaternion_to_euler_py<'py>(
     Ok(euler)
 }
 
+#[gen_stub_pyfunction]
 #[pyfunction]
 #[pyo3(name = "euler_to_quaternion")]
 pub fn euler_to_quaternion_py<'py>(

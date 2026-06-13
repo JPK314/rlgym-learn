@@ -584,6 +584,7 @@ sdist = { url = "https://files.pythonhosted.org/packages/b0/b1/99eb0201c0a88d358
 name = "rlgym-learn"
 source = { editable = "." }
 dependencies = [
+    { name = "numpy" },
     { name = "pydantic" },
     { name = "rlgym" },
     { name = "typing-extensions" },
@@ -591,7 +592,6 @@ dependencies = [
 
 [package.optional-dependencies]
 rl = [
-    { name = "numpy" },
     { name = "rlgym", extra = ["rl"] },
 ]
 tensor = [
@@ -600,7 +600,7 @@ tensor = [
 
 [package.metadata]
 requires-dist = [
-    { name = "numpy", marker = "extra == 'rl'", specifier = ">1.21" },
+    { name = "numpy", specifier = ">1.21" },
     { name = "pydantic", specifier = ">=2.13.0" },
     { name = "rlgym", specifier = ">=2.0.0" },
     { name = "rlgym", extras = ["rl"], marker = "extra == 'rl'", specifier = ">=2.0.0" },

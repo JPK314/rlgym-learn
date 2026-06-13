@@ -1,4 +1,7 @@
-use std::slice::{from_raw_parts, from_raw_parts_mut};
+use std::{
+    collections::{HashMap, HashSet},
+    slice::{from_raw_parts, from_raw_parts_mut},
+};
 
 use numpy::{ndarray::Array1, PyArray1, PyArray2, PyArrayMethods};
 use pyany_serde::common::get_bytes_to_alignment;
@@ -9,6 +12,7 @@ use pyo3::{
     prelude::*,
     types::PyBytes,
 };
+use pyo3_stub_gen::{derive::*, PyStubType, TypeInfo};
 use rkyv::{rancor::Failure, ser::writer::Buffer, Archive, Deserialize, Serialize};
 
 use crate::get_class;
@@ -26,6 +30,17 @@ pub struct PhysicsObject<'py> {
     pub _quaternion: Option<Bound<'py, PyArray1<f32>>>,
     pub _rotation_mtx: Option<Bound<'py, PyArray2<f32>>>,
     pub _euler_angles: Option<Bound<'py, PyArray1<f32>>>,
+}
+
+impl<'py> PyStubType for PhysicsObject<'py> {
+    fn type_output() -> TypeInfo {
+        TypeInfo {
+            name: "rlgym.rocket_league.api.PhysicsObject".into(),
+            source_module: None,
+            import: HashSet::from(["rlgym.rocket_league.api".into()]),
+            type_refs: HashMap::new(),
+        }
+    }
 }
 
 impl<'py> IntoPyObject<'py> for PhysicsObject<'py> {
@@ -110,9 +125,11 @@ impl PhysicsObjectInner {
     }
 }
 
-#[pyclass(module = "rlgym_learn")]
+#[gen_stub_pyclass]
+#[pyclass]
 pub struct PhysicsObjectPythonSerde {}
 
+#[gen_stub_pymethods]
 #[pymethods]
 impl PhysicsObjectPythonSerde {
     #[new]

@@ -111,8 +111,8 @@ if __name__ == "__main__":
 
     # The obs_space_type and action_space_type are determined by your choice of ObsBuilder and ActionParser respectively.
     # The logic used here assumes you are using the types defined by the DefaultObs and LookupTableAction above.
-    DefaultObsSpaceType = Tuple[str, int]
-    DefaultActionSpaceType = Tuple[str, int]
+    DefaultObsSpaceType = tuple[str, int]
+    DefaultActionSpaceType = tuple[str, int]
 
     def actor_factory(
         obs_space: DefaultObsSpaceType,

@@ -18,6 +18,7 @@ use pyo3::types::PyString;
 use pyo3::{
     exceptions::asyncio::InvalidStateError, intern, prelude::*, sync::PyOnceLock, types::PyDict,
 };
+use pyo3_stub_gen::derive::*;
 use raw_sync::events::Event;
 use raw_sync::events::EventInit;
 use raw_sync::events::EventState;
@@ -64,7 +65,8 @@ type StateInfoKV<'py> = (
 
 static SELECTORS_EVENT_READ: PyOnceLock<u8> = PyOnceLock::new();
 
-#[pyclass(module = "rlgym_learn", unsendable)]
+#[gen_stub_pyclass]
+#[pyclass(module = "rlgym_learn._rlgym_learn", unsendable)]
 pub struct EnvProcessInterface {
     agent_id_serde: Box<dyn PyAnySerde>,
     action_serde: Box<dyn PyAnySerde>,
@@ -419,6 +421,7 @@ impl EnvProcessInterface {
     }
 }
 
+#[gen_stub_pymethods]
 #[pymethods]
 impl EnvProcessInterface {
     #[new]

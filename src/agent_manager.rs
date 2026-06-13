@@ -5,6 +5,7 @@ use pyo3::exceptions::PyAssertionError;
 use pyo3::types::{PyDict, PyList};
 use pyo3::IntoPyObjectExt;
 use pyo3::{intern, prelude::*};
+use pyo3_stub_gen::derive::*;
 
 use crate::env_action::{EnvAction, EnvActionResponse};
 use crate::misc::{tensor_slice_1d, torch_empty};
@@ -62,7 +63,8 @@ enum ActionAssociatedLearningData<'py> {
     List(Vec<Option<Bound<'py, PyAny>>>),
 }
 
-#[pyclass(module = "rlgym_learn")]
+#[gen_stub_pyclass]
+#[pyclass]
 pub struct AgentManager {
     agent_controllers: Vec<Py<PyAny>>,
     batched_tensor_action_associated_learning_data: bool,
@@ -202,6 +204,7 @@ impl AgentManager {
     }
 }
 
+#[gen_stub_pymethods]
 #[pymethods]
 impl AgentManager {
     #[new]

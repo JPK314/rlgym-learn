@@ -1,9 +1,13 @@
-use std::slice::{from_raw_parts, from_raw_parts_mut};
+use std::{
+    collections::{HashMap, HashSet},
+    slice::{from_raw_parts, from_raw_parts_mut},
+};
 
 use pyany_serde::common::get_bytes_to_alignment;
 use pyo3::{
     buffer::PyBuffer, exceptions::asyncio::InvalidStateError, intern, prelude::*, types::PyBytes,
 };
+use pyo3_stub_gen::{derive::*, PyStubType, TypeInfo};
 use rkyv::{rancor::Failure, ser::writer::Buffer, Archive, Deserialize, Serialize};
 
 use crate::get_class;
@@ -13,6 +17,17 @@ pub struct GameConfig {
     pub gravity: f32,
     pub boost_consumption: f32,
     pub dodge_deadzone: f32,
+}
+
+impl PyStubType for GameConfig {
+    fn type_output() -> TypeInfo {
+        TypeInfo {
+            name: "rlgym.rocket_league.api.GameConfig".into(),
+            source_module: None,
+            import: HashSet::from(["rlgym.rocket_league.api".into()]),
+            type_refs: HashMap::new(),
+        }
+    }
 }
 
 impl<'py> IntoPyObject<'py> for GameConfig {
@@ -30,9 +45,11 @@ impl<'py> IntoPyObject<'py> for GameConfig {
     }
 }
 
-#[pyclass(module = "rlgym_learn")]
+#[gen_stub_pyclass]
+#[pyclass]
 pub struct GameConfigPythonSerde {}
 
+#[gen_stub_pymethods]
 #[pymethods]
 impl GameConfigPythonSerde {
     #[new]

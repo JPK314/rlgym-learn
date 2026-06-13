@@ -4,6 +4,7 @@ use pyo3::exceptions::asyncio::InvalidStateError;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyTuple};
 use pyo3::{intern, PyAny, Python};
+use pyo3_stub_gen::derive::*;
 use raw_sync::events::{Event, EventInit, EventState};
 use raw_sync::Timeout;
 use shared_memory::ShmemConf;
@@ -77,6 +78,7 @@ fn env_step<'py>(
     ))
 }
 
+#[gen_stub_pyfunction]
 #[pyfunction]
 #[pyo3(signature=(proc_id,
     child_end,
@@ -96,7 +98,7 @@ fn env_step<'py>(
     render=false,
     render_delay_option=None,
     recalculate_agent_id_every_step=false))]
-pub fn env_process<'py>(
+pub fn env_process_fn<'py>(
     proc_id: &str,
     child_end: Bound<'py, PyAny>,
     parent_sockname: Bound<'py, PyAny>,

@@ -5,7 +5,7 @@ try:
         "GameStatePythonSerde",
         "PhysicsObjectPythonSerde",
     ]
-    from ..rlgym_learn import (
+    from .. import (
         CarPythonSerde,
         GameConfigPythonSerde,
         GameStatePythonSerde,

@@ -3,9 +3,9 @@ from __future__ import annotations
 import os
 from typing import Any, Dict, Generic, Optional, TypeVar
 
-from pydantic import BaseModel, Field, model_validator, RootModel, ValidationInfo
+from pydantic import BaseModel, Field, RootModel, ValidationInfo, model_validator
 
-from .rlgym_learn import PyAnySerdeType
+from . import PyAnySerdeType
 
 
 class ProcessConfigModel(BaseModel, extra="forbid"):

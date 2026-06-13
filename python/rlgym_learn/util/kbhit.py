@@ -31,7 +31,6 @@ else:
 
 
 class KBHit:
-
     def __init__(self):
         """Creates a KBHit object that you can call to do various keyboard things."""
 
@@ -39,7 +38,6 @@ class KBHit:
             pass
 
         else:
-
             # Save the terminal settings
             self.fd = sys.stdin.fileno()
             self.new_term = termios.tcgetattr(self.fd)
@@ -106,13 +104,11 @@ class KBHit:
 
 # Test
 if __name__ == "__main__":
-
     kb = KBHit()
 
     print("Hit any key, or ESC to exit")
 
     while True:
-
         if kb.kbhit():
             c = kb.getch()
             if ord(c) == 27:  # ESC

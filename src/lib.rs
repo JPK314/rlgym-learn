@@ -1,20 +1,43 @@
 use pyo3::prelude::*;
+use pyo3_stub_gen::define_stub_info_gatherer;
 
-pub mod agent_manager;
-pub mod env_action;
-pub mod env_process;
-pub mod env_process_interface;
-pub mod misc;
-pub mod rocket_league;
-pub mod synchronization;
-pub mod timestep;
+mod agent_manager;
+mod env_action;
+mod env_process;
+mod env_process_interface;
+mod misc;
+mod synchronization;
+mod timestep;
 
-#[pymodule]
-#[pyo3(name = "rlgym_learn")]
-fn rlgym_learn(m: &Bound<'_, PyModule>) -> PyResult<()> {
-    m.add_function(wrap_pyfunction!(env_process::env_process, m)?)?;
-    m.add_function(wrap_pyfunction!(synchronization::recvfrom_byte, m)?)?;
-    m.add_function(wrap_pyfunction!(synchronization::sendto_byte, m)?)?;
+#[cfg(feature = "rl")]
+mod rocket_league;
+
+pub use agent_manager::AgentManager;
+pub use env_action::{EnvAction, EnvActionResponse, EnvActionResponseType};
+pub use env_process::env_process_fn;
+pub use env_process_interface::EnvProcessInterface;
+pub use pyany_serde::{
+    pyany_serde_impl::{
+        InitStrategy, NumpySerdeConfig, PickleableInitStrategy, PickleableNumpySerdeConfig,
+    },
+    PickleablePyAnySerdeType, PyAnySerdeType,
+};
+pub use synchronization::{recvfrom_byte, sendto_byte};
+pub use timestep::Timestep;
+
+#[cfg(feature = "rl")]
+fn rocket_league<'py>(m: &Bound<PyModule>) -> PyResult<()> {
+    m.add_class::<rocket_league::CarPythonSerde>()?;
+    m.add_class::<rocket_league::GameConfigPythonSerde>()?;
+    m.add_class::<rocket_league::GameStatePythonSerde>()?;
+    m.add_class::<rocket_league::PhysicsObjectPythonSerde>()?;
+    math(m)?;
+
+    Ok(())
+}
+
+#[cfg(feature = "rl")]
+fn math<'py>(m: &Bound<PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(
         rocket_league::math::rotation_to_quaternion_py,
         m
@@ -39,38 +62,45 @@ fn rlgym_learn(m: &Bound<'_, PyModule>) -> PyResult<()> {
         rocket_league::math::euler_to_quaternion_py,
         m
     )?)?;
-    m.add_class::<timestep::Timestep>()?;
-    m.add_class::<env_process_interface::EnvProcessInterface>()?;
-    m.add_class::<agent_manager::AgentManager>()?;
-    m.add_class::<env_action::EnvActionResponse>()?;
-    m.add_class::<env_action::EnvActionResponseType>()?;
-    m.add_class::<env_action::EnvAction>()?;
-    #[cfg(feature = "rl")]
-    {
-        m.add_class::<rocket_league::CarPythonSerde>()?;
-        m.add_class::<rocket_league::GameConfigPythonSerde>()?;
-        m.add_class::<rocket_league::GameStatePythonSerde>()?;
-        m.add_class::<rocket_league::PhysicsObjectPythonSerde>()?;
-    }
-    m.add_class::<pyany_serde::PyAnySerdeType>()?;
-    m.add_class::<pyany_serde::PickleablePyAnySerdeType>()?;
-    m.add_class::<pyany_serde::pyany_serde_impl::InitStrategy>()?;
-    m.add_class::<pyany_serde::pyany_serde_impl::PickleableInitStrategy>()?;
-    m.add_class::<pyany_serde::pyany_serde_impl::NumpySerdeConfig>()?;
-    m.add_class::<pyany_serde::pyany_serde_impl::PickleableNumpySerdeConfig>()?;
-
-    m.getattr("PyAnySerdeType")?
-        .setattr("__module__", "rlgym_learn")?;
-    m.getattr("PickleablePyAnySerdeType")?
-        .setattr("__module__", "rlgym_learn")?;
-    m.getattr("InitStrategy")?
-        .setattr("__module__", "rlgym_learn")?;
-    m.getattr("PickleableInitStrategy")?
-        .setattr("__module__", "rlgym_learn")?;
-    m.getattr("NumpySerdeConfig")?
-        .setattr("__module__", "rlgym_learn")?;
-    m.getattr("PickleableNumpySerdeConfig")?
-        .setattr("__module__", "rlgym_learn")?;
 
     Ok(())
 }
+
+#[pymodule]
+mod _rlgym_learn {
+    #[allow(clippy::wildcard_imports)]
+    use super::*;
+
+    #[pymodule_export]
+    use {
+        env_process_fn, recvfrom_byte, sendto_byte, AgentManager, EnvAction, EnvActionResponse,
+        EnvActionResponseType, EnvProcessInterface, InitStrategy, NumpySerdeConfig,
+        PickleableInitStrategy, PickleableNumpySerdeConfig, PickleablePyAnySerdeType,
+        PyAnySerdeType, Timestep,
+    };
+
+    #[pymodule_init]
+    fn module_init(m: &Bound<'_, PyModule>) -> PyResult<()> {
+        let module_attr = "rlgym_learn._rlgym_learn.pyany_serde";
+        m.getattr("PyAnySerdeType")?
+            .setattr("__module__", module_attr)?;
+        m.getattr("PickleablePyAnySerdeType")?
+            .setattr("__module__", module_attr)?;
+        m.getattr("InitStrategy")?
+            .setattr("__module__", module_attr)?;
+        m.getattr("PickleableInitStrategy")?
+            .setattr("__module__", module_attr)?;
+        m.getattr("NumpySerdeConfig")?
+            .setattr("__module__", module_attr)?;
+        m.getattr("PickleableNumpySerdeConfig")?
+            .setattr("__module__", module_attr)?;
+
+        #[cfg(feature = "rl")]
+        {
+            rocket_league(m)?;
+        }
+        Ok(())
+    }
+}
+
+define_stub_info_gatherer!(stub_info);

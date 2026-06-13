@@ -23,9 +23,14 @@ from rlgym.api import (
 
 from ..api import ActionAssociatedLearningData
 from ..basic_config import SerdeTypesModel
-from ..rlgym_learn import EnvAction
+from ..rlgym_learn import (
+    EnvAction,
+    PickleablePyAnySerdeType,
+    Timestep,
+    recvfrom_byte,
+    sendto_byte,
+)
 from ..rlgym_learn import EnvProcessInterface as RustEnvProcessInterface
-from ..rlgym_learn import PickleablePyAnySerdeType, Timestep, recvfrom_byte, sendto_byte
 from .env_process import PickleableSerdeTypeConfig, env_process
 
 try:
@@ -112,7 +117,7 @@ class EnvProcessInterface(
         spawn_delay=None,
         render=False,
         render_delay: Optional[float] = None,
-    ) -> Tuple[
+    ) -> tuple[
         ObsSpaceType,
         ActionSpaceType,
     ]:
@@ -271,7 +276,7 @@ class EnvProcessInterface(
             print("Unable to close parent connection")
             traceback.print_exc()
 
-    def send_env_actions(self, env_actions: Dict[str, EnvAction]):
+    def send_env_actions(self, env_actions: dict[str, EnvAction]):
         """
         Send env actions to environment processes.
         """
@@ -279,25 +284,25 @@ class EnvProcessInterface(
 
     def collect_step_data(
         self,
-    ) -> Tuple[
+    ) -> tuple[
         int,
-        Dict[str, Tuple[List[AgentID], List[ObsType]]],
-        Dict[
+        dict[str, tuple[List[AgentID], List[ObsType]]],
+        dict[
             str,
-            Tuple[
+            tuple[
                 List[Timestep],
                 Optional[ActionAssociatedLearningData],
-                Optional[Dict[str, Any]],
+                Optional[dict[str, Any]],
                 Optional[StateType],
             ],
         ],
-        Dict[
+        dict[
             str,
-            Tuple[
-                Optional[Dict[str, Any]],
+            tuple[
+                Optional[dict[str, Any]],
                 Optional[StateType],
-                Optional[Dict[AgentID, bool]],
-                Optional[Dict[AgentID, bool]],
+                Optional[dict[AgentID, bool]],
+                Optional[dict[AgentID, bool]],
             ],
         ],
     ]:

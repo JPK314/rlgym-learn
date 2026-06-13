@@ -37,7 +37,7 @@ class VelocityPlayerToBallReward(RewardFunction[AgentID, GameState, float]):
         self,
         agents: List[AgentID],
         initial_state: GameState,
-        shared_info: Dict[str, Any],
+        shared_info: dict[str, Any],
     ) -> None:
         pass
 
@@ -45,10 +45,10 @@ class VelocityPlayerToBallReward(RewardFunction[AgentID, GameState, float]):
         self,
         agents: List[AgentID],
         state: GameState,
-        is_terminated: Dict[AgentID, bool],
-        is_truncated: Dict[AgentID, bool],
-        shared_info: Dict[str, Any],
-    ) -> Dict[AgentID, float]:
+        is_terminated: dict[AgentID, bool],
+        is_truncated: dict[AgentID, bool],
+        shared_info: dict[str, Any],
+    ) -> dict[AgentID, float]:
         return {agent: self._get_reward(agent, state) for agent in agents}
 
     def _get_reward(self, agent: AgentID, state: GameState):
@@ -137,24 +137,24 @@ if __name__ == "__main__":
         PPOMetricsLogger,
     )
 
-    from rlgym_learn.learning_coordinator import (
-        LearningCoordinator,
-        LearningCoordinatorConfigModel,
-        generate_config,
-    )
     from rlgym_learn.basic_config import (
         BaseConfigModel,
         ProcessConfigModel,
         PyAnySerdeType,
         SerdeTypesModel,
     )
+    from rlgym_learn.learning_coordinator import (
+        LearningCoordinator,
+        LearningCoordinatorConfigModel,
+        generate_config,
+    )
 
     def actor_factory(
-        obs_space: Tuple[str, int], action_space: Tuple[str, int], device: str
+        obs_space: tuple[str, int], action_space: tuple[str, int], device: str
     ):
         return DiscreteFF(obs_space[1], action_space[1], (256, 256, 256), device)
 
-    def critic_factory(obs_space: Tuple[str, int], device: str):
+    def critic_factory(obs_space: tuple[str, int], device: str):
         return BasicCritic(obs_space[1], (256, 256, 256), device)
 
     # 80 processes
