@@ -7,11 +7,6 @@ from collections.abc import Mapping, Sequence
 from socket import socket
 from typing import TYPE_CHECKING, Any, Generic, TypeAlias, TypeVar, final
 
-from ...api import AgentController
-
-if TYPE_CHECKING:
-    from socket import _RetAddress  # pyright: ignore [reportPrivateUsage]
-
 from rlgym.api import (
     ActionSpaceType,
     ActionType,
@@ -24,7 +19,11 @@ from rlgym.api import (
 )
 
 from ..._rlgym_learn import EnvAction, Timestep
+from ...api import AgentController
 from ..pyany_serde import PickleablePyAnySerdeType, PyAnySerdeType
+
+if TYPE_CHECKING:
+    from socket import _RetAddress  # pyright: ignore [reportPrivateUsage]
 
 __all__ = [
     "AgentManager",

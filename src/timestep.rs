@@ -1,6 +1,6 @@
 use pyo3::prelude::*;
 
-#[pyclass(get_all, module = "rlgym_learn._rlgym_learn")]
+#[pyclass(get_all, set_all, module = "rlgym_learn._rlgym_learn")]
 pub struct Timestep {
     pub env_id: String,
     pub timestep_id: u128,
