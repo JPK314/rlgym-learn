@@ -5,7 +5,7 @@ try:
         "GameStatePythonSerde",
         "PhysicsObjectPythonSerde",
     ]
-    from ..rlgym_learn import (
+    from .._rlgym_learn.rocket_league import (
         CarPythonSerde,
         GameConfigPythonSerde,
         GameStatePythonSerde,
@@ -13,5 +13,5 @@ try:
     )
 except ImportError as e:
     raise ImportError(
-        "The 'rocket_league' submodule requires the 'rl' extra. Install with 'pip install my_module[rl]'."
+        "The 'rocket_league' submodule requires the 'rl' extra. Install with 'pip install rlgym_learn[rl]'."
     ) from e

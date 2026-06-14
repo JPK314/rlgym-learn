@@ -79,6 +79,17 @@ if __name__ == "__main__":
     from typing import Tuple
 
     import numpy as np
+    from rlgym_learn import (
+        BaseConfigModel,
+        LearningCoordinator,
+        LearningCoordinatorConfigModel,
+        NumpySerdeConfig,
+        ProcessConfigModel,
+        PyAnySerdeType,
+        SerdeTypesModel,
+        generate_config,
+    )
+    from rlgym_learn.rocket_league import GameStatePythonSerde
     from rlgym_learn_algos.logging.wandb import (
         WandbMetricsLogger,
         WandbMetricsLoggerConfigModel,
@@ -97,22 +108,10 @@ if __name__ == "__main__":
         PPOMetricsLogger,
     )
 
-    from rlgym_learn import (
-        BaseConfigModel,
-        LearningCoordinator,
-        LearningCoordinatorConfigModel,
-        NumpySerdeConfig,
-        ProcessConfigModel,
-        PyAnySerdeType,
-        SerdeTypesModel,
-        generate_config,
-    )
-    from rlgym_learn.rocket_league import GameStatePythonSerde
-
     # The obs_space_type and action_space_type are determined by your choice of ObsBuilder and ActionParser respectively.
     # The logic used here assumes you are using the types defined by the DefaultObs and LookupTableAction above.
-    DefaultObsSpaceType = Tuple[str, int]
-    DefaultActionSpaceType = Tuple[str, int]
+    DefaultObsSpaceType = tuple[str, int]
+    DefaultActionSpaceType = tuple[str, int]
 
     def actor_factory(
         obs_space: DefaultObsSpaceType,

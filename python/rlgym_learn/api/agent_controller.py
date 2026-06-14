@@ -1,5 +1,8 @@
+# pyright: reportUnusedParameter=false
+
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Any, Dict, Generic, Iterable, List, Optional, Tuple, Type
+from typing import Any, Generic
 
 from rlgym.api import (
     ActionSpaceType,
@@ -11,20 +14,38 @@ from rlgym.api import (
     StateType,
 )
 
+from .._rlgym_learn import EnvActionResponse, Timestep
 from ..basic_config import BaseConfigModel, ProcessConfigModel
-from ..rlgym_learn import EnvActionResponse, Timestep
 from .typing import (
     ActionAssociatedLearningData,
     AgentControllerConfig,
-    AgentControllerData,
 )
 
 
 @dataclass
-class DerivedAgentControllerConfig(Generic[AgentControllerConfig]):
+class DerivedAgentControllerConfig(
+    Generic[
+        AgentControllerConfig,
+        AgentID,
+        ObsType,
+        ActionType,
+        RewardType,
+        StateType,
+        ObsSpaceType,
+        ActionSpaceType,
+    ]
+):
     agent_controller_name: str
     agent_controller_config: AgentControllerConfig
-    base_config: BaseConfigModel
+    base_config: BaseConfigModel[
+        AgentID,
+        ObsType,
+        ActionType,
+        RewardType,
+        StateType,
+        ObsSpaceType,
+        ActionSpaceType,
+    ]
     process_config: ProcessConfigModel
     save_folder: str
 
@@ -40,7 +61,6 @@ class AgentController(
         ObsSpaceType,
         ActionSpaceType,
         ActionAssociatedLearningData,
-        AgentControllerData,
     ]
 ):
     @property
@@ -50,7 +70,7 @@ class AgentController(
         """
         return None
 
-    def choose_agents(self, agent_id_list: List[AgentID]) -> List[int]:
+    def choose_agents(self, agent_id_list: list[AgentID]) -> list[int]:
         """
         Function to determine which agent ids (and their associated observations) this agent controller
         will return the actions (and their associated log probs) for.
@@ -62,9 +82,9 @@ class AgentController(
 
     def get_actions(
         self,
-        agent_id_list: List[AgentID],
-        obs_list: List[ObsType],
-    ) -> Tuple[Iterable[ActionType], ActionAssociatedLearningData]:
+        agent_id_list: list[AgentID],
+        obs_list: list[ObsType],
+    ) -> tuple[Iterable[ActionType], ActionAssociatedLearningData]:
         """
         Function to get an action and the log of its probability from the policy given an observation.
         :param agent_id_list: List of AgentIDs for which to produce actions. AgentIDs may not be unique here. Parallel with obs_list.
@@ -77,13 +97,13 @@ class AgentController(
 
     def process_timestep_data(
         self,
-        timestep_data: Dict[
+        timestep_data: dict[
             str,
-            Tuple[
-                List[Timestep],
-                Optional[ActionAssociatedLearningData],
-                Optional[Dict[str, Any]],
-                Optional[StateType],
+            tuple[
+                list[Timestep[AgentID, ObsType, ActionType, RewardType]],
+                ActionAssociatedLearningData | None,
+                dict[str, Any] | None,
+                StateType | None,
             ],
         ],
     ):
@@ -105,16 +125,16 @@ class AgentController(
 
     def choose_env_actions(
         self,
-        state_info: Dict[
+        state_info: dict[
             str,
-            Tuple[
-                Optional[Dict[str, Any]],
-                Optional[StateType],
-                Optional[Dict[AgentID, bool]],
-                Optional[Dict[AgentID, bool]],
+            tuple[
+                dict[str, Any] | None,
+                StateType | None,
+                dict[AgentID, bool] | None,
+                dict[AgentID, bool] | None,
             ],
         ],
-    ) -> Dict[str, Optional[EnvActionResponse]]:
+    ) -> dict[str, EnvActionResponse[AgentID, StateType] | None]:
         """
         Function to choose EnvActionResponse per environment based on environment information. Called after process_timestep_data.
         :param state_info: Dictionary with environment ids as keys and tuples of shared info (if shared_info_serde_type is non-None), StateType (if EnvActionResponse from previous call(s) to choose_env_actions set send_state=True), the present terminated dict for the env (None if env was just reset), and the present truncated dict for the env (None if env was just reset).
@@ -125,7 +145,9 @@ class AgentController(
         """
         return {}
 
-    def process_env_actions(self, env_actions: Dict[str, EnvActionResponse]):
+    def process_env_actions(
+        self, env_actions: dict[str, EnvActionResponse[AgentID, StateType]]
+    ):
         """
         Function to process the env actions that will be used by environments.
         :param env_actions: Dictionary with environment ids as keys and EnvActionResponse as values. These will not be None, and all environment ids which the agent manager is currently getting actions for will be present in the dictionary. Note that if there are multiple agent controllers, there may be more entries than were present in the state_info dict received in choose_env_actions.
@@ -137,7 +159,19 @@ class AgentController(
     def set_space_types(self, obs_space: ObsSpaceType, action_space: ActionSpaceType):
         pass
 
-    def load(self, config: DerivedAgentControllerConfig[AgentControllerConfig]):
+    def load(
+        self,
+        config: DerivedAgentControllerConfig[
+            AgentControllerConfig,
+            AgentID,
+            ObsType,
+            ActionType,
+            RewardType,
+            StateType,
+            ObsSpaceType,
+            ActionSpaceType,
+        ],
+    ):
         """
         Function to load the agent. set_space_type and set_device will always
         be called at least once before this method.

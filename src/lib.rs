@@ -45,9 +45,24 @@ fn pyany_serde<'py>(py: Python<'py>, parent: &Bound<PyModule>) -> PyResult<()> {
         .setattr("__module__", module_attr)?;
     sub.getattr("PickleableNumpySerdeConfig")?
         .setattr("__module__", module_attr)?;
+    parent.add_submodule(&sub)?;
     let sys_modules = py.import("sys")?.getattr("modules")?;
     sys_modules.set_item(module_attr, &sub)?;
-    parent.setattr("pyany_serde", &sub)?;
+
+    Ok(())
+}
+
+fn backend<'py>(py: Python<'py>, parent: &Bound<PyModule>) -> PyResult<()> {
+    let sub = PyModule::new(py, "_backend")?;
+    sub.add_class::<AgentManager>()?;
+    sub.add_class::<EnvProcessInterface>()?;
+    sub.add_function(wrap_pyfunction!(env_process_fn, &sub)?)?;
+    sub.add_function(wrap_pyfunction!(recvfrom_byte, &sub)?)?;
+    sub.add_function(wrap_pyfunction!(sendto_byte, &sub)?)?;
+    parent.add_submodule(&sub)?;
+    py.import("sys")?
+        .getattr("modules")?
+        .set_item("rlgym_learn._rlgym_learn._backend", &sub)?;
 
     Ok(())
 }
@@ -109,15 +124,13 @@ mod _rlgym_learn {
     use super::*;
 
     #[pymodule_export]
-    use {
-        env_process_fn, recvfrom_byte, sendto_byte, AgentManager, EnvAction, EnvActionResponse,
-        EnvActionResponseType, EnvProcessInterface, Timestep,
-    };
+    use {EnvAction, EnvActionResponse, EnvActionResponseType, Timestep};
 
     #[pymodule_init]
     fn module_init(m: &Bound<'_, PyModule>) -> PyResult<()> {
         let py = m.py();
         pyany_serde(py, m)?;
+        backend(py, m)?;
         #[cfg(feature = "rl")]
         {
             rocket_league(py, m)?;

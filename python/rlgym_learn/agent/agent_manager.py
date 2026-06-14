@@ -1,5 +1,5 @@
 import os
-from typing import Any, Dict, Generic, List, Optional, Tuple
+from typing import Any, Generic
 
 from rlgym.api import (
     ActionSpaceType,
@@ -11,8 +11,8 @@ from rlgym.api import (
     StateType,
 )
 
-from .. import AgentManager as RustAgentManager
-from .. import EnvAction, Timestep
+from .._rlgym_learn import EnvAction, Timestep
+from .._rlgym_learn._backend import AgentManager as RustAgentManager
 from ..api import (
     ActionAssociatedLearningData,
     AgentController,
@@ -30,12 +30,11 @@ class AgentManager(
         StateType,
         ObsSpaceType,
         ActionSpaceType,
-        ActionAssociatedLearningData,
     ]
 ):
     def __init__(
         self,
-        agent_controllers: Dict[
+        agent_controllers: dict[
             str,
             AgentController[
                 Any,
@@ -46,17 +45,49 @@ class AgentManager(
                 StateType,
                 ObsSpaceType,
                 ActionSpaceType,
-                ActionAssociatedLearningData,
                 Any,
             ],
         ],
         batched_tensor_action_associated_learning_data: bool,
     ) -> None:
 
-        self.agent_controllers = agent_controllers
-        self.agent_controllers_list = list(agent_controllers.values())
-        self.n_agent_controllers = len(agent_controllers)
-        self.rust_agent_manager = RustAgentManager(
+        self.agent_controllers: dict[
+            str,
+            AgentController[
+                Any,
+                AgentID,
+                ObsType,
+                ActionType,
+                RewardType,
+                StateType,
+                ObsSpaceType,
+                ActionSpaceType,
+                Any,
+            ],
+        ] = agent_controllers
+        self.agent_controllers_list: list[
+            AgentController[
+                Any,
+                AgentID,
+                ObsType,
+                ActionType,
+                RewardType,
+                StateType,
+                ObsSpaceType,
+                ActionSpaceType,
+                Any,
+            ]
+        ] = list(agent_controllers.values())
+        self.n_agent_controllers: int = len(agent_controllers)
+        self.rust_agent_manager: RustAgentManager[
+            AgentID,
+            ObsType,
+            ActionType,
+            RewardType,
+            StateType,
+            ObsSpaceType,
+            ActionSpaceType,
+        ] = RustAgentManager(
             self.agent_controllers_list, batched_tensor_action_associated_learning_data
         )
         assert self.n_agent_controllers > 0, (
@@ -65,13 +96,13 @@ class AgentManager(
 
     def process_timestep_data(
         self,
-        timestep_data: Dict[
+        timestep_data: dict[
             str,
-            Tuple[
-                List[Timestep],
-                Optional[ActionAssociatedLearningData],
-                Optional[Dict[str, Any]],
-                Optional[StateType],
+            tuple[
+                list[Timestep[AgentID, ObsType, ActionType, RewardType]],
+                ActionAssociatedLearningData | None,
+                dict[str, Any] | None,
+                StateType | None,
             ],
         ],
     ):
@@ -80,17 +111,17 @@ class AgentManager(
 
     def get_env_actions(
         self,
-        env_obs_data_dict: Dict[str, Tuple[List[AgentID], List[ObsType]]],
-        state_info: Dict[
+        env_obs_data_dict: dict[str, tuple[list[AgentID], list[ObsType]]],
+        state_info: dict[
             str,
-            Tuple[
-                Optional[Dict[str, Any]],
-                Optional[StateType],
-                Optional[Dict[AgentID, bool]],
-                Optional[Dict[AgentID, bool]],
+            tuple[
+                dict[str, Any] | None,
+                StateType | None,
+                dict[AgentID, bool] | None,
+                dict[AgentID, bool] | None,
             ],
         ],
-    ) -> Dict[str, EnvAction]:
+    ) -> dict[str, EnvAction]:
         """
         Function to get env actions from the agent controllers.
         :param env_obs_data_dict: Dictionary with environment ids as keys and parallel lists of Agent IDs and observations, to be used to get actions if the env action chosen is "step".
@@ -105,7 +136,15 @@ class AgentManager(
 
     def load_agent_controllers(
         self,
-        config: LearningCoordinatorConfigModel,
+        config: LearningCoordinatorConfigModel[
+            AgentID,
+            ObsType,
+            ActionType,
+            RewardType,
+            StateType,
+            ObsSpaceType,
+            ActionSpaceType,
+        ],
     ):
         for agent_controller_name, agent_controller in self.agent_controllers.items():
             agent_controller.load(

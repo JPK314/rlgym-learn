@@ -1,6 +1,8 @@
-from typing import TypeVar, Optional
-from pydantic import BaseModel
+from typing import TypeVar
 
-AgentControllerConfig = TypeVar("AgentControllerConfig", bound=Optional[BaseModel])
-AgentControllerData = TypeVar("AgentControllerData")
+from pydantic import BaseModel, InstanceOf
+
+AgentControllerConfig = TypeVar(
+    "AgentControllerConfig", bound=InstanceOf[BaseModel] | None
+)
 ActionAssociatedLearningData = TypeVar("ActionAssociatedLearningData")

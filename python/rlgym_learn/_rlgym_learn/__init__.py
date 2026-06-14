@@ -2,108 +2,34 @@
 
 from __future__ import annotations
 
-import datetime
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from enum import Enum
-from socket import socket
-from typing import TYPE_CHECKING, Any, Generic, TypeVar, final
+from typing import TYPE_CHECKING, Any, Generic, TypeAlias, TypeVar, final
 
-from rlgym_learn.api import ActionAssociatedLearningData, AgentController
 from typing_extensions import override
 
 if TYPE_CHECKING:
-    from socket import _RetAddress  # pyright: ignore [reportPrivateUsage]
-
     from .._rlgym_learn import EnvActionResponse
 
 from rlgym.api import (
-    ActionSpaceType,
     ActionType,
     AgentID,
-    EngineActionType,
-    ObsSpaceType,
     ObsType,
     RewardType,
     StateType,
 )
 
-from .pyany_serde import PyAnySerdeType
-
 __all__ = [
-    "AgentManager",
     "EnvAction",
     "EnvActionResponse",
     "EnvActionResponseType",
-    "EnvProcessInterface",
     "Timestep",
-    "env_process_fn",
-    "recvfrom_byte",
-    "sendto_byte",
 ]
 
 AgentIDInner = TypeVar("AgentIDInner")
 StateTypeInner = TypeVar("StateTypeInner")
 
-
-@final
-class AgentManager(
-    Generic[
-        AgentID,
-        ObsType,
-        ActionType,
-        RewardType,
-        StateType,
-        ObsSpaceType,
-        ActionSpaceType,
-        ActionAssociatedLearningData,
-    ]
-):
-    def __new__(
-        cls,
-        agent_controllers: Sequence[
-            AgentController[
-                Any,
-                AgentID,
-                ObsType,
-                ActionType,
-                RewardType,
-                StateType,
-                ObsSpaceType,
-                ActionSpaceType,
-                ActionAssociatedLearningData,
-                Any,
-            ],
-        ],
-        batched_tensor_action_associated_learning_data: bool,
-    ) -> AgentManager[
-        AgentID,
-        ObsType,
-        ActionType,
-        RewardType,
-        StateType,
-        ObsSpaceType,
-        ActionSpaceType,
-        ActionAssociatedLearningData,
-    ]: ...
-    def get_env_actions(
-        self,
-        env_obs_data_dict: Mapping[
-            str,
-            tuple[
-                Sequence[AgentID],
-                Sequence[ObsType],
-            ],
-        ],
-        state_info: Mapping[
-            str,
-            tuple[
-                dict[str, Any] | None,
-                StateType | None,
-                dict[AgentID, bool] | None,
-                dict[AgentID, bool] | None,
-            ],
-        ],
-    ) -> dict[str, EnvAction]: ...
+ActionAssociatedLearningData: TypeAlias = Any
 
 
 class EnvAction: ...
@@ -143,7 +69,7 @@ class EnvActionResponse(Generic[AgentID, StateType]):
         def send_state(self) -> bool: ...
         def __new__(
             cls,
-            shared_info_setter: dict[str, Any] | None = None,
+            shared_info_setter: Mapping[str, Any] | None = None,
             send_state: bool = False,
         ) -> EnvActionResponse.STEP[AgentIDInner, StateTypeInner]: ...
 
@@ -164,7 +90,7 @@ class EnvActionResponse(Generic[AgentID, StateType]):
         def send_state(self) -> bool: ...
         def __new__(
             cls,
-            shared_info_setter: dict[str, Any] | None = None,
+            shared_info_setter: Mapping[str, Any] | None = None,
             send_state: bool = False,
         ) -> EnvActionResponse.RESET[AgentIDInner, StateTypeInner]: ...
 
@@ -194,85 +120,10 @@ class EnvActionResponse(Generic[AgentID, StateType]):
         def __new__(
             cls,
             desired_state: StateTypeInner,
-            shared_info_setter: dict[str, Any] | None = None,
+            shared_info_setter: Mapping[str, Any] | None = None,
             send_state: bool = False,
             prev_timestep_id_dict: Any | None = None,
         ) -> EnvActionResponse.SET_STATE[AgentIDInner, StateTypeInner]: ...
-
-
-@final
-class EnvProcessInterface(
-    Generic[
-        AgentID,
-        ObsType,
-        ActionType,
-        EngineActionType,
-        RewardType,
-        StateType,
-        ObsSpaceType,
-        ActionSpaceType,
-        ActionAssociatedLearningData,
-    ]
-):
-    def __new__(
-        cls,
-        agent_id_serde: PyAnySerdeType[AgentID],
-        action_serde: PyAnySerdeType[ActionType],
-        obs_serde: PyAnySerdeType[ObsType],
-        reward_serde: PyAnySerdeType[RewardType],
-        obs_space_serde: PyAnySerdeType[ObsSpaceType],
-        action_space_serde: PyAnySerdeType[ActionSpaceType],
-        shared_info_serde_option: PyAnySerdeType[dict[str, Any]] | None,
-        shared_info_setter_serde_option: PyAnySerdeType[dict[str, Any]] | None,
-        state_serde_option: PyAnySerdeType[StateType] | None,
-        recalculate_agent_id_every_step: bool,
-        flinks_folder: str,
-        min_process_steps_per_inference: int,
-    ) -> EnvProcessInterface[
-        AgentID,
-        ObsType,
-        ActionType,
-        EngineActionType,
-        RewardType,
-        StateType,
-        ObsSpaceType,
-        ActionSpaceType,
-        ActionAssociatedLearningData,
-    ]: ...
-    def init_processes(
-        self,
-        proc_package_defs: Sequence[tuple[Any, Any, Any, str]],
-    ) -> tuple[Any, Any]: ...
-    def add_process(self, proc_package_def: tuple[Any, Any, Any, str]) -> None: ...
-    def delete_process(self) -> None: ...
-    def increase_min_process_steps_per_inference(self) -> int: ...
-    def decrease_min_process_steps_per_inference(self) -> int: ...
-    def cleanup(self) -> None: ...
-    def collect_step_data(
-        self,
-    ) -> tuple[
-        int,
-        dict[str, tuple[list[AgentID], list[ObsType]]],
-        dict[
-            str,
-            tuple[
-                list[Timestep[AgentID, ObsType, ActionType, RewardType]],
-                ActionAssociatedLearningData,
-                dict[str, Any] | None,
-                StateType | None,
-            ],
-        ],
-        dict[
-            str,
-            tuple[
-                dict[str, Any] | None,
-                StateType | None,
-                dict[AgentID, bool] | None,
-                dict[AgentID, bool] | None,
-            ],
-        ],
-    ]: ...
-    def send_env_actions(self, env_actions: Mapping[str, EnvAction]) -> None: ...
 
 
 @final
@@ -310,31 +161,3 @@ class Timestep(Generic[AgentID, ObsType, ActionType, RewardType]):
         terminated: bool,
         truncated: bool,
     ) -> Timestep[AgentID, ObsType, ActionType, RewardType]: ...
-
-
-def env_process_fn(
-    proc_id: str,
-    child_end: Any,
-    parent_sockname: Any,
-    build_env_fn: Any,
-    flinks_folder: str,
-    shm_buffer_size: int,
-    agent_id_serde: PyAnySerdeType[AgentID],
-    action_serde: PyAnySerdeType[ActionType],
-    obs_serde: PyAnySerdeType[ObsType],
-    reward_serde: PyAnySerdeType[RewardType],
-    obs_space_serde: PyAnySerdeType[ObsSpaceType],
-    action_space_serde: PyAnySerdeType[ActionSpaceType],
-    shared_info_serde_option: PyAnySerdeType[dict[str, Any]] | None,
-    shared_info_setter_serde_option: PyAnySerdeType[dict[str, Any]] | None,
-    state_serde_option: PyAnySerdeType[StateType] | None,
-    render: bool = False,
-    render_delay_option: datetime.timedelta | None = None,
-    recalculate_agent_id_every_step: bool = False,
-) -> None: ...
-
-
-def recvfrom_byte(socket: socket) -> Any: ...
-
-
-def sendto_byte(socket: socket, address: _RetAddress) -> None: ...

@@ -35,20 +35,20 @@ class CustomObs(DefaultObs):
 class VelocityPlayerToBallReward(RewardFunction[AgentID, GameState, float]):
     def reset(
         self,
-        agents: List[AgentID],
+        agents: list[AgentID],
         initial_state: GameState,
-        shared_info: Dict[str, Any],
+        shared_info: dict[str, Any],
     ) -> None:
         pass
 
     def get_rewards(
         self,
-        agents: List[AgentID],
+        agents: list[AgentID],
         state: GameState,
-        is_terminated: Dict[AgentID, bool],
-        is_truncated: Dict[AgentID, bool],
-        shared_info: Dict[str, Any],
-    ) -> Dict[AgentID, float]:
+        is_terminated: dict[AgentID, bool],
+        is_truncated: dict[AgentID, bool],
+        shared_info: dict[str, Any],
+    ) -> dict[AgentID, float]:
         return {agent: self._get_reward(agent, state) for agent in agents}
 
     def _get_reward(self, agent: AgentID, state: GameState):
@@ -123,6 +123,16 @@ def env_create_function():
 
 
 if __name__ == "__main__":
+    from rlgym_learn import (
+        BaseConfigModel,
+        LearningCoordinator,
+        LearningCoordinatorConfigModel,
+        NumpySerdeConfig,
+        ProcessConfigModel,
+        PyAnySerdeType,
+        SerdeTypesModel,
+        generate_config,
+    )
     from rlgym_learn_algos.logging.wandb import (
         WandbMetricsLogger,
         WandbMetricsLoggerConfigModel,
@@ -141,23 +151,12 @@ if __name__ == "__main__":
         PPOMetricsLogger,
     )
 
-    from rlgym_learn import (
-        BaseConfigModel,
-        LearningCoordinator,
-        LearningCoordinatorConfigModel,
-        NumpySerdeConfig,
-        ProcessConfigModel,
-        PyAnySerdeType,
-        SerdeTypesModel,
-        generate_config,
-    )
-
     def actor_factory(
-        obs_space: Tuple[str, int], action_space: Tuple[str, int], device: str
+        obs_space: tuple[str, int], action_space: tuple[str, int], device: str
     ):
         return DiscreteFF(obs_space[1], action_space[1], (256, 256, 256), device)
 
-    def critic_factory(obs_space: Tuple[str, int], device: str):
+    def critic_factory(obs_space: tuple[str, int], device: str):
         return BasicCritic(obs_space[1], (256, 256, 256), device)
 
     n_proc = 200

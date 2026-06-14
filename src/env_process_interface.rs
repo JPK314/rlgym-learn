@@ -424,8 +424,8 @@ impl EnvProcessInterface {
     #[new]
     #[pyo3(signature = (
         agent_id_serde,
-        action_serde,
         obs_serde,
+        action_serde,
         reward_serde,
         obs_space_serde,
         action_space_serde,
@@ -439,8 +439,8 @@ impl EnvProcessInterface {
     pub fn new<'py>(
         py: Python<'py>,
         agent_id_serde: Box<dyn PyAnySerde>,
-        action_serde: Box<dyn PyAnySerde>,
         obs_serde: Box<dyn PyAnySerde>,
+        action_serde: Box<dyn PyAnySerde>,
         reward_serde: Box<dyn PyAnySerde>,
         obs_space_serde: Box<dyn PyAnySerde>,
         action_space_serde: Box<dyn PyAnySerde>,

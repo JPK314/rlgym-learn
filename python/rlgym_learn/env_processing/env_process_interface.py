@@ -6,7 +6,8 @@ import socket
 import time
 import traceback
 from collections.abc import Callable
-from typing import Any, Dict, Generic, List, Optional, Tuple
+from multiprocessing.context import DefaultContext, Process
+from typing import Any, Generic, cast
 from uuid import uuid4
 
 from rlgym.api import (
@@ -21,17 +22,28 @@ from rlgym.api import (
     StateType,
 )
 
-from .. import EnvAction, PickleablePyAnySerdeType, Timestep, recvfrom_byte, sendto_byte
-from .. import EnvProcessInterface as RustEnvProcessInterface
-from ..api import ActionAssociatedLearningData
+from .._rlgym_learn import (
+    ActionAssociatedLearningData,
+    EnvAction,
+    Timestep,
+)
+from .._rlgym_learn._backend import EnvProcessInterface as RustEnvProcessInterface
+from .._rlgym_learn._backend import recvfrom_byte, sendto_byte
 from ..basic_config import SerdeTypesModel
+from ..pyany_serde import PickleablePyAnySerdeType
 from .env_process import PickleableSerdeTypeConfig, env_process
 
 try:
-    from tqdm import tqdm
+    from tqdm import (  # pyright: ignore [reportMissingModuleSource]
+        tqdm,  # pyright: ignore [reportAssignmentType]
+    )
 except ImportError:
+    from collections.abc import Iterable
+    from typing import TypeVar
 
-    def tqdm(iterator, *args, **kwargs):
+    T = TypeVar("T")
+
+    def tqdm(iterator: Iterable[T], *args: tuple[Any, ...], **kwargs: dict[str, Any]):  # pyright: ignore [reportUnusedParameter]
         return iterator
 
 
@@ -45,7 +57,6 @@ class EnvProcessInterface(
         StateType,
         ObsSpaceType,
         ActionSpaceType,
-        ActionAssociatedLearningData,
     ]
 ):
     def __init__(
@@ -63,34 +74,77 @@ class EnvProcessInterface(
                 ActionSpaceType,
             ],
         ],
-        serde_types: SerdeTypesModel,
+        serde_types: SerdeTypesModel[
+            AgentID,
+            ObsType,
+            ActionType,
+            RewardType,
+            StateType,
+            ObsSpaceType,
+            ActionSpaceType,
+        ],
         min_process_steps_per_inference: int,
         flinks_folder: str,
         shm_buffer_size: int,
         seed: int,
         recalculate_agent_id_every_step: bool,
     ):
-        self.build_env_fn = build_env_fn
-        self.serde_type_config = PickleableSerdeTypeConfig(
+        self.build_env_fn: Callable[
+            [],
+            RLGym[
+                AgentID,
+                ObsType,
+                ActionType,
+                EngineActionType,
+                RewardType,
+                StateType,
+                ObsSpaceType,
+                ActionSpaceType,
+            ],
+        ] = build_env_fn
+        self.serde_type_config: PickleableSerdeTypeConfig[
+            AgentID,
+            ObsType,
+            ActionType,
+            RewardType,
+            StateType,
+            ObsSpaceType,
+            ActionSpaceType,
+        ] = PickleableSerdeTypeConfig(
             PickleablePyAnySerdeType(serde_types.agent_id_serde_type),
-            PickleablePyAnySerdeType(serde_types.action_serde_type),
             PickleablePyAnySerdeType(serde_types.obs_serde_type),
+            PickleablePyAnySerdeType(serde_types.action_serde_type),
             PickleablePyAnySerdeType(serde_types.reward_serde_type),
             PickleablePyAnySerdeType(serde_types.obs_space_serde_type),
             PickleablePyAnySerdeType(serde_types.action_space_serde_type),
-            PickleablePyAnySerdeType(serde_types.shared_info_serde_type),
-            PickleablePyAnySerdeType(serde_types.shared_info_setter_serde_type),
-            PickleablePyAnySerdeType(serde_types.state_serde_type),
+            None
+            if serde_types.shared_info_serde_type is None
+            else PickleablePyAnySerdeType(serde_types.shared_info_serde_type),
+            None
+            if serde_types.shared_info_setter_serde_type is None
+            else PickleablePyAnySerdeType(serde_types.shared_info_setter_serde_type),
+            None
+            if serde_types.state_serde_type is None
+            else PickleablePyAnySerdeType(serde_types.state_serde_type),
         )
-        self.flinks_folder = flinks_folder
-        self.shm_buffer_size = shm_buffer_size
-        self.seed = seed
-        self.recalculate_agent_id_every_step = recalculate_agent_id_every_step
-        self.n_procs = 0
+        self.flinks_folder: str = flinks_folder
+        self.shm_buffer_size: int = shm_buffer_size
+        self.seed: int = seed
+        self.recalculate_agent_id_every_step: bool = recalculate_agent_id_every_step
+        self.n_procs: int = 0
 
         os.makedirs(flinks_folder, exist_ok=True)
 
-        self.rust_env_process_interface = RustEnvProcessInterface(
+        self.rust_env_process_interface: RustEnvProcessInterface[
+            AgentID,
+            ObsType,
+            ActionType,
+            EngineActionType,
+            RewardType,
+            StateType,
+            ObsSpaceType,
+            ActionSpaceType,
+        ] = RustEnvProcessInterface(
             serde_types.agent_id_serde_type,
             serde_types.action_serde_type,
             serde_types.obs_serde_type,
@@ -105,33 +159,31 @@ class EnvProcessInterface(
             min_process_steps_per_inference,
         )
 
+        self.processes: list[tuple[Process, socket.socket, socket.socket | None, str]]
+
     def init_processes(
         self,
         n_processes: int,
-        spawn_delay=None,
-        render=False,
-        render_delay: Optional[float] = None,
-    ) -> Tuple[
+        spawn_delay: float | None = None,
+        render: bool = False,
+        render_delay: float | None = None,
+    ) -> tuple[
         ObsSpaceType,
         ActionSpaceType,
     ]:
         """
         Initialize and spawn environment processes.
         :param n_processes: Number of processes to spawn.
-        :param collect_metrics_fn: A user-defined function that the environment processes will use to collect metrics
-               about the environment at each timestep.
         :param spawn_delay: Delay between spawning environment instances. Defaults to None.
         :param render: Whether an environment should be rendered while collecting timesteps.
         :param render_delay: A period in seconds to delay a process between frames while rendering.
-        :return: A tuple containing parallel lists of agent ids and observations for inference (per environment), state info (per environment), observation space type, and action space type.
+        :return: A tuple containing observation space type and action space type.
         """
 
         can_fork = "forkserver" in mp.get_all_start_methods()
         start_method = "forkserver" if can_fork else "spawn"
-        context = mp.get_context(start_method)
+        context = cast(DefaultContext, mp.get_context(start_method))
         self.n_procs = n_processes
-
-        self.processes = [None for i in range(n_processes)]
 
         # Spawn child processes
         print("Spawning processes...")
@@ -162,7 +214,7 @@ class EnvProcessInterface(
             )
             process.start()
 
-            self.processes[proc_idx] = (process, parent_end, None, proc_id)
+            self.processes.append((process, parent_end, None, proc_id))
 
         # Initialize child processes
         print("Initializing processes...")
@@ -199,9 +251,7 @@ class EnvProcessInterface(
         self.n_procs += 1
         can_fork = "forkserver" in mp.get_all_start_methods()
         start_method = "forkserver" if can_fork else "spawn"
-        context = mp.get_context(start_method)
-
-        self.processes.append(None)
+        context = cast(DefaultContext, mp.get_context(start_method))
 
         # Set up process
         proc_id = str(uuid4())
@@ -270,7 +320,7 @@ class EnvProcessInterface(
             print("Unable to close parent connection")
             traceback.print_exc()
 
-    def send_env_actions(self, env_actions: Dict[str, EnvAction]):
+    def send_env_actions(self, env_actions: dict[str, EnvAction]):
         """
         Send env actions to environment processes.
         """
@@ -278,25 +328,25 @@ class EnvProcessInterface(
 
     def collect_step_data(
         self,
-    ) -> Tuple[
+    ) -> tuple[
         int,
-        Dict[str, Tuple[List[AgentID], List[ObsType]]],
-        Dict[
+        dict[str, tuple[list[AgentID], list[ObsType]]],
+        dict[
             str,
-            Tuple[
-                List[Timestep],
-                Optional[ActionAssociatedLearningData],
-                Optional[Dict[str, Any]],
-                Optional[StateType],
+            tuple[
+                list[Timestep[AgentID, ObsType, ActionType, RewardType]],
+                ActionAssociatedLearningData | None,
+                dict[str, Any] | None,
+                StateType | None,
             ],
         ],
-        Dict[
+        dict[
             str,
-            Tuple[
-                Optional[Dict[str, Any]],
-                Optional[StateType],
-                Optional[Dict[AgentID, bool]],
-                Optional[Dict[AgentID, bool]],
+            tuple[
+                dict[str, Any] | None,
+                StateType | None,
+                dict[AgentID, bool] | None,
+                dict[AgentID, bool] | None,
             ],
         ],
     ]:
