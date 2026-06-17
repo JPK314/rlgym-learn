@@ -13,7 +13,9 @@ classifiers = [
     "Programming Language :: Rust",
     "Programming Language :: Python :: Implementation :: CPython",
 ]
-dynamic = ["license", "readme", "version"]
+# add version back to dynamic once out of alpha
+version = "2.0.0a1"
+dynamic = ["license", "readme"]
 dependencies = [
     "rlgym>=2.0.0",
     "pydantic>=2.13.0",

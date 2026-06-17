@@ -5,8 +5,8 @@ from .._rlgym_learn.pyany_serde import (
     PickleableNumpySerdeConfig,
     PickleablePyAnySerdeType,
     PyAnySerdeType,
-    PythonSerde,
 )
+from .python_serde import PythonSerde
 
 __all__ = [
     "InitStrategy",

@@ -1,4 +1,9 @@
-use pyo3::{exceptions::asyncio::InvalidStateError, prelude::*, types::PyList, IntoPyObjectExt};
+use pyo3::{
+    exceptions::asyncio::InvalidStateError,
+    prelude::*,
+    types::{PyGenericAlias, PyList, PyType},
+    IntoPyObjectExt,
+};
 
 use pyany_serde::{
     communication::{append_bool, append_python_option, retrieve_bool, retrieve_python_option},
@@ -39,6 +44,16 @@ pub enum EnvActionResponseType {
 
 #[pymethods]
 impl EnvActionResponse {
+    // python generics support
+    #[classmethod]
+    #[pyo3(signature = (key, /))]
+    fn __class_getitem__<'py>(
+        cls: &Bound<'py, PyType>,
+        key: &Bound<'py, PyAny>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        Ok(PyGenericAlias::new(cls.py(), cls.as_any(), key)?.into_any())
+    }
+
     #[getter]
     fn enum_type(&self) -> EnvActionResponseType {
         match self {

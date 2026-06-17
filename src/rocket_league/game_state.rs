@@ -108,7 +108,7 @@ impl GameStateInner {
     }
 }
 
-#[pyclass(module = "rlgym_learn._rlgym_learn.rocket_league", unsendable)]
+#[pyclass(generic, module = "rlgym_learn._rlgym_learn.rocket_league", unsendable)]
 pub struct GameStatePythonSerde {
     agent_id_serde: Option<Box<dyn PyAnySerde>>,
     agent_id_serde_type: Option<PyAnySerdeType>,

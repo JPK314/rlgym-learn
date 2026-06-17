@@ -23,12 +23,12 @@ from rlgym.api import (
 )
 
 from .._rlgym_learn import (
-    ActionAssociatedLearningData,
     EnvAction,
     Timestep,
 )
 from .._rlgym_learn._backend import EnvProcessInterface as RustEnvProcessInterface
 from .._rlgym_learn._backend import recvfrom_byte, sendto_byte
+from ..api import ActionAssociatedLearningData
 from ..basic_config import SerdeTypesModel
 from ..pyany_serde import PickleablePyAnySerdeType
 from .env_process import PickleableSerdeTypeConfig, env_process
@@ -111,19 +111,25 @@ class EnvProcessInterface(
             ObsSpaceType,
             ActionSpaceType,
         ] = PickleableSerdeTypeConfig(
-            PickleablePyAnySerdeType(serde_types.agent_id_serde_type),
-            PickleablePyAnySerdeType(serde_types.obs_serde_type),
-            PickleablePyAnySerdeType(serde_types.action_serde_type),
-            PickleablePyAnySerdeType(serde_types.reward_serde_type),
-            PickleablePyAnySerdeType(serde_types.obs_space_serde_type),
-            PickleablePyAnySerdeType(serde_types.action_space_serde_type),
-            None
+            agent_id_serde_type=PickleablePyAnySerdeType(
+                serde_types.agent_id_serde_type
+            ),
+            obs_serde_type=PickleablePyAnySerdeType(serde_types.obs_serde_type),
+            action_serde_type=PickleablePyAnySerdeType(serde_types.action_serde_type),
+            reward_serde_type=PickleablePyAnySerdeType(serde_types.reward_serde_type),
+            obs_space_serde_type=PickleablePyAnySerdeType(
+                serde_types.obs_space_serde_type
+            ),
+            action_space_serde_type=PickleablePyAnySerdeType(
+                serde_types.action_space_serde_type
+            ),
+            shared_info_serde_type=None
             if serde_types.shared_info_serde_type is None
             else PickleablePyAnySerdeType(serde_types.shared_info_serde_type),
-            None
+            shared_info_setter_serde_type=None
             if serde_types.shared_info_setter_serde_type is None
             else PickleablePyAnySerdeType(serde_types.shared_info_setter_serde_type),
-            None
+            state_serde_type=None
             if serde_types.state_serde_type is None
             else PickleablePyAnySerdeType(serde_types.state_serde_type),
         )
@@ -146,8 +152,8 @@ class EnvProcessInterface(
             ActionSpaceType,
         ] = RustEnvProcessInterface(
             serde_types.agent_id_serde_type,
-            serde_types.action_serde_type,
             serde_types.obs_serde_type,
+            serde_types.action_serde_type,
             serde_types.reward_serde_type,
             serde_types.obs_space_serde_type,
             serde_types.action_space_serde_type,
@@ -186,6 +192,7 @@ class EnvProcessInterface(
         self.n_procs = n_processes
 
         # Spawn child processes
+        self.processes = []
         print("Spawning processes...")
         for proc_idx in tqdm(range(n_processes)):
             proc_id = str(uuid4())

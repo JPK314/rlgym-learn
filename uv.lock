@@ -582,6 +582,7 @@ sdist = { url = "https://files.pythonhosted.org/packages/b0/b1/99eb0201c0a88d358
 
 [[package]]
 name = "rlgym-learn"
+version = "2.0.0a1"
 source = { editable = "." }
 dependencies = [
     { name = "pydantic" },

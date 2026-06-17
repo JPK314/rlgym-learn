@@ -17,17 +17,32 @@ from typing import (
 from pydantic import GetCoreSchemaHandler
 from pydantic_core import CoreSchema
 
-from .python_serde import PythonSerde
+from ...pyany_serde.python_serde import PythonSerde
 
 if TYPE_CHECKING:
-    import numpy
+    import numpy as np
+    from numpy import dtype
     from numpy.typing import NDArray
 
     from ..pyany_serde import InitStrategy, NumpySerdeConfig, PyAnySerdeType
 
-    DType = TypeVar("DType", bound=numpy.generic, covariant=True)
+    DType = TypeVar(
+        "DType",
+        bound=np.int8
+        | np.uint8
+        | np.int16
+        | np.uint16
+        | np.int32
+        | np.uint32
+        | np.int64
+        | np.uint64
+        | np.float32
+        | np.float64,
+    )
 else:
-    DType = TypeVar("DType", covariant=True)
+    DType = TypeVar("DType")
+    class dtype(Generic[DType]):
+        pass
 
     class NDArray(Generic[DType]):
         pass
@@ -39,7 +54,6 @@ __all__ = [
     "PickleableNumpySerdeConfig",
     "PyAnySerdeType",
     "PickleablePyAnySerdeType",
-    "PythonSerde",
 ]
 
 T_co = TypeVar("T_co", covariant=True)
@@ -274,7 +288,7 @@ class PyAnySerdeType(Generic[T_co]):
         @property
         def config(self) -> NumpySerdeConfig: ...
         def __new__(
-            cls, dtype: DType, config: NumpySerdeConfig = ...
+            cls, dtype: type[DType], config: NumpySerdeConfig = ...
         ) -> PyAnySerdeType.NUMPY[DType]: ...
 
     @final

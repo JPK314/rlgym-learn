@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import Any, Generic
 
 from rlgym.api import (
@@ -53,7 +53,7 @@ class LearningCoordinator(
                 ActionSpaceType,
             ],
         ],
-        agent_controllers: dict[
+        agent_controllers: Mapping[
             str,
             AgentController[
                 Any,

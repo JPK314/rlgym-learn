@@ -9,8 +9,8 @@ from rlgym.api import AgentID
 from rlgym.rocket_league.api import Car, GameConfig, GameState, PhysicsObject
 from typing_extensions import override
 
-from ..pyany_serde import PyAnySerdeType, PythonSerde
-
+from ...pyany_serde.python_serde import PythonSerde
+from ..pyany_serde import PyAnySerdeType
 
 @final
 class CarPythonSerde(PythonSerde[Car[AgentID]], Generic[AgentID]):
@@ -35,7 +35,6 @@ class CarPythonSerde(PythonSerde[Car[AgentID]], Generic[AgentID]):
     @override
     def retrieve(self, buf: bytes, offset: int) -> tuple[Car[AgentID], int]: ...
 
-
 @final
 class GameConfigPythonSerde(PythonSerde[GameConfig]):
     def __new__(cls) -> GameConfigPythonSerde: ...
@@ -52,7 +51,6 @@ class GameConfigPythonSerde(PythonSerde[GameConfig]):
     def get_bytes(self, start_addr: int | None, obj: GameConfig) -> bytes: ...
     @override
     def retrieve(self, buf: bytes, offset: int) -> tuple[GameConfig, int]: ...
-
 
 @final
 class GameStatePythonSerde(PythonSerde[GameState[AgentID]], Generic[AgentID]):
@@ -76,7 +74,6 @@ class GameStatePythonSerde(PythonSerde[GameState[AgentID]], Generic[AgentID]):
     ) -> bytes: ...
     @override
     def retrieve(self, buf: bytes, offset: int) -> tuple[GameState[AgentID], int]: ...
-
 
 @final
 class PhysicsObjectPythonSerde(PythonSerde[PhysicsObject]):

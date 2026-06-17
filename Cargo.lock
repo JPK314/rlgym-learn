@@ -522,7 +522,7 @@ dependencies = [
 
 [[package]]
 name = "rlgym-learn"
-version = "1.0.5"
+version = "2.0.0-alpha.1"
 dependencies = [
  "bytemuck",
  "fastrand",

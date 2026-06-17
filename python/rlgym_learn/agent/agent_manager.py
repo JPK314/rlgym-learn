@@ -1,4 +1,5 @@
 import os
+from collections.abc import Mapping
 from typing import Any, Generic
 
 from rlgym.api import (
@@ -34,7 +35,7 @@ class AgentManager(
 ):
     def __init__(
         self,
-        agent_controllers: dict[
+        agent_controllers: Mapping[
             str,
             AgentController[
                 Any,
@@ -51,7 +52,7 @@ class AgentManager(
         batched_tensor_action_associated_learning_data: bool,
     ) -> None:
 
-        self.agent_controllers: dict[
+        self.agent_controllers: Mapping[
             str,
             AgentController[
                 Any,

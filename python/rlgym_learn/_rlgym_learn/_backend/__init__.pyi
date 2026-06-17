@@ -111,8 +111,8 @@ class EnvProcessInterface(
     def __new__(
         cls,
         agent_id_serde: PyAnySerdeType[AgentID],
-        action_serde: PyAnySerdeType[ActionType],
         obs_serde: PyAnySerdeType[ObsType],
+        action_serde: PyAnySerdeType[ActionType],
         reward_serde: PyAnySerdeType[RewardType],
         obs_space_serde: PyAnySerdeType[ObsSpaceType],
         action_space_serde: PyAnySerdeType[ActionSpaceType],
