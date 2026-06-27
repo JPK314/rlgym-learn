@@ -1,4 +1,5 @@
 __all__ = [
+    "AnyBaseModel",
     "BaseConfigModel",
     "ProcessConfigModel",
     "SerdeTypesModel",
@@ -22,6 +23,7 @@ from ._rlgym_learn._backend import EnvProcessInterface as RustEnvProcessInterfac
 from ._rlgym_learn._backend import env_process_fn as rust_env_process_fn
 from ._rlgym_learn._backend import recvfrom_byte, sendto_byte
 from .basic_config import (
+    AnyBaseModel,
     BaseConfigModel,
     ProcessConfigModel,
     SerdeTypesModel,

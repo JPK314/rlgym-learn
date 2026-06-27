@@ -1,7 +1,20 @@
 # pyright: reportUnusedParameter=false
+from typing import TYPE_CHECKING
 
-import numpy
-from numpy.typing import NDArray
+if TYPE_CHECKING:
+    import numpy
+    from numpy.typing import NDArray
+else:
+    from typing import Any, Generic, TypeVar
+    class numpy:
+        float32: Any
+
+    DType = TypeVar("DType")
+    class dtype(Generic[DType]):
+        pass
+
+    class NDArray(Generic[DType]):
+        pass
 
 __all__ = [
     "euler_to_quaternion",
@@ -11,7 +24,6 @@ __all__ = [
     "rotation_to_euler",
     "rotation_to_quaternion",
 ]
-
 
 def euler_to_quaternion(
     euler: NDArray[numpy.float32],

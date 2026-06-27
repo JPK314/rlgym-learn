@@ -6,7 +6,7 @@ T = TypeVar("T")
 
 
 class PythonSerde(Generic[T]):
-    def append(self, buf: bytes, offset: int, obj: T) -> int:
+    def append(self, buf: memoryview, offset: int, obj: T) -> int:
         """
         Appends bytes of obj to buf starting at offset.
         :param buf: a memoryview to write into (DO NOT hold a reference to this memory view after this function ends!)
@@ -24,7 +24,7 @@ class PythonSerde(Generic[T]):
         """
         raise NotImplementedError
 
-    def retrieve(self, buf: bytes, offset: int) -> tuple[T, int]:
+    def retrieve(self, buf: memoryview, offset: int) -> tuple[T, int]:
         """
         Retrieves obj encoded using self.append or self.get_bytes from the buffer starting at offset.
         :param buf: a memoryview to read from (DO NOT hold a reference to this memory view after this function ends!)

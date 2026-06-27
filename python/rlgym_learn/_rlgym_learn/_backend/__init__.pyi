@@ -1,4 +1,4 @@
-# pyright: reportExplicitAny=false, reportUnusedParameter=false
+# pyright: reportUnusedParameter=false
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ from rlgym.api import (
 
 from ..._rlgym_learn import EnvAction, Timestep
 from ...api import AgentController
-from ..pyany_serde import PickleablePyAnySerdeType, PyAnySerdeType
+from ..pyany_serde import PyAnySerdeType
 
 if TYPE_CHECKING:
     from socket import _RetAddress  # pyright: ignore [reportPrivateUsage]
@@ -174,23 +174,15 @@ def env_process_fn(
     build_env_fn: Any,
     flinks_folder: str,
     shm_buffer_size: int,
-    agent_id_serde: PyAnySerdeType[AgentID] | PickleablePyAnySerdeType[AgentID],
-    obs_serde: PyAnySerdeType[ObsType] | PickleablePyAnySerdeType[ObsType],
-    action_serde: PyAnySerdeType[ActionType] | PickleablePyAnySerdeType[ActionType],
-    reward_serde: PyAnySerdeType[RewardType] | PickleablePyAnySerdeType[RewardType],
-    obs_space_serde: PyAnySerdeType[ObsSpaceType]
-    | PickleablePyAnySerdeType[ObsSpaceType],
-    action_space_serde: PyAnySerdeType[ActionSpaceType]
-    | PickleablePyAnySerdeType[ActionSpaceType],
-    shared_info_serde_option: PyAnySerdeType[dict[str, Any]]
-    | PickleablePyAnySerdeType[dict[str, Any]]
-    | None,
-    shared_info_setter_serde_option: PyAnySerdeType[dict[str, Any]]
-    | None
-    | PickleablePyAnySerdeType[dict[str, Any]],
-    state_serde_option: PyAnySerdeType[StateType]
-    | PickleablePyAnySerdeType[StateType]
-    | None,
+    agent_id_serde: PyAnySerdeType[AgentID],
+    obs_serde: PyAnySerdeType[ObsType],
+    action_serde: PyAnySerdeType[ActionType],
+    reward_serde: PyAnySerdeType[RewardType],
+    obs_space_serde: PyAnySerdeType[ObsSpaceType],
+    action_space_serde: PyAnySerdeType[ActionSpaceType],
+    shared_info_serde_option: PyAnySerdeType[dict[str, Any]] | None,
+    shared_info_setter_serde_option: PyAnySerdeType[dict[str, Any]] | None,
+    state_serde_option: PyAnySerdeType[StateType] | None,
     render: bool = False,
     render_delay_option: datetime.timedelta | None = None,
     recalculate_agent_id_every_step: bool = False,

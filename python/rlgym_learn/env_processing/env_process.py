@@ -4,9 +4,7 @@ import random
 import signal
 import socket
 from collections.abc import Callable
-from dataclasses import dataclass
 from datetime import timedelta
-from typing import Any, Generic
 
 try:
     import numpy as np
@@ -29,30 +27,7 @@ from rlgym.api import (
 
 from .._rlgym_learn._backend import env_process_fn as rust_env_process_fn
 from .._rlgym_learn._backend import recvfrom_byte, sendto_byte
-from ..pyany_serde import PickleablePyAnySerdeType
-
-
-@dataclass
-class PickleableSerdeTypeConfig(
-    Generic[
-        AgentID,
-        ObsType,
-        ActionType,
-        RewardType,
-        StateType,
-        ObsSpaceType,
-        ActionSpaceType,
-    ]
-):
-    agent_id_serde_type: PickleablePyAnySerdeType[AgentID]
-    obs_serde_type: PickleablePyAnySerdeType[ObsType]
-    action_serde_type: PickleablePyAnySerdeType[ActionType]
-    reward_serde_type: PickleablePyAnySerdeType[RewardType]
-    obs_space_serde_type: PickleablePyAnySerdeType[ObsSpaceType]
-    action_space_serde_type: PickleablePyAnySerdeType[ActionSpaceType]
-    shared_info_serde_type: PickleablePyAnySerdeType[dict[str, Any]] | None
-    shared_info_setter_serde_type: PickleablePyAnySerdeType[dict[str, Any]] | None
-    state_serde_type: PickleablePyAnySerdeType[StateType] | None
+from ..basic_config import SerdeTypesModel
 
 
 def env_process(
@@ -71,7 +46,7 @@ def env_process(
             ActionSpaceType,
         ],
     ],
-    serde_type_config: PickleableSerdeTypeConfig[
+    serde_type_config: SerdeTypesModel[
         AgentID,
         ObsType,
         ActionType,

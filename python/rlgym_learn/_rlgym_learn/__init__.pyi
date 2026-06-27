@@ -1,4 +1,4 @@
-# pyright: reportExplicitAny=false, reportUnusedParameter=false
+# pyright: reportUnusedParameter=false
 
 from __future__ import annotations
 
@@ -31,16 +31,13 @@ StateTypeInner = TypeVar("StateTypeInner")
 
 ActionAssociatedLearningData: TypeAlias = Any
 
-
 class EnvAction: ...
-
 
 @final
 class EnvActionResponseType(Enum):
     STEP = ...
     RESET = ...
     SET_STATE = ...
-
 
 class EnvActionResponse(Generic[AgentID, StateType]):
     @property
@@ -124,7 +121,6 @@ class EnvActionResponse(Generic[AgentID, StateType]):
             send_state: bool = False,
             prev_timestep_id_dict: Any | None = None,
         ) -> EnvActionResponse.SET_STATE[AgentIDInner, StateTypeInner]: ...
-
 
 @final
 class Timestep(Generic[AgentID, ObsType, ActionType, RewardType]):

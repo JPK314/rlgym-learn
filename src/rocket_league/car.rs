@@ -1,15 +1,14 @@
 use std::slice::{from_raw_parts, from_raw_parts_mut};
 
 use numpy::{ndarray::Array1, PyArray1, PyArrayMethods};
-use pyany_serde::{
-    common::get_bytes_to_alignment, PickleablePyAnySerdeType, PyAnySerde, PyAnySerdeType,
-};
+use pyany_serde::{common::get_bytes_to_alignment, PyAnySerde, PyAnySerdeType};
 use pyo3::{
     buffer::PyBuffer,
-    exceptions::{asyncio::InvalidStateError, PyValueError},
+    exceptions::asyncio::InvalidStateError,
     intern,
     prelude::*,
-    types::{PyBytes, PyTuple},
+    types::{PyBytes, PyTuple, PyType},
+    PyTypeInfo,
 };
 use rkyv::{rancor::Failure, ser::writer::Buffer, Archive, Deserialize, Serialize};
 
@@ -173,61 +172,29 @@ impl CarInner {
 
 #[pyclass(generic, module = "rlgym_learn._rlgym_learn.rocket_league", unsendable)]
 pub struct CarPythonSerde {
-    agent_id_serde: Option<Box<dyn PyAnySerde>>,
-    agent_id_serde_type: Option<PyAnySerdeType>,
+    agent_id_serde: Box<dyn PyAnySerde>,
+    agent_id_serde_type: PyAnySerdeType,
 }
 
 #[pymethods]
 impl CarPythonSerde {
+    // pickling
+    fn __reduce__<'py>(
+        &self,
+        py: Python<'py>,
+    ) -> PyResult<(Bound<'py, PyType>, Bound<'py, PyTuple>)> {
+        Ok((
+            CarPythonSerde::type_object(py),
+            PyTuple::new(py, [self.agent_id_serde_type.clone()])?,
+        ))
+    }
+
     #[new]
-    #[pyo3(signature = (*args, agent_id_serde_type=None))]
-    fn new<'py>(
-        args: Bound<'py, PyTuple>,
-        agent_id_serde_type: Option<PyAnySerdeType>,
-    ) -> PyResult<Self> {
-        let vec_args = args.iter().collect::<Vec<_>>();
-        if vec_args.len() > 1 {
-            return Err(PyValueError::new_err(format!(
-                "CarPythonSerde constructor takes 0 or 1 parameters, received {}",
-                args.as_any().repr()?.to_str()?
-            )));
-        }
-        if vec_args.len() == 1 && agent_id_serde_type.is_some() {
-            return Err(PyValueError::new_err(format!(
-                "CarPythonSerde constructor takes 0 or 1 parameters, received {} (from varargs) and {} (from agent_id_serde_type kwarg)",
-                args.as_any().repr()?.to_str()?, agent_id_serde_type.clone().unwrap().to_string()
-            )));
-        }
-        if vec_args.len() == 1 || agent_id_serde_type.is_some() {
-            let resolved_agent_id_serde_type;
-            if vec_args.len() == 1 {
-                resolved_agent_id_serde_type = vec_args[0].extract::<PyAnySerdeType>()?;
-            } else {
-                resolved_agent_id_serde_type = agent_id_serde_type.unwrap();
-            }
-            Ok(CarPythonSerde {
-                agent_id_serde: Some(resolved_agent_id_serde_type.clone().try_into()?),
-                agent_id_serde_type: Some(resolved_agent_id_serde_type),
-            })
-        } else {
-            Ok(CarPythonSerde {
-                agent_id_serde: None,
-                agent_id_serde_type: None,
-            })
-        }
-    }
-
-    fn __getstate__(&self) -> PyResult<Vec<u8>> {
-        PickleablePyAnySerdeType(Some(self.agent_id_serde_type.clone())).__getstate__()
-    }
-
-    fn __setstate__(&mut self, state: Vec<u8>) -> PyResult<()> {
-        let mut pickleable_pyany_serde_type = PickleablePyAnySerdeType(None);
-        pickleable_pyany_serde_type.__setstate__(state)?;
-        let agent_id_serde_type = pickleable_pyany_serde_type.0.unwrap().unwrap();
-        self.agent_id_serde = Some(agent_id_serde_type.clone().try_into()?);
-        self.agent_id_serde_type = Some(agent_id_serde_type);
-        Ok(())
+    fn new<'py>(agent_id_serde_type: PyAnySerdeType) -> PyResult<Self> {
+        Ok(CarPythonSerde {
+            agent_id_serde: agent_id_serde_type.clone().try_into()?,
+            agent_id_serde_type: agent_id_serde_type,
+        })
     }
 
     fn append<'py>(
@@ -239,11 +206,9 @@ impl CarPythonSerde {
         let py_buffer = PyBuffer::<u8>::get(&buf)?;
         let buf =
             unsafe { from_raw_parts_mut(py_buffer.buf_ptr() as *mut u8, py_buffer.item_count()) };
-        offset = self.agent_id_serde.as_mut().unwrap().append_option(
-            buf,
-            offset,
-            &obj.bump_victim_id.as_ref(),
-        )?;
+        offset = self
+            .agent_id_serde
+            .append_option(buf, offset, &obj.bump_victim_id.as_ref())?;
         offset =
             offset + get_bytes_to_alignment::<ArchivedCarInner>(buf.as_ptr() as usize + offset);
         let (_, buf_after_offset) = buf.split_at_mut(offset);
@@ -266,11 +231,8 @@ impl CarPythonSerde {
         obj: Car<'py>,
     ) -> PyResult<Bound<'py, PyBytes>> {
         let mut v = Vec::with_capacity(64);
-        self.agent_id_serde.as_mut().unwrap().append_option_vec(
-            &mut v,
-            start_addr,
-            &obj.bump_victim_id.as_ref(),
-        )?;
+        self.agent_id_serde
+            .append_option_vec(&mut v, start_addr, &obj.bump_victim_id.as_ref())?;
         let Some(start_addr) = start_addr else {
             Err(InvalidStateError::new_err(
                 "get_bytes was called on the Car serde, but no start address was provided",
@@ -298,11 +260,7 @@ impl CarPythonSerde {
         let py_buffer = PyBuffer::<u8>::get(&buf)?;
         let buf = unsafe { from_raw_parts(py_buffer.buf_ptr() as *mut u8, py_buffer.item_count()) };
         let bump_victim_id;
-        (bump_victim_id, offset) = self
-            .agent_id_serde
-            .as_mut()
-            .unwrap()
-            .retrieve_option(py, buf, offset)?;
+        (bump_victim_id, offset) = self.agent_id_serde.retrieve_option(py, buf, offset)?;
         let start =
             offset + get_bytes_to_alignment::<ArchivedCarInner>(buf.as_ptr() as usize + offset);
         offset = start + 164;

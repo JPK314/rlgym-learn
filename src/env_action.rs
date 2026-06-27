@@ -1,3 +1,4 @@
+use enum_kinds::EnumKind;
 use pyo3::{
     exceptions::asyncio::InvalidStateError,
     prelude::*,
@@ -12,7 +13,12 @@ use pyany_serde::{
 
 #[allow(non_camel_case_types)]
 #[pyclass(from_py_object, module = "rlgym_learn._rlgym_learn")]
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, EnumKind)]
+#[enum_kind(
+    EnvActionResponseType,
+    allow(non_camel_case_types),
+    pyclass(eq, eq_int, from_py_object, module = "rlgym_learn._rlgym_learn")
+)]
 pub enum EnvActionResponse {
     #[pyo3(constructor = (shared_info_setter = None, send_state = false))]
     STEP {
@@ -31,15 +37,6 @@ pub enum EnvActionResponse {
         send_state: bool,
         prev_timestep_id_dict: Option<Py<PyAny>>,
     },
-}
-
-#[allow(non_camel_case_types)]
-#[pyclass(eq, eq_int, from_py_object, module = "rlgym_learn._rlgym_learn")]
-#[derive(Clone, Debug, PartialEq)]
-pub enum EnvActionResponseType {
-    STEP,
-    RESET,
-    SET_STATE,
 }
 
 #[pymethods]

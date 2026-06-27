@@ -4,7 +4,6 @@ from typing import Any, Generic, cast
 from pydantic import (
     BaseModel,
     Field,
-    InstanceOf,
     ValidationInfo,
     model_validator,
 )
@@ -20,7 +19,7 @@ from rlgym.api import (
 from typing_extensions import Self
 
 from .api import AgentController
-from .basic_config import BaseConfigModel, ProcessConfigModel
+from .basic_config import AnyBaseModel, BaseConfigModel, ProcessConfigModel
 
 DEFAULT_CONFIG_FILENAME = "config.json"
 
@@ -48,7 +47,7 @@ class LearningCoordinatorConfigModel(
         ActionSpaceType,
     ]
     process_config: ProcessConfigModel = Field(default_factory=ProcessConfigModel)
-    agent_controllers_config: dict[str, InstanceOf[BaseModel] | None] = Field(
+    agent_controllers_config: dict[str, AnyBaseModel | None] = Field(
         default_factory=dict
     )
     agent_controllers_save_folder: str = "agent_controllers_checkpoints"

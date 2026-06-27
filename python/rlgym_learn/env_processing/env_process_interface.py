@@ -30,8 +30,7 @@ from .._rlgym_learn._backend import EnvProcessInterface as RustEnvProcessInterfa
 from .._rlgym_learn._backend import recvfrom_byte, sendto_byte
 from ..api import ActionAssociatedLearningData
 from ..basic_config import SerdeTypesModel
-from ..pyany_serde import PickleablePyAnySerdeType
-from .env_process import PickleableSerdeTypeConfig, env_process
+from .env_process import env_process
 
 try:
     from tqdm import (  # pyright: ignore [reportMissingModuleSource]
@@ -102,7 +101,7 @@ class EnvProcessInterface(
                 ActionSpaceType,
             ],
         ] = build_env_fn
-        self.serde_type_config: PickleableSerdeTypeConfig[
+        self.serde_type_config: SerdeTypesModel[
             AgentID,
             ObsType,
             ActionType,
@@ -110,29 +109,7 @@ class EnvProcessInterface(
             StateType,
             ObsSpaceType,
             ActionSpaceType,
-        ] = PickleableSerdeTypeConfig(
-            agent_id_serde_type=PickleablePyAnySerdeType(
-                serde_types.agent_id_serde_type
-            ),
-            obs_serde_type=PickleablePyAnySerdeType(serde_types.obs_serde_type),
-            action_serde_type=PickleablePyAnySerdeType(serde_types.action_serde_type),
-            reward_serde_type=PickleablePyAnySerdeType(serde_types.reward_serde_type),
-            obs_space_serde_type=PickleablePyAnySerdeType(
-                serde_types.obs_space_serde_type
-            ),
-            action_space_serde_type=PickleablePyAnySerdeType(
-                serde_types.action_space_serde_type
-            ),
-            shared_info_serde_type=None
-            if serde_types.shared_info_serde_type is None
-            else PickleablePyAnySerdeType(serde_types.shared_info_serde_type),
-            shared_info_setter_serde_type=None
-            if serde_types.shared_info_setter_serde_type is None
-            else PickleablePyAnySerdeType(serde_types.shared_info_setter_serde_type),
-            state_serde_type=None
-            if serde_types.state_serde_type is None
-            else PickleablePyAnySerdeType(serde_types.state_serde_type),
-        )
+        ] = serde_types
         self.flinks_folder: str = flinks_folder
         self.shm_buffer_size: int = shm_buffer_size
         self.seed: int = seed

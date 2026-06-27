@@ -4,12 +4,11 @@ use numpy::ndarray::Array1;
 use numpy::{PyArray1, PyArrayMethods};
 use pyany_serde::common::get_bytes_to_alignment;
 use pyany_serde::communication::{append_usize, append_usize_vec, retrieve_usize};
-use pyany_serde::{PickleablePyAnySerdeType, PyAnySerde, PyAnySerdeType};
+use pyany_serde::{PyAnySerde, PyAnySerdeType};
 use pyo3::buffer::PyBuffer;
 use pyo3::exceptions::asyncio::InvalidStateError;
-use pyo3::exceptions::PyValueError;
-use pyo3::types::{PyBytes, PyDict, PyTuple};
-use pyo3::{intern, prelude::*};
+use pyo3::types::{PyBytes, PyDict, PyTuple, PyType};
+use pyo3::{intern, prelude::*, PyTypeInfo};
 use rkyv::rancor::Failure;
 use rkyv::ser::writer::Buffer;
 use rkyv::{Archive, Deserialize, Serialize};
@@ -110,61 +109,29 @@ impl GameStateInner {
 
 #[pyclass(generic, module = "rlgym_learn._rlgym_learn.rocket_league", unsendable)]
 pub struct GameStatePythonSerde {
-    agent_id_serde: Option<Box<dyn PyAnySerde>>,
-    agent_id_serde_type: Option<PyAnySerdeType>,
+    agent_id_serde: Box<dyn PyAnySerde>,
+    agent_id_serde_type: PyAnySerdeType,
 }
 
 #[pymethods]
 impl GameStatePythonSerde {
+    // pickling
+    fn __reduce__<'py>(
+        &self,
+        py: Python<'py>,
+    ) -> PyResult<(Bound<'py, PyType>, Bound<'py, PyTuple>)> {
+        Ok((
+            GameStatePythonSerde::type_object(py),
+            PyTuple::new(py, [self.agent_id_serde_type.clone()])?,
+        ))
+    }
+
     #[new]
-    #[pyo3(signature = (*args, agent_id_serde_type=None))]
-    fn new<'py>(
-        args: Bound<'py, PyTuple>,
-        agent_id_serde_type: Option<PyAnySerdeType>,
-    ) -> PyResult<Self> {
-        let vec_args = args.iter().collect::<Vec<_>>();
-        if vec_args.len() > 1 {
-            return Err(PyValueError::new_err(format!(
-                "CarPythonSerde constructor takes 0 or 1 parameters, received {}",
-                args.as_any().repr()?.to_str()?
-            )));
-        }
-        if vec_args.len() == 1 && agent_id_serde_type.is_some() {
-            return Err(PyValueError::new_err(format!(
-                "CarPythonSerde constructor takes 0 or 1 parameters, received {} (from varargs) and {} (from agent_id_serde_type kwarg)",
-                args.as_any().repr()?.to_str()?, agent_id_serde_type.clone().unwrap().to_string()
-            )));
-        }
-        if vec_args.len() == 1 || agent_id_serde_type.is_some() {
-            let resolved_agent_id_serde_type;
-            if vec_args.len() == 1 {
-                resolved_agent_id_serde_type = vec_args[0].extract::<PyAnySerdeType>()?;
-            } else {
-                resolved_agent_id_serde_type = agent_id_serde_type.unwrap();
-            }
-            Ok(GameStatePythonSerde {
-                agent_id_serde: Some(resolved_agent_id_serde_type.clone().try_into()?),
-                agent_id_serde_type: Some(resolved_agent_id_serde_type),
-            })
-        } else {
-            Ok(GameStatePythonSerde {
-                agent_id_serde: None,
-                agent_id_serde_type: None,
-            })
-        }
-    }
-
-    fn __getstate__(&self) -> PyResult<Vec<u8>> {
-        PickleablePyAnySerdeType(Some(self.agent_id_serde_type.clone())).__getstate__()
-    }
-
-    fn __setstate__(&mut self, state: Vec<u8>) -> PyResult<()> {
-        let mut pickleable_pyany_serde_type = PickleablePyAnySerdeType(None);
-        pickleable_pyany_serde_type.__setstate__(state)?;
-        let agent_id_serde_type = pickleable_pyany_serde_type.0.unwrap().unwrap();
-        self.agent_id_serde = Some(agent_id_serde_type.clone().try_into()?);
-        self.agent_id_serde_type = Some(agent_id_serde_type);
-        Ok(())
+    fn new<'py>(agent_id_serde_type: PyAnySerdeType) -> PyResult<Self> {
+        Ok(GameStatePythonSerde {
+            agent_id_serde: agent_id_serde_type.clone().try_into()?,
+            agent_id_serde_type: agent_id_serde_type,
+        })
     }
 
     fn append<'py>(
@@ -181,11 +148,12 @@ impl GameStatePythonSerde {
         // this is reserved for the length of the archived game state
         let n_bytes_offset = offset;
         offset += size_of::<usize>();
-        let agent_id_serde = self.agent_id_serde.as_mut().unwrap();
         for (agent_id, car) in obj.cars.iter() {
             let car = car.extract::<Car>()?;
-            offset = agent_id_serde.append(buf, offset, &agent_id)?;
-            offset = agent_id_serde.append_option(buf, offset, &car.bump_victim_id.as_ref())?;
+            offset = self.agent_id_serde.append(buf, offset, &agent_id)?;
+            offset =
+                self.agent_id_serde
+                    .append_option(buf, offset, &car.bump_victim_id.as_ref())?;
         }
         offset = offset
             + get_bytes_to_alignment::<ArchivedGameStateInner>(buf.as_ptr() as usize + offset);
@@ -218,11 +186,15 @@ impl GameStatePythonSerde {
         let n_bytes_idx = v.len();
         // this is reserved for the length of the archived game state
         append_usize_vec(&mut v, 0);
-        let agent_id_serde = self.agent_id_serde.as_mut().unwrap();
         for (agent_id, car) in obj.cars.iter() {
             let car = car.extract::<Car>()?;
-            agent_id_serde.append_vec(&mut v, start_addr, &agent_id)?;
-            agent_id_serde.append_option_vec(&mut v, start_addr, &car.bump_victim_id.as_ref())?;
+            self.agent_id_serde
+                .append_vec(&mut v, start_addr, &agent_id)?;
+            self.agent_id_serde.append_option_vec(
+                &mut v,
+                start_addr,
+                &car.bump_victim_id.as_ref(),
+            )?;
         }
         let Some(start_addr) = start_addr else {
             Err(InvalidStateError::new_err(
@@ -265,13 +237,12 @@ impl GameStatePythonSerde {
         (n_bytes, offset) = retrieve_usize(buf, offset)?;
         let mut agent_ids = Vec::with_capacity(n_agents);
         let mut bump_victim_ids = Vec::with_capacity(n_agents);
-        let agent_id_serde = self.agent_id_serde.as_mut().unwrap();
         for _ in 0..n_agents {
             let agent_id;
-            (agent_id, offset) = agent_id_serde.retrieve(py, buf, offset)?;
+            (agent_id, offset) = self.agent_id_serde.retrieve(py, buf, offset)?;
             agent_ids.push(agent_id);
             let bump_victim_id;
-            (bump_victim_id, offset) = agent_id_serde.retrieve_option(py, buf, offset)?;
+            (bump_victim_id, offset) = self.agent_id_serde.retrieve_option(py, buf, offset)?;
             bump_victim_ids.push(bump_victim_id);
         }
         let start = offset
