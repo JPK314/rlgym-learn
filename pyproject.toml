@@ -39,4 +39,5 @@ features = ["rl"]
 reportExplicitAny = false
 reportAny = false
 reportMissingTypeStubs = false
+reportMissingModuleSource = false
 pythonVersion = "3.10"

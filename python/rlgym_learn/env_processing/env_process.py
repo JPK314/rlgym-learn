@@ -31,7 +31,7 @@ from ..basic_config import SerdeTypesModel
 
 
 def env_process(
-    proc_id: str,
+    proc_id: int,
     parent_sockname: socket._RetAddress,  # pyright: ignore [reportPrivateUsage]
     build_env_fn: Callable[
         [],

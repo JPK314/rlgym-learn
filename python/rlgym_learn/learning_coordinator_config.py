@@ -69,7 +69,6 @@ class LearningCoordinatorConfigModel(
                     StateType,
                     ObsSpaceType,
                     ActionSpaceType,
-                    Any,
                 ],
             ]
             | None
@@ -120,7 +119,6 @@ class LearningCoordinatorConfigModel(
                     StateType,
                     ObsSpaceType,
                     ActionSpaceType,
-                    Any,
                 ],
             ]
             | None

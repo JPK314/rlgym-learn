@@ -5,7 +5,6 @@ mod agent_manager;
 mod env_action;
 mod env_process;
 mod env_process_interface;
-mod misc;
 mod synchronization;
 mod timestep;
 

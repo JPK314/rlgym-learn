@@ -1,43 +1,41 @@
 use std::collections::HashMap;
+use std::mem;
 
-use itertools::Itertools;
+use itertools::{izip, Itertools};
 use pyo3::exceptions::PyAssertionError;
 use pyo3::types::{PyDict, PyList};
-use pyo3::IntoPyObjectExt;
 use pyo3::{intern, prelude::*};
 
 use crate::env_action::{EnvAction, EnvActionResponse};
-use crate::misc::{tensor_slice_1d, torch_empty};
 
 fn get_actions<'py>(
     agent_controller: &Bound<'py, PyAny>,
-    agent_id_list: &Vec<&Py<PyAny>>,
-    obs_list: &Vec<&Py<PyAny>>,
-) -> PyResult<(Vec<Option<Bound<'py, PyAny>>>, Bound<'py, PyAny>)> {
+    env_obs_data_dict: &HashMap<u128, (Vec<Bound<'py, PyAny>>, Vec<Bound<'py, PyAny>>)>,
+) -> PyResult<HashMap<u128, Bound<'py, PyAny>>> {
     Ok(agent_controller
         .call_method1(
             intern!(agent_controller.py(), "get_actions"),
-            (agent_id_list, obs_list),
+            (env_obs_data_dict,),
         )?
         .extract()?)
 }
 
 fn choose_agents<'py>(
     agent_controller: &Bound<'py, PyAny>,
-    agent_id_list: &Vec<Py<PyAny>>,
-) -> PyResult<Vec<usize>> {
+    env_agent_id_dict: &HashMap<u128, &Vec<Bound<'py, PyAny>>>,
+) -> PyResult<Option<HashMap<u128, Vec<usize>>>> {
     Ok(agent_controller
         .call_method1(
             intern!(agent_controller.py(), "choose_agents"),
-            (agent_id_list,),
+            (env_agent_id_dict,),
         )?
         .extract()?)
 }
 
 fn choose_env_actions<'py>(
     agent_controller: &Bound<'py, PyAny>,
-    state_info: &HashMap<String, Py<PyAny>>,
-) -> PyResult<HashMap<String, Bound<'py, PyAny>>> {
+    state_info: &HashMap<u128, Bound<'py, PyAny>>,
+) -> PyResult<HashMap<u128, Bound<'py, PyAny>>> {
     Ok(agent_controller
         .call_method1(
             intern!(agent_controller.py(), "choose_env_actions"),
@@ -57,250 +55,248 @@ fn process_env_actions<'py>(
     Ok(())
 }
 
-enum ActionAssociatedLearningData<'py> {
-    BatchedTensor(Bound<'py, PyAny>),
-    List(Vec<Option<Bound<'py, PyAny>>>),
-}
-
 #[pyclass(generic, module = "rlgym_learn._rlgym_learn")]
 pub struct AgentManager {
     agent_controllers: Vec<Py<PyAny>>,
-    batched_tensor_action_associated_learning_data: bool,
 }
 
 impl AgentManager {
     fn get_actions<'py>(
         &self,
         py: Python<'py>,
-        agent_id_list: Vec<Py<PyAny>>,
-        obs_list: Vec<Py<PyAny>>,
-    ) -> PyResult<(
-        Vec<Option<Bound<'py, PyAny>>>,
-        ActionAssociatedLearningData<'py>,
-    )> {
-        let obs_len = obs_list.len();
-        let mut obs_list_idx_has_action_map = vec![false; obs_len];
-        let mut action_list = vec![None; obs_len];
-
-        let mut new_agent_id_list = agent_id_list;
-        let mut new_obs_list = obs_list;
-        let mut new_obs_list_idx_has_action_map = obs_list_idx_has_action_map.clone();
+        env_obs_data_dict: HashMap<u128, (Vec<Bound<'py, PyAny>>, Vec<Bound<'py, PyAny>>)>,
+    ) -> PyResult<HashMap<u128, Vec<Option<Bound<'py, PyAny>>>>> {
+        let n_envs = env_obs_data_dict.len();
+        let mut agent_controllers_env_actions_dict = env_obs_data_dict
+            .iter()
+            .map(|(&k, v)| (k, vec![None; v.0.len()]))
+            .collect::<HashMap<_, _>>();
+        let mut remaining_env_obs_data_idx_dict = env_obs_data_dict
+            .into_iter()
+            .map(|(k, v)| {
+                let len = v.0.len();
+                (k, (v.0, v.1, (0..len).collect_vec()))
+            })
+            .collect::<HashMap<_, _>>();
+        let mut agent_controllers_env_orig_indices_dict_list =
+            Vec::with_capacity(self.agent_controllers.len());
+        let mut agent_controllers_env_actions_dict_list =
+            Vec::with_capacity(self.agent_controllers.len());
+        let mut agent_controller_env_obs_data_dict = HashMap::with_capacity(n_envs);
         let mut first_agent_controller = true;
-        let mut action_associated_learning_data_option = None;
-        // Agent controllers have priority based on their position in the list
-        for py_agent_controller in self.agent_controllers.iter() {
-            let relevant_action_map_indices: Vec<usize>;
-            if first_agent_controller {
-                relevant_action_map_indices = (0..obs_list_idx_has_action_map.len()).collect();
-            } else {
-                relevant_action_map_indices = obs_list_idx_has_action_map
-                    .iter()
-                    .enumerate()
-                    .filter(|(_, &v)| !v)
-                    .map(|(idx, _)| idx)
-                    .collect();
-                new_agent_id_list = new_agent_id_list
-                    .drain(..)
-                    .enumerate()
-                    .filter(|(idx, _)| !new_obs_list_idx_has_action_map[*idx])
-                    .map(|(_, v)| v)
-                    .collect();
-                new_obs_list = new_obs_list
-                    .drain(..)
-                    .enumerate()
-                    .filter(|(idx, _)| !new_obs_list_idx_has_action_map[*idx])
-                    .map(|(_, v)| v)
-                    .collect();
-                new_obs_list_idx_has_action_map.resize(new_obs_list.len(), false);
-                for v in &mut new_obs_list_idx_has_action_map {
-                    *v = false;
-                }
-            }
 
+        // Agent controllers have priority based on their position in the list
+        let mut all_done = false;
+        for py_agent_controller in self.agent_controllers.iter() {
             let agent_controller = py_agent_controller.bind(py);
-            let agent_controller_indices = choose_agents(agent_controller, &new_agent_id_list)?;
-            let agent_controller_agent_id_list: Vec<&Py<PyAny>> = agent_controller_indices
-                .iter()
-                .map(|&idx| new_agent_id_list.get(idx).unwrap())
-                .collect();
-            let agent_controller_obs_list: Vec<&Py<PyAny>> = agent_controller_indices
-                .iter()
-                .map(|&idx| new_obs_list.get(idx).unwrap())
-                .collect();
-            let (agent_controller_action_list, agent_controller_aald) = get_actions(
-                &agent_controller,
-                &agent_controller_agent_id_list,
-                &agent_controller_obs_list,
+            let env_indices_dict_option = choose_agents(
+                agent_controller,
+                &remaining_env_obs_data_idx_dict
+                    .iter()
+                    .map(|(&k, v)| (k, &v.0))
+                    .collect::<HashMap<u128, &Vec<Bound<'py, PyAny>>>>(),
             )?;
-            if first_agent_controller {
-                if agent_controller_indices.len() == new_obs_list.len() {
-                    action_list = agent_controller_action_list;
-                    if self.batched_tensor_action_associated_learning_data {
-                        // TODO: to cpu? this seems like it should be configurable
-                        let agent_controller_aald = agent_controller_aald
-                            .call_method1(intern!(py, "to"), (intern!(py, "cpu"),))?;
-                        action_associated_learning_data_option = Some(
-                            ActionAssociatedLearningData::BatchedTensor(agent_controller_aald),
-                        );
-                    } else {
-                        action_associated_learning_data_option = Some(
-                            ActionAssociatedLearningData::List(agent_controller_aald.extract()?),
-                        )
-                    }
-                    break;
-                } else {
-                    if self.batched_tensor_action_associated_learning_data {
-                        let mut shape = agent_controller_aald
-                            .getattr(intern!(py, "shape"))?
-                            .extract::<Vec<i64>>()?;
-                        shape[0] = obs_len as i64;
-                        action_associated_learning_data_option =
-                            Some(ActionAssociatedLearningData::BatchedTensor(torch_empty(
-                                &shape.into_pyobject(py)?,
-                                &agent_controller_aald.getattr(intern!(py, "dtype"))?,
-                            )?));
-                    } else {
-                        // TODO: what? Am I ignoring something here that I shouldn't be?
-                        action_associated_learning_data_option =
-                            Some(ActionAssociatedLearningData::List(vec![None; obs_len]))
-                    }
+            let mut env_orig_indices_dict = HashMap::with_capacity(n_envs);
+
+            let Some(env_indices_dict) = env_indices_dict_option else {
+                // fastest path - the agent controller wants everything that's left
+                for (env_id, (agent_id_list, obs_list, idx_list)) in
+                    remaining_env_obs_data_idx_dict.into_iter()
+                {
+                    agent_controller_env_obs_data_dict.insert(env_id, (agent_id_list, obs_list));
+                    env_orig_indices_dict.insert(env_id, idx_list);
                 }
-            }
-            let relevant_obs_list_idxs = agent_controller_indices
-                .iter()
-                .map(|idx| relevant_action_map_indices[*idx])
-                .collect::<Vec<_>>();
-            match action_associated_learning_data_option.as_mut().unwrap() {
-                ActionAssociatedLearningData::BatchedTensor(tensor) => {
-                    tensor.call_method1(
-                        intern!(py, "__setitem__"),
-                        (relevant_obs_list_idxs, agent_controller_aald),
-                    )?;
+                let env_actions_dict =
+                    get_actions(&agent_controller, &agent_controller_env_obs_data_dict)?;
+
+                if first_agent_controller {
+                    return Ok(env_actions_dict
+                        .into_iter()
+                        .map(|(k, v)| Ok((k, v.extract::<Vec<Option<Bound<'py, PyAny>>>>()?)))
+                        .collect::<PyResult<HashMap<_, _>>>()?);
                 }
-                ActionAssociatedLearningData::List(list) => {
-                    let agent_controller_aald_list = agent_controller_aald.extract::<Vec<_>>()?;
-                    for (idx, aald) in agent_controller_aald_list.into_iter().enumerate() {
-                        list[relevant_obs_list_idxs[idx]] = aald;
-                    }
-                }
-            }
-            for (&idx, action) in agent_controller_indices
-                .iter()
-                .zip(agent_controller_action_list)
+                agent_controllers_env_actions_dict_list.push(env_actions_dict);
+                agent_controllers_env_orig_indices_dict_list.push(env_orig_indices_dict);
+                all_done = true;
+                break;
+            };
+
+            // Split out items to be processed by this agent controller, leaving just the items to be processed by the remaining agent controllers
+            let mut done = true;
+            for (&env_id, (agent_id_list, obs_list, idx_list)) in
+                &mut remaining_env_obs_data_idx_dict
             {
-                obs_list_idx_has_action_map[relevant_action_map_indices[idx]] = true;
-                new_obs_list_idx_has_action_map[idx] = true;
-                action_list[relevant_action_map_indices[idx]] = action;
+                let Some(indices) = env_indices_dict.get(&env_id) else {
+                    done |= agent_id_list.is_empty();
+                    continue;
+                };
+
+                let len = agent_id_list.len();
+                let indices_len = indices.len();
+
+                // fast path - all indices were chosen for this env
+                if indices_len == len {
+                    agent_controller_env_obs_data_dict
+                        .insert(env_id, (mem::take(agent_id_list), mem::take(obs_list)));
+                    env_orig_indices_dict.insert(env_id, mem::take(idx_list));
+                    continue;
+                }
+                done = false;
+
+                let mut remaining_agent_id_list = Vec::with_capacity(len - indices_len);
+                let mut remaining_obs_list = Vec::with_capacity(len - indices_len);
+                let mut remaining_idx_list = Vec::with_capacity(len - indices_len);
+
+                let mut removed_agent_id_list = Vec::with_capacity(indices_len);
+                let mut removed_obs_list = Vec::with_capacity(indices_len);
+                let mut removed_idx_list = Vec::with_capacity(indices_len);
+
+                let mut idx3 = 0;
+                for (idx2, (agent_id, obs, idx)) in izip!(
+                    agent_id_list.drain(..),
+                    obs_list.drain(..),
+                    idx_list.drain(..)
+                )
+                .enumerate()
+                {
+                    if idx3 < indices_len && indices[idx3] == idx2 {
+                        removed_agent_id_list.push(agent_id);
+                        removed_obs_list.push(obs);
+                        removed_idx_list.push(idx);
+                        idx3 += 1;
+                    } else {
+                        remaining_agent_id_list.push(agent_id);
+                        remaining_obs_list.push(obs);
+                        remaining_idx_list.push(idx);
+                    }
+                }
+
+                *agent_id_list = remaining_agent_id_list;
+                *obs_list = remaining_obs_list;
+                *idx_list = remaining_idx_list;
+
+                agent_controller_env_obs_data_dict
+                    .insert(env_id, (removed_agent_id_list, removed_obs_list));
+                env_orig_indices_dict.insert(env_id, removed_idx_list);
             }
-            if obs_list_idx_has_action_map.iter().all(|&x| x) {
+            let env_actions_dict =
+                get_actions(&agent_controller, &agent_controller_env_obs_data_dict)?;
+
+            if first_agent_controller && done {
+                return Ok(env_actions_dict
+                    .into_iter()
+                    .map(|(k, v)| Ok((k, v.extract::<Vec<Option<Bound<'py, PyAny>>>>()?)))
+                    .collect::<PyResult<HashMap<_, _>>>()?);
+            }
+            agent_controller_env_obs_data_dict.clear();
+            agent_controllers_env_actions_dict_list.push(env_actions_dict);
+            agent_controllers_env_orig_indices_dict_list.push(env_orig_indices_dict);
+            if done {
+                all_done = true;
                 break;
             }
             first_agent_controller = false;
         }
 
-        Ok((action_list, action_associated_learning_data_option.unwrap()))
+        if !all_done {
+            return Err(PyAssertionError::new_err(
+                "Some environments for which the step action was chosen did not have actions chosen by any agent controller",
+            ));
+        }
+
+        // Recombine results into a single dict
+        for (env_actions_dict, mut env_orig_indices_dict) in izip!(
+            agent_controllers_env_actions_dict_list,
+            agent_controllers_env_orig_indices_dict_list
+        ) {
+            for (env_id, batch_action) in env_actions_dict.into_iter() {
+                let actions = batch_action.extract::<Vec<Bound<'py, PyAny>>>()?;
+                let agent_controllers_env_actions =
+                    agent_controllers_env_actions_dict.get_mut(&env_id).unwrap();
+                let orig_indices_dict = env_orig_indices_dict.remove(&env_id).unwrap();
+                for (action, idx) in actions.into_iter().zip(orig_indices_dict.into_iter()) {
+                    agent_controllers_env_actions[idx] = Some(action);
+                }
+            }
+        }
+
+        Ok(agent_controllers_env_actions_dict)
     }
 }
 
 #[pymethods]
 impl AgentManager {
     #[new]
-    pub fn new(
-        agent_controllers: Vec<Py<PyAny>>,
-        batched_tensor_action_associated_learning_data: bool,
-    ) -> Self {
-        AgentManager {
-            agent_controllers,
-            batched_tensor_action_associated_learning_data,
-        }
+    pub fn new(agent_controllers: Vec<Py<PyAny>>) -> Self {
+        AgentManager { agent_controllers }
     }
 
-    pub fn get_env_actions(
+    pub fn get_env_actions<'py>(
         &self,
-        mut env_obs_data_dict: HashMap<String, (Vec<Py<PyAny>>, Vec<Py<PyAny>>)>,
-        state_info: HashMap<String, Py<PyAny>>,
+        py: Python<'py>,
+        mut env_obs_data_dict: HashMap<u128, (Vec<Bound<'py, PyAny>>, Vec<Bound<'py, PyAny>>)>,
+        state_info: HashMap<u128, Bound<'py, PyAny>>,
     ) -> PyResult<Py<PyDict>> {
-        Python::attach::<_, PyResult<Py<PyDict>>>(|py| {
-            // Get env action responses from agent controllers
-            let mut state_info = state_info;
-            let mut env_action_responses = HashMap::with_capacity(state_info.len());
-            for py_agent_controller in self.agent_controllers.iter() {
-                let agent_controller = py_agent_controller.bind(py);
-                let mut agent_controller_env_action_responses =
-                    choose_env_actions(agent_controller, &state_info)?;
-                agent_controller_env_action_responses.retain(|_, v| !v.is_none());
-                env_action_responses.extend(agent_controller_env_action_responses.drain());
-                state_info.retain(|env_id, _| !env_action_responses.contains_key(env_id));
-                if state_info.is_empty() {
-                    break;
-                }
+        // Get env action responses from agent controllers
+        let mut state_info = state_info;
+        let mut env_action_responses = HashMap::with_capacity(state_info.len());
+        for py_agent_controller in self.agent_controllers.iter() {
+            let agent_controller = py_agent_controller.bind(py);
+            let mut agent_controller_env_action_responses =
+                choose_env_actions(agent_controller, &state_info)?;
+            agent_controller_env_action_responses.retain(|_, v| !v.is_none());
+            env_action_responses.extend(agent_controller_env_action_responses.drain());
+            state_info.retain(|env_id, _| !env_action_responses.contains_key(env_id));
+            if state_info.is_empty() {
+                break;
             }
-            if !state_info.is_empty() {
-                return Err(PyAssertionError::new_err(
-                    "Some environments did not have env actions chosen by any agent controller",
-                ));
-            }
+        }
+        if !state_info.is_empty() {
+            return Err(PyAssertionError::new_err(
+                "Some environments did not have env actions chosen by any agent controller",
+            ));
+        }
 
-            // Inform agent controllers about env actions that will be used based on env action responses
-            let env_action_responses_pydict = PyDict::from_sequence(
-                &env_action_responses
-                    .iter()
-                    .collect::<Vec<_>>()
-                    .into_pyobject(py)?,
-            )?;
-            for py_agent_controller in self.agent_controllers.iter() {
-                let agent_controller = py_agent_controller.bind(py);
-                process_env_actions(agent_controller, &env_action_responses_pydict)?;
-            }
+        // Inform agent controllers about env actions that will be used based on env action responses
+        let env_action_responses_pydict = PyDict::from_sequence(
+            &env_action_responses
+                .iter()
+                .collect::<Vec<_>>()
+                .into_pyobject(py)?,
+        )?;
+        for py_agent_controller in self.agent_controllers.iter() {
+            let agent_controller = py_agent_controller.bind(py);
+            process_env_actions(agent_controller, &env_action_responses_pydict)?;
+        }
 
-            // Derive env actions using the env action responses
-            let mut env_actions = Vec::with_capacity(env_obs_data_dict.len());
-            let mut env_agent_id_list_list = Vec::with_capacity(env_obs_data_dict.len());
-            let mut env_obs_list_list = Vec::with_capacity(env_obs_data_dict.len());
-            let mut env_id_list_range_list = Vec::with_capacity(env_obs_data_dict.len());
-            let mut total_len = 0;
-            let mut should_get_actions = false;
-            for (env_id, env_action_response) in env_action_responses.into_iter() {
-                match env_action_response.extract::<EnvActionResponse>()? {
-                    EnvActionResponse::STEP {
-                        shared_info_setter,
-                        send_state,
-                    } => {
-                        should_get_actions = true;
-                        let Some((env_agent_id_list, env_obs_list)) =
-                            env_obs_data_dict.remove(&env_id)
-                        else {
-                            return Err(PyAssertionError::new_err(
-                                "state_info contains env ids not present in env_obs_kv_list_dict",
-                            ));
-                        };
-                        env_id_list_range_list.push((
-                            env_id,
-                            shared_info_setter,
-                            send_state,
-                            total_len,
-                            total_len + env_agent_id_list.len(),
-                        ));
-                        total_len += env_agent_id_list.len();
-                        env_agent_id_list_list.push(env_agent_id_list);
-                        env_obs_list_list.push(env_obs_list);
-                    }
-                    EnvActionResponse::RESET {
-                        shared_info_setter,
-                        send_state,
-                    } => env_actions.push((
+        // Derive env actions using the env action responses
+        let n_envs = env_obs_data_dict.len();
+        let mut env_actions = Vec::with_capacity(n_envs);
+        let mut step_env_action_responses = HashMap::with_capacity(n_envs);
+        let mut should_get_actions = false;
+        for (env_id, env_action_response) in env_action_responses.into_iter() {
+            match env_action_response.extract::<EnvActionResponse>()? {
+                EnvActionResponse::RESET {
+                    shared_info_setter,
+                    send_state,
+                } => {
+                    env_obs_data_dict.remove(&env_id);
+                    env_actions.push((
                         env_id,
                         EnvAction::RESET {
                             shared_info_setter_option: shared_info_setter,
                             send_state,
                         },
-                    )),
-                    EnvActionResponse::SET_STATE {
-                        desired_state,
-                        shared_info_setter,
-                        send_state,
-                        prev_timestep_id_dict,
-                    } => env_actions.push((
+                    ))
+                }
+                EnvActionResponse::SET_STATE {
+                    desired_state,
+                    shared_info_setter,
+                    send_state,
+                    prev_timestep_id_dict,
+                } => {
+                    env_obs_data_dict.remove(&env_id);
+                    env_actions.push((
                         env_id,
                         EnvAction::SET_STATE {
                             desired_state,
@@ -308,37 +304,35 @@ impl AgentManager {
                             send_state,
                             prev_timestep_id_dict_option: prev_timestep_id_dict,
                         },
-                    )),
-                };
-            }
-            if should_get_actions {
-                let agent_id_list = env_agent_id_list_list.into_iter().flatten().collect_vec();
-                let obs_list = env_obs_list_list.into_iter().flatten().collect_vec();
-                let (action_list, action_associated_learning_data) =
-                    self.get_actions(py, agent_id_list, obs_list)?;
-                for (env_id, shared_info_setter_option, send_state, start, stop) in
-                    env_id_list_range_list.into_iter()
-                {
-                    env_actions.push((
-                        env_id,
-                        EnvAction::STEP {
-                            shared_info_setter_option,
-                            send_state,
-                            action_list: PyList::new(py, &action_list[start..stop])?.unbind(),
-                            action_associated_learning_data: match &action_associated_learning_data
-                            {
-                                ActionAssociatedLearningData::BatchedTensor(tensor) => {
-                                    tensor_slice_1d(py, &tensor, start, stop)?.unbind()
-                                }
-                                ActionAssociatedLearningData::List(list) => {
-                                    list[start..stop].into_py_any(py)?
-                                }
-                            },
-                        },
                     ))
                 }
+                step_response => {
+                    should_get_actions = true;
+                    step_env_action_responses.insert(env_id, step_response);
+                }
+            };
+        }
+        if should_get_actions {
+            let mut env_actions_dict = self.get_actions(py, env_obs_data_dict)?;
+            for (env_id, step_response) in step_env_action_responses.into_iter() {
+                let EnvActionResponse::STEP {
+                    shared_info_setter,
+                    send_state,
+                } = step_response
+                else {
+                    unreachable!();
+                };
+                let actions = env_actions_dict.remove(&env_id).unwrap();
+                env_actions.push((
+                    env_id,
+                    EnvAction::STEP {
+                        shared_info_setter_option: shared_info_setter,
+                        send_state,
+                        action_list: PyList::new(py, actions)?.unbind(),
+                    },
+                ))
             }
-            Ok(PyDict::from_sequence(&env_actions.into_pyobject(py)?)?.unbind())
-        })
+        }
+        Ok(PyDict::from_sequence(&env_actions.into_pyobject(py)?)?.unbind())
     }
 }

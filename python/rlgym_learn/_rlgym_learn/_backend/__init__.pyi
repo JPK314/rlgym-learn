@@ -5,7 +5,7 @@ from __future__ import annotations
 import datetime
 from collections.abc import Mapping, Sequence
 from socket import socket
-from typing import TYPE_CHECKING, Any, Generic, TypeAlias, TypeVar, final
+from typing import TYPE_CHECKING, Any, Generic, TypeVar, final
 
 from rlgym.api import (
     ActionSpaceType,
@@ -36,8 +36,6 @@ __all__ = [
 AgentIDInner = TypeVar("AgentIDInner")
 StateTypeInner = TypeVar("StateTypeInner")
 
-ActionAssociatedLearningData: TypeAlias = Any
-
 @final
 class AgentManager(
     Generic[
@@ -62,10 +60,8 @@ class AgentManager(
                 StateType,
                 ObsSpaceType,
                 ActionSpaceType,
-                Any,
             ],
         ],
-        batched_tensor_action_associated_learning_data: bool,
     ) -> AgentManager[
         AgentID,
         ObsType,
@@ -78,14 +74,14 @@ class AgentManager(
     def get_env_actions(
         self,
         env_obs_data_dict: Mapping[
-            str,
+            int,
             tuple[
                 Sequence[AgentID],
                 Sequence[ObsType],
             ],
         ],
         state_info: Mapping[
-            str,
+            int,
             tuple[
                 Mapping[str, Any] | None,
                 StateType | None,
@@ -93,7 +89,7 @@ class AgentManager(
                 Mapping[AgentID, bool] | None,
             ],
         ],
-    ) -> dict[str, EnvAction]: ...
+    ) -> dict[int, EnvAction]: ...
 
 @final
 class EnvProcessInterface(
@@ -134,9 +130,9 @@ class EnvProcessInterface(
     ]: ...
     def init_processes(
         self,
-        proc_package_defs: Sequence[tuple[Any, Any, Any, str]],
+        proc_package_defs: Sequence[tuple[Any, Any, Any, int]],
     ) -> tuple[Any, Any]: ...
-    def add_process(self, proc_package_def: tuple[Any, Any, Any, str]) -> None: ...
+    def add_process(self, proc_package_def: tuple[Any, Any, Any, int]) -> None: ...
     def delete_process(self) -> None: ...
     def increase_min_process_steps_per_inference(self) -> int: ...
     def decrease_min_process_steps_per_inference(self) -> int: ...
@@ -145,18 +141,17 @@ class EnvProcessInterface(
         self,
     ) -> tuple[
         int,
-        dict[str, tuple[list[AgentID], list[ObsType]]],
+        dict[int, tuple[list[AgentID], list[ObsType]]],
         dict[
-            str,
+            int,
             tuple[
                 list[Timestep[AgentID, ObsType, ActionType, RewardType]],
-                ActionAssociatedLearningData | None,
                 dict[str, Any] | None,
                 StateType | None,
             ],
         ],
         dict[
-            str,
+            int,
             tuple[
                 dict[str, Any] | None,
                 StateType | None,
@@ -165,10 +160,10 @@ class EnvProcessInterface(
             ],
         ],
     ]: ...
-    def send_env_actions(self, env_actions: Mapping[str, EnvAction]) -> None: ...
+    def send_env_actions(self, env_actions: Mapping[int, EnvAction]) -> None: ...
 
 def env_process_fn(
-    proc_id: str,
+    proc_id: int,
     child_end: Any,
     parent_sockname: Any,
     build_env_fn: Any,

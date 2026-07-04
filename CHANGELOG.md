@@ -23,5 +23,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The rust `env_process` function has been renamed to `env_process_fn` and is re-exported as `rust_env_process_fn`
 - Order of `obs_serde` and `action_serde` has been swapped in the rust `env_process_fn` and the `RustEnvProcessInterface`'s constructor
 - Fixed bug with adding process causing rust and python sides of `EnvProcessInterface` to get out of sync
+- pypany_serde updated to 0.6.1 - in particular, this means Pickleable* no longer exist, and instead the base types PyAnySerdeType, NumpySerdeConfig, and InitStrategy are now pickleable directly. This update also improves pydantic integration, particularly for getting json schemas.
+- The `choose_agents` and `get_action` methods for `AgentController` has been updated to include information about which environment each agent id / obs is coming from.
+- The `choose_agents` method can now optionally return `None`, indicating that the agent controller wants to submit actions for every agent_id in every environment it can.
+- env_id is now a u128 (int) instead of a string. This affects the type signatures of multiple methods in the `AgentController` class as well as multiple places in the backend (such as the `EnvProcessInterface` class methods and the `env_process` function).
 
 ### Removed
+
+- action associated learning data is no longer managed by rlgym-learn. It is expected that `AgentController` implementations store this data for themselves.

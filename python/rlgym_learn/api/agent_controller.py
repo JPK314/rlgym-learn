@@ -1,6 +1,6 @@
 # pyright: reportUnusedParameter=false
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any, Generic
 
@@ -16,10 +16,7 @@ from rlgym.api import (
 
 from .._rlgym_learn import EnvActionResponse, Timestep
 from ..basic_config import BaseConfigModel, ProcessConfigModel
-from .typing import (
-    ActionAssociatedLearningData,
-    AgentControllerConfig,
-)
+from .typing import AgentControllerConfig
 
 
 @dataclass
@@ -60,7 +57,6 @@ class AgentController(
         StateType,
         ObsSpaceType,
         ActionSpaceType,
-        ActionAssociatedLearningData,
     ]
 ):
     @property
@@ -70,38 +66,35 @@ class AgentController(
         """
         return None
 
-    def choose_agents(self, agent_id_list: list[AgentID]) -> list[int]:
+    def choose_agents(
+        self, agent_ids: dict[int, list[AgentID]]
+    ) -> dict[int, list[int]] | None:
         """
         Function to determine which agent ids (and their associated observations) this agent controller
         will return the actions (and their associated log probs) for.
-        :param agent_id_list: List of AgentIDs available to decide actions for
-        :return: list of indices from the agent_id_list which will be used to call get_actions for this agent_controller. If the last agent controller fails to select all agent ids,
+        :param agent_ids: Dict with env_ids as keys and list of the agent ids available to choose from as values.
+        :return: For each env_id, a sorted list of indices from the associated list of agent ids which will be used to call get_actions for this agent_controller. If the last agent controller fails to select all agent ids,
         meaning none of the agent controllers chose at least one agent id, an exception is thrown.
         """
-        return []
+        return {}
 
     def get_actions(
         self,
-        agent_id_list: list[AgentID],
-        obs_list: list[ObsType],
-    ) -> tuple[Iterable[ActionType], ActionAssociatedLearningData]:
+        env_obs_data_dict: dict[int, tuple[list[AgentID], list[ObsType]]],
+    ) -> Mapping[int, Iterable[ActionType]]:
         """
-        Function to get an action and the log of its probability from the policy given an observation.
-        :param agent_id_list: List of AgentIDs for which to produce actions. AgentIDs may not be unique here. Parallel with obs_list.
-        :param obs_list: List of ObsTypes for which to produce actions. Parallel with agent_id_list.
-        :return: Tuple of a list of chosen actions and action associated learning data.
-
-        If base_config.batched_tensor_action_associated_learning_data is true, the action associated learning data should be a tensor with the first dimension parallel with the action list. Otherwise, the action associated learning data should be a list parallel with the action list.
+        Function to get actions for agents based on agent ids and observations.
+        :param env_obs_data_dict: Dict with env_ids as keys and, for each env_id, a tuple of parallel lists of AgentIDs and ObsTypes for each agent that needs an action from this agent controller.
+        :return: For each env_id in env_obs_data_dict, an iterable parallel with the AgentID and ObsType lists containing the ActionType chosen for each agent.
         """
         raise NotImplementedError
 
     def process_timestep_data(
         self,
         timestep_data: dict[
-            str,
+            int,
             tuple[
                 list[Timestep[AgentID, ObsType, ActionType, RewardType]],
-                ActionAssociatedLearningData | None,
                 dict[str, Any] | None,
                 StateType | None,
             ],
@@ -112,8 +105,6 @@ class AgentController(
         :param timestep_data: Dictionary with environment ids as keys and tuples of:
 
         timesteps from the environment (the order of agent ids in this list is fixed until a reset or set_state env action is taken),
-
-        action associated learning data (parallel to the timestep list, and None if no timesteps exist for the environment),
 
         shared info for the environment (if shared_info_serde_type is non-None),
 
@@ -126,7 +117,7 @@ class AgentController(
     def choose_env_actions(
         self,
         state_info: dict[
-            str,
+            int,
             tuple[
                 dict[str, Any] | None,
                 StateType | None,
@@ -134,7 +125,7 @@ class AgentController(
                 dict[AgentID, bool] | None,
             ],
         ],
-    ) -> dict[str, EnvActionResponse[AgentID, StateType] | None]:
+    ) -> dict[int, EnvActionResponse[AgentID, StateType] | None]:
         """
         Function to choose EnvActionResponse per environment based on environment information. Called after process_timestep_data.
         :param state_info: Dictionary with environment ids as keys and tuples of shared info (if shared_info_serde_type is non-None), StateType (if EnvActionResponse from previous call(s) to choose_env_actions set send_state=True), the present terminated dict for the env (None if env was just reset), and the present truncated dict for the env (None if env was just reset).
@@ -146,7 +137,7 @@ class AgentController(
         return {}
 
     def process_env_actions(
-        self, env_actions: dict[str, EnvActionResponse[AgentID, StateType]]
+        self, env_actions: dict[int, EnvActionResponse[AgentID, StateType]]
     ):
         """
         Function to process the env actions that will be used by environments.

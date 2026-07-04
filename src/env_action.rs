@@ -3,7 +3,6 @@ use pyo3::{
     exceptions::asyncio::InvalidStateError,
     prelude::*,
     types::{PyGenericAlias, PyList, PyType},
-    IntoPyObjectExt,
 };
 
 use pyany_serde::{
@@ -106,7 +105,6 @@ pub enum EnvAction {
         shared_info_setter_option: Option<Py<PyAny>>,
         send_state: bool,
         action_list: Py<PyList>,
-        action_associated_learning_data: Py<PyAny>,
     },
     RESET {
         shared_info_setter_option: Option<Py<PyAny>>,
@@ -247,8 +245,6 @@ pub fn retrieve_env_action<'py>(
                     shared_info_setter_option: shared_info_setter_option.map(|v| v.unbind()),
                     send_state,
                     action_list: pyo3::types::PyList::new(py, action_list)?.unbind(),
-                    action_associated_learning_data: pyo3::types::PyNone::get(py)
-                        .into_py_any(py)?,
                 },
                 offset,
             ))
