@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import multiprocessing as mp
 import os
+import random
 import socket
 import time
 import traceback
 from collections.abc import Callable
 from multiprocessing.context import DefaultContext, Process
 from typing import Any, Generic, cast
-from uuid import uuid4
 
 from rlgym.api import (
     ActionSpaceType,
@@ -28,12 +28,11 @@ from .._rlgym_learn import (
 )
 from .._rlgym_learn._backend import EnvProcessInterface as RustEnvProcessInterface
 from .._rlgym_learn._backend import recvfrom_byte, sendto_byte
-from ..api import ActionAssociatedLearningData
 from ..basic_config import SerdeTypesModel
 from .env_process import env_process
 
 try:
-    from tqdm import (  # pyright: ignore [reportMissingModuleSource]
+    from tqdm import (
         tqdm,  # pyright: ignore [reportAssignmentType]
     )
 except ImportError:
@@ -142,7 +141,7 @@ class EnvProcessInterface(
             min_process_steps_per_inference,
         )
 
-        self.processes: list[tuple[Process, socket.socket, socket.socket | None, str]]
+        self.processes: list[tuple[Process, socket.socket, socket.socket | None, int]]
 
     def init_processes(
         self,
@@ -172,7 +171,7 @@ class EnvProcessInterface(
         self.processes = []
         print("Spawning processes...")
         for proc_idx in tqdm(range(n_processes)):
-            proc_id = str(uuid4())
+            proc_id = random.getrandbits(128)
 
             render_this_proc = proc_idx == 0 and render
 
@@ -238,7 +237,7 @@ class EnvProcessInterface(
         context = cast(DefaultContext, mp.get_context(start_method))
 
         # Set up process
-        proc_id = str(uuid4())
+        proc_id = random.getrandbits(128)
         parent_end = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         parent_end.bind(("127.0.0.1", 0))
         process = context.Process(
@@ -304,7 +303,7 @@ class EnvProcessInterface(
             print("Unable to close parent connection")
             traceback.print_exc()
 
-    def send_env_actions(self, env_actions: dict[str, EnvAction]):
+    def send_env_actions(self, env_actions: dict[int, EnvAction]):
         """
         Send env actions to environment processes.
         """
@@ -314,18 +313,17 @@ class EnvProcessInterface(
         self,
     ) -> tuple[
         int,
-        dict[str, tuple[list[AgentID], list[ObsType]]],
+        dict[int, tuple[list[AgentID], list[ObsType]]],
         dict[
-            str,
+            int,
             tuple[
                 list[Timestep[AgentID, ObsType, ActionType, RewardType]],
-                ActionAssociatedLearningData | None,
                 dict[str, Any] | None,
                 StateType | None,
             ],
         ],
         dict[
-            str,
+            int,
             tuple[
                 dict[str, Any] | None,
                 StateType | None,

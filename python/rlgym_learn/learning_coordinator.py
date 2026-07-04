@@ -65,7 +65,6 @@ class LearningCoordinator(
                 StateType,
                 ObsSpaceType,
                 ActionSpaceType,
-                Any,
             ],
         ],
         config: LearningCoordinatorConfigModel[
@@ -114,7 +113,6 @@ class LearningCoordinator(
             ActionSpaceType,
         ] = AgentManager(
             agent_controllers,
-            self.config.base_config.batched_tensor_action_associated_learning_data,
         )
 
         self.cumulative_timesteps: int = 0

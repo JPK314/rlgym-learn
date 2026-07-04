@@ -16,6 +16,8 @@ from pydantic import GetCoreSchemaHandler
 from pydantic_core import CoreSchema
 from typing_extensions import override
 
+from ...pyany_serde.python_serde import PythonSerde
+
 if TYPE_CHECKING:
     import numpy as np
     from numpy.typing import NDArray

@@ -46,7 +46,7 @@ pub fn sendto_byte<'py>(socket: &Bound<'py, PyAny>, address: &Bound<'py, PyAny>)
     Ok(())
 }
 
-pub fn get_flink(flinks_folder: &str, proc_id: &str) -> String {
+pub fn get_flink(flinks_folder: &str, proc_id: u128) -> String {
     format!("{}/{}", flinks_folder, proc_id)
 }
 

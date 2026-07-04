@@ -52,14 +52,14 @@ class GameConfigPythonSerde(PythonSerde[GameConfig]):
     @override
     def append(
         self,
-        buf: bytes,
+        buf: memoryview,
         offset: int,
         obj: GameConfig,
     ) -> int: ...
     @override
     def get_bytes(self, start_addr: int | None, obj: GameConfig) -> bytes: ...
     @override
-    def retrieve(self, buf: bytes, offset: int) -> tuple[GameConfig, int]: ...
+    def retrieve(self, buf: memoryview, offset: int) -> tuple[GameConfig, int]: ...
 
 @final
 class GameStatePythonSerde(PythonSerde[GameState[AgentID]], Generic[AgentID]):
@@ -71,7 +71,7 @@ class GameStatePythonSerde(PythonSerde[GameState[AgentID]], Generic[AgentID]):
     @override
     def append(
         self,
-        buf: bytes,
+        buf: memoryview,
         offset: int,
         obj: GameState[AgentID],
     ) -> int: ...
@@ -82,7 +82,9 @@ class GameStatePythonSerde(PythonSerde[GameState[AgentID]], Generic[AgentID]):
         obj: GameState[AgentID],
     ) -> bytes: ...
     @override
-    def retrieve(self, buf: bytes, offset: int) -> tuple[GameState[AgentID], int]: ...
+    def retrieve(
+        self, buf: memoryview, offset: int
+    ) -> tuple[GameState[AgentID], int]: ...
 
 @final
 class PhysicsObjectPythonSerde(PythonSerde[PhysicsObject]):
@@ -92,11 +94,11 @@ class PhysicsObjectPythonSerde(PythonSerde[PhysicsObject]):
     @override
     def append(
         self,
-        buf: bytes,
+        buf: memoryview,
         offset: int,
         obj: PhysicsObject,
     ) -> int: ...
     @override
     def get_bytes(self, start_addr: int | None, obj: PhysicsObject) -> bytes: ...
     @override
-    def retrieve(self, buf: bytes, offset: int) -> tuple[PhysicsObject, int]: ...
+    def retrieve(self, buf: memoryview, offset: int) -> tuple[PhysicsObject, int]: ...

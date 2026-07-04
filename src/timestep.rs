@@ -2,7 +2,7 @@ use pyo3::prelude::*;
 
 #[pyclass(generic, get_all, set_all, module = "rlgym_learn._rlgym_learn")]
 pub struct Timestep {
-    pub env_id: String,
+    pub env_id: u128,
     pub timestep_id: u128,
     pub previous_timestep_id: Option<u128>,
     pub agent_id: Py<PyAny>,
@@ -18,7 +18,7 @@ pub struct Timestep {
 impl Timestep {
     #[new]
     pub fn new(
-        env_id: String,
+        env_id: u128,
         timestep_id: u128,
         previous_timestep_id: Option<u128>,
         agent_id: Py<PyAny>,

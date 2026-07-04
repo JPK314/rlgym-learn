@@ -29,8 +29,6 @@ __all__ = [
 AgentIDInner = TypeVar("AgentIDInner")
 StateTypeInner = TypeVar("StateTypeInner")
 
-ActionAssociatedLearningData: TypeAlias = Any
-
 class EnvAction: ...
 
 @final
@@ -125,9 +123,9 @@ class EnvActionResponse(Generic[AgentID, StateType]):
 @final
 class Timestep(Generic[AgentID, ObsType, ActionType, RewardType]):
     @property
-    def env_id(self) -> str: ...
+    def env_id(self) -> int: ...
     @env_id.setter
-    def env_id(self, value: str) -> None: ...
+    def env_id(self, value: int) -> None: ...
     @property
     def timestep_id(self) -> int: ...
     @timestep_id.setter
