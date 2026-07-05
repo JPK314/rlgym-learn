@@ -197,13 +197,11 @@ pub fn env_process_fn<'py>(
                             action_list,
                             ..
                         } => {
-                            let mut actions_kv_list = Vec::with_capacity(agent_id_list.len());
-                            let action_list = action_list.bind(py);
+                            let actions_dict = PyDict::new(py);
+
                             for (agent_id, action) in agent_id_list.iter().zip(action_list.iter()) {
-                                actions_kv_list.push((agent_id, action));
+                                actions_dict.set_item(agent_id, action)?;
                             }
-                            let actions_dict =
-                                PyDict::from_sequence(&actions_kv_list.into_pyobject(py)?)?;
                             let (rew_dict, terminated_dict, truncated_dict);
                             (obs_dict, rew_dict, terminated_dict, truncated_dict) =
                                 env_step(&env, actions_dict)?;

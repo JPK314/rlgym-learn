@@ -3,7 +3,7 @@ use std::mem;
 
 use itertools::{izip, Itertools};
 use pyo3::exceptions::PyAssertionError;
-use pyo3::types::{PyDict, PyList};
+use pyo3::types::PyDict;
 use pyo3::{intern, prelude::*};
 
 use crate::env_action::{EnvAction, EnvActionResponse};
@@ -65,7 +65,7 @@ impl AgentManager {
         &self,
         py: Python<'py>,
         env_obs_data_dict: HashMap<u128, (Vec<Bound<'py, PyAny>>, Vec<Bound<'py, PyAny>>)>,
-    ) -> PyResult<HashMap<u128, Vec<Option<Bound<'py, PyAny>>>>> {
+    ) -> PyResult<HashMap<u128, Vec<Py<PyAny>>>> {
         let n_envs = env_obs_data_dict.len();
         let mut agent_controllers_env_actions_dict = env_obs_data_dict
             .iter()
@@ -112,7 +112,7 @@ impl AgentManager {
                 if first_agent_controller {
                     return Ok(env_actions_dict
                         .into_iter()
-                        .map(|(k, v)| Ok((k, v.extract::<Vec<Option<Bound<'py, PyAny>>>>()?)))
+                        .map(|(k, v)| Ok((k, v.extract::<Vec<Py<PyAny>>>()?)))
                         .collect::<PyResult<HashMap<_, _>>>()?);
                 }
                 agent_controllers_env_actions_dict_list.push(env_actions_dict);
@@ -185,7 +185,7 @@ impl AgentManager {
             if first_agent_controller && done {
                 return Ok(env_actions_dict
                     .into_iter()
-                    .map(|(k, v)| Ok((k, v.extract::<Vec<Option<Bound<'py, PyAny>>>>()?)))
+                    .map(|(k, v)| Ok((k, v.extract::<Vec<Py<PyAny>>>()?)))
                     .collect::<PyResult<HashMap<_, _>>>()?);
             }
             agent_controller_env_obs_data_dict.clear();
@@ -220,7 +220,18 @@ impl AgentManager {
             }
         }
 
-        Ok(agent_controllers_env_actions_dict)
+        agent_controllers_env_actions_dict
+            .into_iter()
+            .map(|(env_id, action_list)| {
+                Ok((
+                    env_id,
+                    action_list.into_iter().map(|action| {
+                        action.map(|action| action.unbind()).ok_or_else(|| {
+                            PyAssertionError::new_err("Some environments performing a step action did not have an action chosen for every agent in the environment.")
+                        })
+                    }).collect::<PyResult<Vec<_>>>()?,
+                ))
+            }).collect::<PyResult<HashMap<_,_>>>()
     }
 }
 
@@ -236,7 +247,7 @@ impl AgentManager {
         py: Python<'py>,
         mut env_obs_data_dict: HashMap<u128, (Vec<Bound<'py, PyAny>>, Vec<Bound<'py, PyAny>>)>,
         state_info: HashMap<u128, Bound<'py, PyAny>>,
-    ) -> PyResult<Py<PyDict>> {
+    ) -> PyResult<Bound<'py, PyDict>> {
         // Get env action responses from agent controllers
         let mut state_info = state_info;
         let mut env_action_responses = HashMap::with_capacity(state_info.len());
@@ -258,12 +269,7 @@ impl AgentManager {
         }
 
         // Inform agent controllers about env actions that will be used based on env action responses
-        let env_action_responses_pydict = PyDict::from_sequence(
-            &env_action_responses
-                .iter()
-                .collect::<Vec<_>>()
-                .into_pyobject(py)?,
-        )?;
+        let env_action_responses_pydict = (&env_action_responses).into_pyobject(py)?;
         for py_agent_controller in self.agent_controllers.iter() {
             let agent_controller = py_agent_controller.bind(py);
             process_env_actions(agent_controller, &env_action_responses_pydict)?;
@@ -271,7 +277,7 @@ impl AgentManager {
 
         // Derive env actions using the env action responses
         let n_envs = env_obs_data_dict.len();
-        let mut env_actions = Vec::with_capacity(n_envs);
+        let env_actions = PyDict::new(py);
         let mut step_env_action_responses = HashMap::with_capacity(n_envs);
         let mut should_get_actions = false;
         for (env_id, env_action_response) in env_action_responses.into_iter() {
@@ -281,13 +287,13 @@ impl AgentManager {
                     send_state,
                 } => {
                     env_obs_data_dict.remove(&env_id);
-                    env_actions.push((
+                    env_actions.set_item(
                         env_id,
                         EnvAction::RESET {
                             shared_info_setter_option: shared_info_setter,
                             send_state,
                         },
-                    ))
+                    )?;
                 }
                 EnvActionResponse::SET_STATE {
                     desired_state,
@@ -296,7 +302,7 @@ impl AgentManager {
                     prev_timestep_id_dict,
                 } => {
                     env_obs_data_dict.remove(&env_id);
-                    env_actions.push((
+                    env_actions.set_item(
                         env_id,
                         EnvAction::SET_STATE {
                             desired_state,
@@ -304,7 +310,7 @@ impl AgentManager {
                             send_state,
                             prev_timestep_id_dict_option: prev_timestep_id_dict,
                         },
-                    ))
+                    )?;
                 }
                 step_response => {
                     should_get_actions = true;
@@ -322,17 +328,17 @@ impl AgentManager {
                 else {
                     unreachable!();
                 };
-                let actions = env_actions_dict.remove(&env_id).unwrap();
-                env_actions.push((
+                let action_list = env_actions_dict.remove(&env_id).unwrap();
+                env_actions.set_item(
                     env_id,
                     EnvAction::STEP {
                         shared_info_setter_option: shared_info_setter,
                         send_state,
-                        action_list: PyList::new(py, actions)?.unbind(),
+                        action_list,
                     },
-                ))
+                )?;
             }
         }
-        Ok(PyDict::from_sequence(&env_actions.into_pyobject(py)?)?.unbind())
+        Ok(env_actions)
     }
 }

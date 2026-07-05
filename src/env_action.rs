@@ -2,7 +2,7 @@ use enum_kinds::EnumKind;
 use pyo3::{
     exceptions::asyncio::InvalidStateError,
     prelude::*,
-    types::{PyGenericAlias, PyList, PyType},
+    types::{PyGenericAlias, PyType},
 };
 
 use pyany_serde::{
@@ -104,7 +104,7 @@ pub enum EnvAction {
     STEP {
         shared_info_setter_option: Option<Py<PyAny>>,
         send_state: bool,
-        action_list: Py<PyList>,
+        action_list: Vec<Py<PyAny>>,
     },
     RESET {
         shared_info_setter_option: Option<Py<PyAny>>,
@@ -149,9 +149,8 @@ pub fn append_env_action<'py>(
                 )
                 },
             )?;
-            let action_list = action_list.bind(py);
             for action in action_list.iter() {
-                offset = action_serde.append(buf, offset, &action)?;
+                offset = action_serde.append(buf, offset, action.bind(py))?;
             }
         }
         EnvAction::RESET {
@@ -238,13 +237,13 @@ pub fn retrieve_env_action<'py>(
             for _ in 0..n_actions {
                 let action;
                 (action, offset) = action_serde.retrieve(py, buf, offset)?;
-                action_list.push(action);
+                action_list.push(action.unbind());
             }
             Ok((
                 EnvAction::STEP {
                     shared_info_setter_option: shared_info_setter_option.map(|v| v.unbind()),
                     send_state,
-                    action_list: pyo3::types::PyList::new(py, action_list)?.unbind(),
+                    action_list,
                 },
                 offset,
             ))

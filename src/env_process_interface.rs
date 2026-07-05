@@ -8,7 +8,6 @@ use std::thread;
 use std::time::Duration;
 
 use itertools::izip;
-use itertools::Itertools;
 use pyany_serde::DynPyAnySerdeOption;
 use pyany_serde::{
     communication::{retrieve_bool, retrieve_usize},
@@ -336,28 +335,23 @@ impl EnvProcessInterface {
         }
         let n_timesteps = timestep_list.len();
 
-        let terminated_dict_option;
-        let truncated_dict_option;
+        let (terminated_dict_option, truncated_dict_option);
         if new_episode {
             terminated_dict_option = None;
             truncated_dict_option = None;
         } else {
-            let mut terminated_kv_list = Vec::with_capacity(n_agents);
-            let mut truncated_kv_list = Vec::with_capacity(n_agents);
+            let terminated_dict = PyDict::new(py);
+            let truncated_dict = PyDict::new(py);
             for (agent_id, terminated, truncated) in izip!(
                 &agent_id_list,
                 terminated_list_option.unwrap(),
                 truncated_list_option.unwrap()
             ) {
-                terminated_kv_list.push((agent_id, terminated));
-                truncated_kv_list.push((agent_id, truncated));
+                terminated_dict.set_item(agent_id, terminated)?;
+                truncated_dict.set_item(agent_id, truncated)?;
             }
-            terminated_dict_option = Some(PyDict::from_sequence(
-                &terminated_kv_list.into_pyobject(py)?,
-            )?);
-            truncated_dict_option = Some(PyDict::from_sequence(
-                &truncated_kv_list.into_pyobject(py)?,
-            )?);
+            terminated_dict_option = Some(terminated_dict);
+            truncated_dict_option = Some(truncated_dict);
         }
 
         // Set prev_timestep_id_list for proc
@@ -638,9 +632,9 @@ impl EnvProcessInterface {
     )> {
         let mut n_process_steps_collected = 0;
         let mut total_timesteps_collected = 0;
-        let mut obs_data_kv_list = Vec::with_capacity(self.min_process_steps_per_inference);
-        let mut timestep_data_kv_list = Vec::with_capacity(self.min_process_steps_per_inference);
-        let mut state_info_kv_list = Vec::with_capacity(self.min_process_steps_per_inference);
+        let obs_data_dict = PyDict::new(py);
+        let timestep_data_dict = PyDict::new(py);
+        let state_info_dict = PyDict::new(py);
         let mut ready_pid_idxs = Vec::with_capacity(self.min_process_steps_per_inference);
         ready_pid_idxs.append(&mut self.just_initialized_pid_idx_list);
         while n_process_steps_collected < self.min_process_steps_per_inference {
@@ -663,16 +657,16 @@ impl EnvProcessInterface {
         for pid_idx in ready_pid_idxs.into_iter() {
             let (n_timesteps, obs_data_kv, timestep_data_kv, state_info_kv) =
                 self.collect_response(py, pid_idx)?;
-            obs_data_kv_list.push(obs_data_kv);
-            timestep_data_kv_list.push(timestep_data_kv);
-            state_info_kv_list.push(state_info_kv);
+            obs_data_dict.set_item(obs_data_kv.0, obs_data_kv.1)?;
+            timestep_data_dict.set_item(timestep_data_kv.0, timestep_data_kv.1)?;
+            state_info_dict.set_item(state_info_kv.0, state_info_kv.1)?;
             total_timesteps_collected += n_timesteps;
         }
         Ok((
             total_timesteps_collected,
-            PyDict::from_sequence(&obs_data_kv_list.into_pyobject(py)?)?,
-            PyDict::from_sequence(&timestep_data_kv_list.into_pyobject(py)?)?,
-            PyDict::from_sequence(&state_info_kv_list.into_pyobject(py)?)?,
+            obs_data_dict,
+            timestep_data_dict,
+            state_info_dict,
         ))
     }
 
@@ -681,7 +675,7 @@ impl EnvProcessInterface {
         py: Python<'py>,
         env_actions: HashMap<u128, EnvAction>,
     ) -> PyResult<()> {
-        for (proc_id, env_action) in env_actions.into_iter() {
+        for (proc_id, mut env_action) in env_actions.into_iter() {
             let &pid_idx = self.proc_id_pid_idx_map.get(&proc_id).unwrap();
             let (_, shmem, _, _) = self.proc_packages.get_mut(pid_idx).unwrap();
             let (ep_evt, evt_used_bytes) = unsafe {
@@ -696,18 +690,13 @@ impl EnvProcessInterface {
             let shm_slice = unsafe { &mut shmem.as_slice_mut()[evt_used_bytes..] };
 
             if let EnvAction::STEP {
-                ref action_list, ..
+                ref mut action_list,
+                ..
             } = env_action
             {
                 let current_action_list = &mut self.pid_idx_current_action_list[pid_idx];
                 current_action_list.clear();
-                current_action_list.append(
-                    &mut action_list
-                        .bind(py)
-                        .iter()
-                        .map(|action| action.unbind())
-                        .collect_vec(),
-                );
+                current_action_list.append(action_list);
             }
 
             let offset = append_header(shm_slice, 0, Header::EnvAction);
