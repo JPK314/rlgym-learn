@@ -1,5 +1,6 @@
 use std::slice::{from_raw_parts, from_raw_parts_mut};
 
+use itertools::izip;
 use numpy::ndarray::Array1;
 use numpy::{PyArray1, PyArrayMethods};
 use pyany_serde::common::get_bytes_to_alignment;
@@ -85,22 +86,19 @@ impl GameStateInner {
         agent_ids: Vec<Bound<'py, PyAny>>,
         bump_victim_ids: Vec<Option<Bound<'py, PyAny>>>,
     ) -> PyResult<GameState<'py>> {
-        let mut inner_cars = Vec::with_capacity(self.cars.len());
-        for (inner_car, bump_victim_id) in self.cars.into_iter().zip(bump_victim_ids.into_iter()) {
-            inner_cars.push(inner_car.as_outer(py, bump_victim_id)?);
+        let cars = PyDict::new(py);
+        for (agent_id, inner_car, bump_victim_id) in izip!(
+            agent_ids.into_iter(),
+            self.cars.into_iter(),
+            bump_victim_ids.into_iter()
+        ) {
+            cars.set_item(agent_id, inner_car.as_outer(py, bump_victim_id)?)?;
         }
         Ok(GameState {
             tick_count: self.tick_count,
             goal_scored: self.goal_scored,
             config: self.config,
-            cars: PyDict::from_sequence(
-                &agent_ids
-                    .into_iter()
-                    .zip(inner_cars.into_iter())
-                    .collect::<Vec<_>>()
-                    .into_pyobject(py)?
-                    .into_any(),
-            )?,
+            cars,
             ball: self.ball.as_outer(py)?,
             boost_pad_timers: PyArray1::from_array(py, &Array1::from_vec(self.boost_pad_timers)),
         })
