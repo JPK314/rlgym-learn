@@ -1,11 +1,11 @@
-# pyright: reportUnusedParameter=false
-
+from abc import ABC, abstractmethod
 from typing import Generic, TypeVar
 
 T = TypeVar("T")
 
 
-class PythonSerde(Generic[T]):
+class PythonSerde(ABC, Generic[T]):
+    @abstractmethod
     def append(self, buf: memoryview, offset: int, obj: T) -> int:
         """
         Appends bytes of obj to buf starting at offset.
@@ -16,6 +16,7 @@ class PythonSerde(Generic[T]):
         """
         raise NotImplementedError
 
+    @abstractmethod
     def get_bytes(self, start_addr: int | None, obj: T) -> bytes:
         """
         :param start_addr: the starting address for where the returned bytes will be written. May be None in contexts where there is no guaranteed start address.
@@ -24,6 +25,7 @@ class PythonSerde(Generic[T]):
         """
         raise NotImplementedError
 
+    @abstractmethod
     def retrieve(self, buf: memoryview, offset: int) -> tuple[T, int]:
         """
         Retrieves obj encoded using self.append or self.get_bytes from the buffer starting at offset.

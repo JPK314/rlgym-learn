@@ -30,6 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - The `AgentController` class no longer has methods `choose_env_actions`, `process_env_actions`, `choose_agents`, and `get_actions`. Instead it has a single method `get_env_actions` which returns a dict of env ids and `EnvAction`s using the agent ids/observations per environment as well as the state info per environment as parameters.
   - `EnvAction` can now be instantiated from Python and has type stubs available.
   - `EnvActionResponse` has been moved to rlgym-learn-algos for its `MultiAgentController` implementation.
+  - `AgentController` and `PythonSerde` now are abstract base classes to properly force implementation of abstract methods for type checkers.
 
 ### Removed
 
