@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import cProfile
 import os
-from collections.abc import Callable, Mapping
+from collections.abc import Callable
 from typing import Any, Generic
 
 from rlgym.api import (
@@ -17,8 +17,7 @@ from rlgym.api import (
     StateType,
 )
 
-from .agent import AgentManager
-from .api import AgentController
+from .api import AgentController, DerivedAgentControllerConfig
 from .env_processing import EnvProcessInterface
 from .learning_coordinator_config import (
     DEFAULT_CONFIG_FILENAME,
@@ -54,18 +53,15 @@ class LearningCoordinator(
                 ActionSpaceType,
             ],
         ],
-        agent_controllers: Mapping[
-            str,
-            AgentController[
-                Any,
-                AgentID,
-                ObsType,
-                ActionType,
-                RewardType,
-                StateType,
-                ObsSpaceType,
-                ActionSpaceType,
-            ],
+        agent_controller: AgentController[
+            Any,
+            AgentID,
+            ObsType,
+            ActionType,
+            RewardType,
+            StateType,
+            ObsSpaceType,
+            ActionSpaceType,
         ],
         config: LearningCoordinatorConfigModel[
             AgentID,
@@ -89,7 +85,7 @@ class LearningCoordinator(
                 ObsSpaceType,
                 ActionSpaceType,
             ] = LearningCoordinatorConfigModel.model_validate(
-                config, context=agent_controllers
+                config, context=agent_controller
             )
         else:
             if config_location is None:
@@ -100,10 +96,10 @@ class LearningCoordinator(
 
             with open(config_location, "rt") as f:
                 self.config = LearningCoordinatorConfigModel.model_validate_json(
-                    f.read(), context=agent_controllers
+                    f.read(), context=agent_controller
                 )
-
-        self.agent_manager: AgentManager[
+        self.agent_controller: AgentController[
+            Any,
             AgentID,
             ObsType,
             ActionType,
@@ -111,9 +107,7 @@ class LearningCoordinator(
             StateType,
             ObsSpaceType,
             ActionSpaceType,
-        ] = AgentManager(
-            agent_controllers,
-        )
+        ] = agent_controller
 
         self.cumulative_timesteps: int = 0
         self.env_process_interface: EnvProcessInterface[
@@ -149,8 +143,15 @@ class LearningCoordinator(
             + "(a) to add an env process, (d) to delete an env process\n"
             + "(j) to increase min inference size, (l) to decrease min inference size\n"
         )
-        self.agent_manager.set_space_types(obs_space, action_space)
-        self.agent_manager.load_agent_controllers(self.config)
+        self.agent_controller.set_space_types(obs_space, action_space)
+        self.agent_controller.load(
+            DerivedAgentControllerConfig(
+                agent_controller_config=self.config.agent_controller_config,
+                base_config=self.config.base_config,
+                process_config=self.config.process_config,
+                save_folder=self.config.agent_controller_save_folder,
+            ),
+        )
         print("Learning coordinator successfully initialized!")
         # TODO: delete and remove import
         self.prof = cProfile.Profile()
@@ -196,14 +197,19 @@ class LearningCoordinator(
         # Collect the desired number of timesteps from our environments.
         loop_iterations = 0
         while self.cumulative_timesteps < self.config.base_config.timestep_limit:
-            total_timesteps_collected, env_obs_data_dict, timestep_data, state_info = (
-                self.env_process_interface.collect_step_data()
-            )
+            (
+                total_timesteps_collected,
+                env_obs_data_dict,
+                timestep_data,
+                env_state_info_dict,
+            ) = self.env_process_interface.collect_step_data()
             self.cumulative_timesteps += total_timesteps_collected
-            self.agent_manager.process_timestep_data(timestep_data)
+            self.agent_controller.process_timestep_data(timestep_data)
 
             self.env_process_interface.send_env_actions(
-                self.agent_manager.get_env_actions(env_obs_data_dict, state_info)
+                self.agent_controller.get_env_actions(
+                    env_obs_data_dict, env_state_info_dict
+                )
             )
             loop_iterations += 1
             # TODO: undo this
@@ -229,7 +235,7 @@ class LearningCoordinator(
                     if kb.kbhit():
                         break
             if c in ("c", "q"):
-                self.agent_manager.save_agent_controllers()
+                self.agent_controller.save_checkpoint()
             if c == "q":
                 return True
             if c in ("c", "p"):
@@ -254,7 +260,7 @@ class LearningCoordinator(
                 )
 
     def save(self):
-        self.agent_manager.save_agent_controllers()
+        self.agent_controller.save_checkpoint()
 
     def cleanup(self):
         """
@@ -262,4 +268,4 @@ class LearningCoordinator(
         :return: None.
         """
         self.env_process_interface.cleanup()
-        self.agent_manager.cleanup()
+        self.agent_controller.cleanup()

@@ -689,16 +689,6 @@ impl EnvProcessInterface {
             };
             let shm_slice = unsafe { &mut shmem.as_slice_mut()[evt_used_bytes..] };
 
-            if let EnvAction::STEP {
-                ref mut action_list,
-                ..
-            } = env_action
-            {
-                let current_action_list = &mut self.pid_idx_current_action_list[pid_idx];
-                current_action_list.clear();
-                current_action_list.append(action_list);
-            }
-
             let offset = append_header(shm_slice, 0, Header::EnvAction);
             _ = append_env_action(
                 py,
@@ -709,6 +699,16 @@ impl EnvProcessInterface {
                 &mut self.shared_info_setter_serde_option.as_mut(),
                 &mut self.state_serde_option.as_mut(),
             )?;
+
+            if let EnvAction::STEP {
+                ref mut action_list,
+                ..
+            } = env_action
+            {
+                let current_action_list = &mut self.pid_idx_current_action_list[pid_idx];
+                current_action_list.clear();
+                current_action_list.append(action_list);
+            }
 
             ep_evt
                 .set(EventState::Signaled)

@@ -2,14 +2,12 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Generic, TypeAlias, TypeVar, final
-
-from typing_extensions import override
+from typing import TYPE_CHECKING, Any, Generic, TypeVar, final
 
 if TYPE_CHECKING:
-    from .._rlgym_learn import EnvActionResponse
+    from .._rlgym_learn import EnvAction
 
 from rlgym.api import (
     ActionType,
@@ -21,27 +19,28 @@ from rlgym.api import (
 
 __all__ = [
     "EnvAction",
-    "EnvActionResponse",
-    "EnvActionResponseType",
     "Timestep",
 ]
 
 AgentIDInner = TypeVar("AgentIDInner")
+ActionTypeInner = TypeVar("ActionTypeInner")
 StateTypeInner = TypeVar("StateTypeInner")
 
-class EnvAction: ...
-
 @final
-class EnvActionResponseType(Enum):
+class EnvActionType(Enum):
     STEP = ...
     RESET = ...
     SET_STATE = ...
 
-class EnvActionResponse(Generic[AgentID, StateType]):
+class EnvAction(Generic[AgentID, ActionType, StateType]):
     @property
-    def enum_type(self) -> EnvActionResponseType: ...
+    def enum_type(self) -> EnvActionType: ...
     @property
     def shared_info_setter(self) -> Any | None: ...
+    @property
+    def send_state(self) -> bool: ...
+    @property
+    def action_list(self) -> list[ActionType] | None: ...
     @property
     def desired_state(self) -> Any | None: ...
     @property
@@ -49,50 +48,40 @@ class EnvActionResponse(Generic[AgentID, StateType]):
 
     @final
     class STEP(
-        EnvActionResponse[AgentIDInner, StateTypeInner],
-        Generic[AgentIDInner, StateTypeInner],
+        EnvAction[AgentIDInner, ActionTypeInner, StateTypeInner],
+        Generic[AgentIDInner, ActionTypeInner, StateTypeInner],
     ):
         __match_args__ = (
+            "action_list",
             "shared_info_setter",
             "send_state",
         )
-
-        @property
-        @override
-        def shared_info_setter(self) -> dict[str, Any] | None: ...
-        @property
-        def send_state(self) -> bool: ...
         def __new__(
             cls,
+            action_list: Iterable[ActionTypeInner],
             shared_info_setter: Mapping[str, Any] | None = None,
             send_state: bool = False,
-        ) -> EnvActionResponse.STEP[AgentIDInner, StateTypeInner]: ...
+        ) -> EnvAction.STEP[AgentIDInner, ActionTypeInner, StateTypeInner]: ...
 
     @final
     class RESET(
-        EnvActionResponse[AgentIDInner, StateTypeInner],
-        Generic[AgentIDInner, StateTypeInner],
+        EnvAction[AgentIDInner, ActionTypeInner, StateTypeInner],
+        Generic[AgentIDInner, ActionTypeInner, StateTypeInner],
     ):
         __match_args__ = (
             "shared_info_setter",
             "send_state",
         )
-
-        @property
-        @override
-        def shared_info_setter(self) -> dict[str, Any] | None: ...
-        @property
-        def send_state(self) -> bool: ...
         def __new__(
             cls,
             shared_info_setter: Mapping[str, Any] | None = None,
             send_state: bool = False,
-        ) -> EnvActionResponse.RESET[AgentIDInner, StateTypeInner]: ...
+        ) -> EnvAction.RESET[AgentIDInner, ActionTypeInner, StateTypeInner]: ...
 
     @final
     class SET_STATE(
-        EnvActionResponse[AgentIDInner, StateTypeInner],
-        Generic[AgentIDInner, StateTypeInner],
+        EnvAction[AgentIDInner, ActionTypeInner, StateTypeInner],
+        Generic[AgentIDInner, ActionTypeInner, StateTypeInner],
     ):
         __match_args__ = (
             "desired_state",
@@ -100,25 +89,13 @@ class EnvActionResponse(Generic[AgentID, StateType]):
             "send_state",
             "prev_timestep_id_dict",
         )
-
-        @property
-        @override
-        def desired_state(self) -> StateTypeInner: ...
-        @property
-        @override
-        def shared_info_setter(self) -> dict[str, Any] | None: ...
-        @property
-        def send_state(self) -> bool: ...
-        @property
-        @override
-        def prev_timestep_id_dict(self) -> dict[AgentID, int | None] | None: ...
         def __new__(
             cls,
             desired_state: StateTypeInner,
             shared_info_setter: Mapping[str, Any] | None = None,
             send_state: bool = False,
             prev_timestep_id_dict: Any | None = None,
-        ) -> EnvActionResponse.SET_STATE[AgentIDInner, StateTypeInner]: ...
+        ) -> EnvAction.SET_STATE[AgentIDInner, ActionTypeInner, StateTypeInner]: ...
 
 @final
 class Timestep(Generic[AgentID, ObsType, ActionType, RewardType]):

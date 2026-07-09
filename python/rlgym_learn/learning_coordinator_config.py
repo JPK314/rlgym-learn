@@ -16,7 +16,6 @@ from rlgym.api import (
     RewardType,
     StateType,
 )
-from typing_extensions import Self
 
 from .api import AgentController
 from .basic_config import AnyBaseModel, BaseConfigModel, ProcessConfigModel
@@ -47,90 +46,47 @@ class LearningCoordinatorConfigModel(
         ActionSpaceType,
     ]
     process_config: ProcessConfigModel = Field(default_factory=ProcessConfigModel)
-    agent_controllers_config: dict[str, AnyBaseModel | None] = Field(
-        default_factory=dict
-    )
-    agent_controllers_save_folder: str = "agent_controllers_checkpoints"
+    agent_controller_config: AnyBaseModel | None = None
+    agent_controller_save_folder: str = "agent_controller_checkpoints"
 
     @model_validator(mode="before")
     @classmethod
-    def validate_agent_controllers_config_models(
+    def validate_agent_controller_config_model(
         cls, data: Any, info: ValidationInfo
     ) -> Any:
-        agent_controllers: (
-            dict[
-                str,
-                AgentController[
-                    Any,
-                    AgentID,
-                    ObsType,
-                    ActionType,
-                    RewardType,
-                    StateType,
-                    ObsSpaceType,
-                    ActionSpaceType,
-                ],
+        agent_controller: (
+            AgentController[
+                Any,
+                AgentID,
+                ObsType,
+                ActionType,
+                RewardType,
+                StateType,
+                ObsSpaceType,
+                ActionSpaceType,
             ]
             | None
         ) = info.context
         data_dict = data
-        data_config_model = data
-        if agent_controllers is not None:
-            if isinstance(data_dict, dict) and "agent_controllers_config" in data:
+        if agent_controller is not None:
+            if isinstance(data_dict, dict) and "agent_controller_config" in data:
                 data_dict = cast(dict[Any, Any], data_dict)
-                agent_controllers_config_raw = data_dict["agent_controllers_config"]
-                agent_controllers_config: dict[str, BaseModel | None] = {}
-                for k, v in agent_controllers_config_raw.items():
-                    if k in agent_controllers:
-                        if isinstance(v, dict):
-                            agent_controller = agent_controllers[k]
-                            agent_controller_config_model_type = (
-                                agent_controller.config_model
-                            )
-                            if agent_controller_config_model_type is None:
-                                agent_controllers_config[k] = None
-                            else:
-                                agent_controllers_config[k] = cast(
-                                    BaseModel, agent_controller_config_model_type
-                                ).model_validate(v, context=agent_controller)
-
-                        else:
-                            agent_controllers_config[k] = v
-                data_dict["agent_controllers_config"] = agent_controllers_config
-            elif isinstance(data_config_model, LearningCoordinatorConfigModel):
-                data_config_model.agent_controllers_config = {
-                    k: v
-                    for k, v in data_config_model.agent_controllers_config.items()
-                    if k in agent_controllers
-                }
+                agent_controller_config_raw = data_dict["agent_controller_config"]
+                agent_controller_config: BaseModel | None
+                agent_controller_config_model_type = agent_controller.config_model
+                if isinstance(agent_controller_config_raw, dict):
+                    if agent_controller_config_model_type is None:
+                        agent_controller_config = None
+                    else:
+                        agent_controller_config = cast(
+                            BaseModel, agent_controller_config_model_type
+                        ).model_validate(
+                            agent_controller_config_raw, context=agent_controller
+                        )
+                else:
+                    agent_controller_config = agent_controller_config_raw
+                data_dict["agent_controller_config"] = agent_controller_config
         return data
-
-    @model_validator(mode="after")
-    def validate_agent_controllers_all_present(self, info: ValidationInfo) -> Self:
-        agent_controllers: (
-            dict[
-                str,
-                AgentController[
-                    Any,
-                    AgentID,
-                    ObsType,
-                    ActionType,
-                    RewardType,
-                    StateType,
-                    ObsSpaceType,
-                    ActionSpaceType,
-                ],
-            ]
-            | None
-        ) = info.context
-        if agent_controllers is not None:
-            agent_controller_keys_not_in_config = [
-                v for v in agent_controllers if v not in self.agent_controllers_config
-            ]
-            assert len(agent_controller_keys_not_in_config) == 0, (
-                f"some agent controllers do not have keys present in agent_controllers_config. The following keys from agent_controllers are not present in agent_controllers_config: {agent_controller_keys_not_in_config}"
-            )
-        return self
 
 
 def generate_config(
