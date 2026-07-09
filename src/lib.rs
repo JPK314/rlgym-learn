@@ -1,7 +1,6 @@
 use pyo3::prelude::*;
 use strum::IntoEnumIterator;
 
-mod agent_manager;
 mod env_action;
 mod env_process;
 mod env_process_interface;
@@ -11,8 +10,8 @@ mod timestep;
 #[cfg(feature = "rl")]
 mod rocket_league;
 
-pub use agent_manager::AgentManager;
-pub use env_action::{EnvAction, EnvActionResponse, EnvActionResponseType};
+// pub use agent_manager::AgentManager;
+pub use env_action::{EnvAction, EnvActionType};
 pub use env_process::env_process_fn;
 pub use env_process_interface::EnvProcessInterface;
 pub use pyany_serde::{
@@ -52,7 +51,7 @@ fn pyany_serde<'py>(py: Python<'py>, parent: &Bound<PyModule>) -> PyResult<()> {
 
 fn backend<'py>(py: Python<'py>, parent: &Bound<PyModule>) -> PyResult<()> {
     let sub = PyModule::new(py, "_backend")?;
-    sub.add_class::<AgentManager>()?;
+    // sub.add_class::<AgentManager>()?;
     sub.add_class::<EnvProcessInterface>()?;
     sub.add_function(wrap_pyfunction!(env_process_fn, &sub)?)?;
     sub.add_function(wrap_pyfunction!(recvfrom_byte, &sub)?)?;
@@ -122,7 +121,7 @@ mod _rlgym_learn {
     use super::*;
 
     #[pymodule_export]
-    use {EnvAction, EnvActionResponse, EnvActionResponseType, Timestep};
+    use {EnvAction, EnvActionType, Timestep};
 
     #[pymodule_init]
     fn module_init(m: &Bound<'_, PyModule>) -> PyResult<()> {

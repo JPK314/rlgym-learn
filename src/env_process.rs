@@ -192,9 +192,9 @@ pub fn env_process_fn<'py>(
                     );
                     let shared_info_setter_option = match &env_action {
                         EnvAction::STEP {
+                            action_list,
                             shared_info_setter_option,
                             send_state,
-                            action_list,
                             ..
                         } => {
                             let actions_dict = PyDict::new(py);

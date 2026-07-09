@@ -5,7 +5,7 @@ from __future__ import annotations
 import datetime
 from collections.abc import Mapping, Sequence
 from socket import socket
-from typing import TYPE_CHECKING, Any, Generic, TypeVar, final
+from typing import TYPE_CHECKING, Any, Generic, final
 
 from rlgym.api import (
     ActionSpaceType,
@@ -19,77 +19,17 @@ from rlgym.api import (
 )
 
 from ..._rlgym_learn import EnvAction, Timestep
-from ...api import AgentController
 from ..pyany_serde import PyAnySerdeType
 
 if TYPE_CHECKING:
     from socket import _RetAddress  # pyright: ignore [reportPrivateUsage]
 
 __all__ = [
-    "AgentManager",
     "Timestep",
     "env_process_fn",
     "recvfrom_byte",
     "sendto_byte",
 ]
-
-AgentIDInner = TypeVar("AgentIDInner")
-StateTypeInner = TypeVar("StateTypeInner")
-
-@final
-class AgentManager(
-    Generic[
-        AgentID,
-        ObsType,
-        ActionType,
-        RewardType,
-        StateType,
-        ObsSpaceType,
-        ActionSpaceType,
-    ]
-):
-    def __new__(
-        cls,
-        agent_controllers: Sequence[
-            AgentController[
-                Any,
-                AgentID,
-                ObsType,
-                ActionType,
-                RewardType,
-                StateType,
-                ObsSpaceType,
-                ActionSpaceType,
-            ],
-        ],
-    ) -> AgentManager[
-        AgentID,
-        ObsType,
-        ActionType,
-        RewardType,
-        StateType,
-        ObsSpaceType,
-        ActionSpaceType,
-    ]: ...
-    def get_env_actions(
-        self,
-        env_obs_data_dict: Mapping[
-            int,
-            tuple[
-                Sequence[AgentID],
-                Sequence[ObsType],
-            ],
-        ],
-        state_info: Mapping[
-            int,
-            tuple[
-                Mapping[str, Any] | None,
-                StateType | None,
-                Mapping[AgentID, bool] | None,
-                Mapping[AgentID, bool] | None,
-            ],
-        ],
-    ) -> dict[int, EnvAction]: ...
 
 @final
 class EnvProcessInterface(
@@ -160,7 +100,9 @@ class EnvProcessInterface(
             ],
         ],
     ]: ...
-    def send_env_actions(self, env_actions: Mapping[int, EnvAction]) -> None: ...
+    def send_env_actions(
+        self, env_actions: Mapping[int, EnvAction[AgentID, ActionType, StateType]]
+    ) -> None: ...
 
 def env_process_fn(
     proc_id: int,

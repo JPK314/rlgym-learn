@@ -303,7 +303,9 @@ class EnvProcessInterface(
             print("Unable to close parent connection")
             traceback.print_exc()
 
-    def send_env_actions(self, env_actions: dict[int, EnvAction]):
+    def send_env_actions(
+        self, env_actions: dict[int, EnvAction[AgentID, ActionType, StateType]]
+    ):
         """
         Send env actions to environment processes.
         """
