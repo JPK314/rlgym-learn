@@ -1,5 +1,4 @@
-# pyright: reportUnusedParameter=false
-
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any, Generic
 
@@ -46,6 +45,7 @@ class DerivedAgentControllerConfig(
 
 
 class AgentController(
+    ABC,
     Generic[
         AgentControllerConfig,
         AgentID,
@@ -55,15 +55,16 @@ class AgentController(
         StateType,
         ObsSpaceType,
         ActionSpaceType,
-    ]
+    ],
 ):
     @property
+    @abstractmethod
     def config_model(self) -> type[AgentControllerConfig] | None:
         """
-        Function to return the config model type that your AgentController implementation uses. Defaults to None.
+        Function to return the config model type that your AgentController implementation uses, or None if no config model is used.
         """
-        return None
 
+    @abstractmethod
     def get_env_actions(
         self,
         env_obs_data_dict: dict[int, tuple[list[AgentID], list[ObsType]]],
@@ -84,8 +85,8 @@ class AgentController(
         :return: Dictionary with environment ids as keys and EnvAction instances as values.
         """
         # TODO: allow the returned dict to miss keys in the env_*_dict parameters and just defer those to the next loop
-        raise NotImplementedError
 
+    @abstractmethod
     def process_timestep_data(
         self,
         timestep_data: dict[
@@ -107,11 +108,15 @@ class AgentController(
 
         and the state (if the previous EnvAction for this environment id had send_state=True).
         """
-        pass
 
+    @abstractmethod
     def set_space_types(self, obs_space: ObsSpaceType, action_space: ActionSpaceType):
-        pass
+        """
+        Function to handle managing any state related to space types. Called once before load, may be called at other points according to the env action types.
+        """
+        # TODO: add GetSpaceTypes as env action
 
+    @abstractmethod
     def load(
         self,
         config: DerivedAgentControllerConfig[
@@ -130,16 +135,15 @@ class AgentController(
         be called at least once before this method.
         :param config: config derived from learning controller config, including the agent controller specific config.
         """
-        pass
 
+    @abstractmethod
     def save_checkpoint(self):
         """
         Function to save a checkpoint of the agent.
         """
-        pass
 
+    @abstractmethod
     def cleanup(self):
         """
         Function to clean up any memory still in use when shutting down.
         """
-        pass
