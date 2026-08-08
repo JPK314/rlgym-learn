@@ -43,7 +43,7 @@ jobs:
           cache-dependency-path: "**/test_requirements.txt"
       - run: pip install -r test_requirements.txt
       - name: "Build and test"
-        run: cargo nextest run --workspace --all-targets --no-tests
+        run: cargo nextest run --workspace --all-targets --no-tests pass
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
@@ -81,7 +81,7 @@ jobs:
           cache-dependency-path: "**/test_requirements.txt"
       - run: pip install -r test_requirements.txt
       - name: "Build and test"
-        run: cargo nextest run --workspace --all-targets --no-tests
+        run: cargo nextest run --workspace --all-targets --no-tests pass
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
@@ -119,7 +119,7 @@ jobs:
           cache-dependency-path: "**/test_requirements.txt"
       - run: pip install -r test_requirements.txt
       - name: "Build and test"
-        run: cargo nextest run --workspace --target ${{ matrix.platform.rust-target }} --no-tests
+        run: cargo nextest run --workspace --target ${{ matrix.platform.rust-target }} --no-tests pass
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
@@ -150,7 +150,7 @@ jobs:
           cache-dependency-path: "**/test_requirements.txt"
       - run: pip install -r test_requirements.txt
       - name: "Build and test"
-        run: cargo nextest run --workspace --all-targets --no-tests
+        run: cargo nextest run --workspace --all-targets --no-tests pass
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
