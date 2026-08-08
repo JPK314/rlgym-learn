@@ -47,7 +47,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Refactored the Rust-side `env_process_fn` and `EnvProcessInterface` to accept the `SerdeTypesConfigModel` directly instead of requiring each serde to be passed individually.
 - `add_process` in the Python and Rust-side `EnvProcessInterface` has been changed to `add_processes` with an intuitively updated method signature.
 - `init_processes` in the Python and Rust-side `EnvProcessInterface` now returns a dict with environment ids as keys and (dicts with agent ids as keys and tuples of `ObsSpaceType` and `ActionSpaceType` as values) as values.
-- `min_process_steps_per_inference` in `ProcessConfigModel` is now `min_frac_process_responses_per_collection` and dynamically determines the minimum process responses (what were previously called process steps) to return based on the specified fraction of however many processes are currently open.
+- `min_process_steps_per_inference` in `ProcessConfigModel` is now `min_frac_process_responses_per_collection` and dynamically determines the minimum process responses (what were previously called process steps) to return based on the specified fraction of however many processes are currently open. The value is validated to be between 0 and 1 (inclusive).
+- The terminal keypresses 'j' and 'l' now update `min_frac_process_responses_per_collection` to use one process more/fewer than what the previous value did.
 - `instance_launch_delay` has been renamed to `launch_delay` for simplicity.
 
 ### Removed

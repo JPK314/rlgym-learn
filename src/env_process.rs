@@ -128,7 +128,6 @@ pub fn env_process_fn<'py>(
     let flink = get_flink(flinks_folder, proc_id);
     let mut shmem;
     let mut attempts = 0;
-    println!("{proc_id}: Attempting to open shmem flink...");
     loop {
         match ShmemConf::new().flink(flink.clone()).open().map_err(|err| {
             InvalidStateError::new_err(format!("Unable to open shmem flink {}: {}", flink, err))
@@ -138,7 +137,6 @@ pub fn env_process_fn<'py>(
                 break;
             }
             Err(e) => {
-                println!("{proc_id}: Attempt {attempts}: {:?} - trying again...", e);
                 attempts += 1;
                 sleep(Duration::from_micros(1000));
                 if attempts >= 10000 {
@@ -148,7 +146,6 @@ pub fn env_process_fn<'py>(
             }
         }
     }
-    println!("{proc_id}: Opened shmem flink!");
     let (epi_evt, used_bytes) = unsafe {
         Event::from_existing(shmem.as_ptr())
             .map_err(|err| InvalidStateError::new_err(format!("Failed to get event: {}", err)))?
@@ -171,19 +168,15 @@ pub fn env_process_fn<'py>(
                 &mut agent_id_list,
             )?;
 
-            println!("{proc_id}: Startup complete, synchronizing with EPI");
             // Startup complete
             sync_with_epi(&child_end, &parent_sockname)?;
-            println!("{proc_id}: Synchronized with EPI!");
 
             // Start main loop
             loop {
-                println!("{proc_id}: Waiting for event from EPI...");
                 epi_evt
                     .wait(Timeout::Infinite)
                     .map_err(|err| InvalidStateError::new_err(err.to_string()))?;
                 // Event should automatically be cleared because it is defined as auto-resetting
-                println!("{proc_id}: Event received from EPI!");
                 let env_action;
                 // Read starting at offset 1 because first byte is reserved for error state
                 (env_action, _) = retrieve_env_action(
@@ -257,7 +250,6 @@ pub fn env_process_fn<'py>(
                     }
                     EnvAction::DEFER {} => (),
                     EnvAction::CLOSE {} => {
-                        println!("{proc_id}: Received CLOSE EnvAction");
                         env_close(&env)?;
                         sendto_byte(&child_end, &parent_sockname)?;
                         break;

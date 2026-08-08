@@ -115,7 +115,6 @@ impl EnvProcessInterface {
         proc_package_def: (BoundPyAny<'py>, BoundPyAny<'py>, BoundPyAny<'py>, u128),
     ) -> PyResult<()> {
         let (_, parent_end, child_sockname, proc_id) = proc_package_def;
-        println!("EPI: Adding proc package for proc_id {proc_id}");
         let flink = get_flink(&self.flinks_folder[..], proc_id);
         let shmem = ShmemConf::new()
             .size(self.shm_buffer_size)
@@ -127,7 +126,6 @@ impl EnvProcessInterface {
                     flink, err
                 ))
             })?;
-        println!("EPI: Created shmem flink for proc_id {proc_id}!");
         let (_, used_bytes) = unsafe {
             Event::new(shmem.as_ptr(), true).map_err(|err| {
                 InvalidStateError::new_err(format!(
@@ -562,10 +560,6 @@ impl EnvProcessInterface {
         py: Python<'py>,
         pid_idx: usize,
     ) -> PyResult<(Py<PyInt>, ResponseData<'py>)> {
-        println!(
-            "EPI: collecting response for pid idx: {pid_idx} out of: {}",
-            self.proc_packages.len()
-        );
         let (parent_end, child_sockname, shmem, used_bytes, proc_id, py_proc_id) =
             self.proc_packages.get_mut(pid_idx).unwrap().take().unwrap();
         let shm_slice = unsafe { &shmem.as_slice()[used_bytes..] };
@@ -672,10 +666,6 @@ impl EnvProcessInterface {
                 let (parent_end, _, _, pid_idx) =
                     key.extract::<(Py<PyAny>, Py<PyAny>, Py<PyAny>, usize)>(py)?;
                 recvfrom_byte(parent_end.bind(py))?;
-                println!(
-                    "EPI: Received ready response from proc_id {} and consumed from parent end!",
-                    self.proc_packages[pid_idx].as_ref().unwrap().4
-                );
                 self.pid_idx_awaiting_signal_list[pid_idx] = true;
                 ready_pid_idxs.push(pid_idx);
                 n_process_responses_collected += 1;
@@ -1003,11 +993,6 @@ impl EnvProcessInterface {
             self.min_process_responses_per_collection
                 .min(self.proc_packages.len() - self.return_prev_data_proc_ids.len())
         };
-        println!(
-            "EPI: in collect_env_responses, about to collect {} responses from environments and additionally return {} responses collected previously",
-            n_to_collect,
-            self.return_prev_data_proc_ids.len()
-        );
         let (
             mut obs_data_dict_has_data,
             mut total_timesteps_collected,
