@@ -122,18 +122,15 @@ class LearningCoordinator(
         ] = EnvProcessInterface(
             env_create_function,
             self.config.base_config.serde_types,
-            self.config.process_config.min_process_steps_per_inference,
+            self.config.process_config.min_frac_process_responses_per_collection,
             self.config.base_config.flinks_folder,
             self.config.base_config.shm_buffer_size,
             self.config.base_config.random_seed,
             self.config.process_config.recalculate_agent_id_every_step,
         )
-        (
-            obs_space,
-            action_space,
-        ) = self.env_process_interface.init_processes(
+        env_spaces_data_dict = self.env_process_interface.init_processes(
             n_processes=self.config.process_config.n_proc,
-            spawn_delay=self.config.process_config.instance_launch_delay,
+            spawn_delay=self.config.process_config.launch_delay,
             render=self.config.process_config.render,
             render_delay=self.config.process_config.render_delay,
         )
@@ -143,7 +140,7 @@ class LearningCoordinator(
             + "(a) to add an env process, (d) to delete an env process\n"
             + "(j) to increase min inference size, (l) to decrease min inference size\n"
         )
-        self.agent_controller.set_space_types(obs_space, action_space)
+        self.agent_controller.set_space_types(env_spaces_data_dict)
         self.agent_controller.load(
             DerivedAgentControllerConfig(
                 agent_controller_config=self.config.agent_controller_config,
@@ -196,26 +193,54 @@ class LearningCoordinator(
 
         # Collect the desired number of timesteps from our environments.
         loop_iterations = 0
+        prev_env_obs_data_dict: dict[int, tuple[list[AgentID], list[ObsType]]] = {}
+        prev_env_state_info_dict: dict[
+            int,
+            tuple[
+                dict[str, Any] | None,
+                StateType | None,
+                dict[AgentID, bool] | None,
+                dict[AgentID, bool] | None,
+            ],
+        ] = {}
         while self.cumulative_timesteps < self.config.base_config.timestep_limit:
             (
                 total_timesteps_collected,
+                env_close_reason_dict,
                 env_obs_data_dict,
                 timestep_data,
                 env_state_info_dict,
-            ) = self.env_process_interface.collect_step_data()
-            self.cumulative_timesteps += total_timesteps_collected
-            self.agent_controller.process_timestep_data(timestep_data)
-
-            self.env_process_interface.send_env_actions(
-                self.agent_controller.get_env_actions(
-                    env_obs_data_dict, env_state_info_dict
-                )
+                env_spaces_data_dict,
+            ) = self.env_process_interface.collect_env_responses(
+                prev_env_obs_data_dict, prev_env_state_info_dict
             )
+            self.cumulative_timesteps += total_timesteps_collected
+            self.agent_controller.handle_env_closes(env_close_reason_dict)
+            self.agent_controller.process_timestep_data(timestep_data)
+            self.agent_controller.set_space_types(env_spaces_data_dict)
             loop_iterations += 1
+            procs_to_add, env_actions = self.agent_controller.get_env_actions(
+                env_obs_data_dict, env_state_info_dict
+            )
+            n_env_actions = len(env_actions)
+            assert n_env_actions == len(env_obs_data_dict), (
+                "The agent controller must return an EnvAction for all environment ids included in the env_obs_data_dict."
+            )
+            if n_env_actions == 0 and procs_to_add == 0:
+                print("No processes left!")
+                break
+            if n_env_actions > 0:
+                self.env_process_interface.send_env_actions(env_actions)
+            if procs_to_add > 0:
+                self.env_process_interface.add_processes(
+                    procs_to_add, self.config.process_config.launch_delay
+                )
             # TODO: undo this
             # if loop_iterations % 50 == 0:
             #     if self.process_kbhit(kb):
             #         break
+            prev_env_obs_data_dict = env_obs_data_dict
+            prev_env_state_info_dict = env_state_info_dict
         if self.cumulative_timesteps >= self.config.base_config.timestep_limit:
             print("Hit timestep limit, cleaning up...")
         else:
@@ -242,21 +267,21 @@ class LearningCoordinator(
                 print("Resuming...\n")
             if c == "a":
                 print("Adding process...")
-                self.env_process_interface.add_process()
+                self.env_process_interface.add_processes(1, 0)
                 print(f"Process added. ({self.env_process_interface.n_procs} total)")
             if c == "d":
                 print("Deleting process...")
                 self.env_process_interface.delete_process()
                 print(f"Process deleted. ({self.env_process_interface.n_procs} total)")
             if c == "j":
-                min_process_steps_per_inference = self.env_process_interface.increase_min_process_steps_per_inference()
+                min_frac_process_responses_per_collection = self.env_process_interface.increase_min_frac_process_responses_per_collection()
                 print(
-                    f"Min process steps per inference increased to {min_process_steps_per_inference} ({(100 * min_process_steps_per_inference / self.env_process_interface.n_procs):.2f}% of processes)"
+                    f"Min frac process responses per collection increased to {min_frac_process_responses_per_collection} ({min(1, round(min_frac_process_responses_per_collection * self.env_process_interface.n_procs)):.2f} processes)"
                 )
             if c == "l":
-                min_process_steps_per_inference = self.env_process_interface.decrease_min_process_steps_per_inference()
+                min_frac_process_responses_per_collection = self.env_process_interface.decrease_min_frac_process_responses_per_collection()
                 print(
-                    f"Min process steps per inference decreased to {min_process_steps_per_inference} ({(100 * min_process_steps_per_inference / self.env_process_interface.n_procs):.2f}% of processes)"
+                    f"Min frac process responses per collection decreased to {min_frac_process_responses_per_collection} ({min(1, round(min_frac_process_responses_per_collection * self.env_process_interface.n_procs)):.2f} processes)"
                 )
 
     def save(self):

@@ -1,7 +1,7 @@
 [package]
 name = "rlgym-learn"
 version = "2.0.0-alpha.1"
-edition = "2021"
+edition = "2024"
 readme = "README.md"
 license="Apache-2.0"
 
@@ -15,7 +15,7 @@ enum-kinds = "0.5.1"
 fastrand = "2.2.0"
 itertools = "0.13.0"
 numpy = "0.29.0"
-pyany-serde = "0.6.1"
+pyany-serde = "0.7.0"
 pyo3 = { version = "0.29.0", features = ["py-clone"] }
 raw_sync = "0.1.5"
 rkyv = "0.8.10"

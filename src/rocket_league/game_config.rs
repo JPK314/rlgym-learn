@@ -4,8 +4,9 @@ use pyany_serde::common::get_bytes_to_alignment;
 use pyo3::{
     buffer::PyBuffer, exceptions::asyncio::InvalidStateError, intern, prelude::*, types::PyBytes,
 };
-use rkyv::{rancor::Failure, ser::writer::Buffer, Archive, Deserialize, Serialize};
+use rkyv::{Archive, Deserialize, Serialize, rancor::Failure, ser::writer::Buffer};
 
+use crate::common::BoundPyAny;
 use crate::get_class;
 
 #[derive(FromPyObject, Archive, Deserialize, Serialize, Clone, Copy)]
@@ -48,7 +49,7 @@ impl GameConfigPythonSerde {
 
     fn append<'py>(
         &mut self,
-        buf: Bound<'py, PyAny>,
+        buf: BoundPyAny<'py>,
         mut offset: usize,
         obj: GameConfig,
     ) -> PyResult<usize> {
@@ -60,10 +61,7 @@ impl GameConfigPythonSerde {
         let (_, buf_after_offset) = buf.split_at_mut(offset);
         rkyv::api::high::to_bytes_in::<_, Failure>(&obj, Buffer::from(buf_after_offset)).map_err(
             |err| {
-                InvalidStateError::new_err(format!(
-                    "rkyv error serializing game config: {}",
-                    err.to_string()
-                ))
+                InvalidStateError::new_err(format!("rkyv error serializing game config: {}", err))
             },
         )?;
         Ok(offset)
@@ -80,17 +78,14 @@ impl GameConfigPythonSerde {
         Ok(PyBytes::new(
             py,
             &rkyv::api::high::to_bytes_in::<_, Failure>(&obj, v).map_err(|err| {
-                InvalidStateError::new_err(format!(
-                    "rkyv error serializing game config: {}",
-                    err.to_string()
-                ))
+                InvalidStateError::new_err(format!("rkyv error serializing game config: {}", err))
             })?[..],
         ))
     }
 
     fn retrieve<'py>(
         &mut self,
-        buf: Bound<'py, PyAny>,
+        buf: BoundPyAny<'py>,
         mut offset: usize,
     ) -> PyResult<(GameConfig, usize)> {
         let py_buffer = PyBuffer::<u8>::get(&buf)?;
@@ -103,7 +98,7 @@ impl GameConfigPythonSerde {
                 |err| {
                     InvalidStateError::new_err(format!(
                         "rkyv error deserializing game config: {}",
-                        err.to_string()
+                        err
                     ))
                 },
             )?,

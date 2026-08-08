@@ -6,7 +6,7 @@ on:
       - main
       - master
     tags:
-      - '*'
+      - "*"
   pull_request:
   workflow_dispatch:
 
@@ -39,17 +39,17 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: 3.x
-          cache: 'pip'
-          cache-dependency-path: '**/test_requirements.txt'
+          cache: "pip"
+          cache-dependency-path: "**/test_requirements.txt"
       - run: pip install -r test_requirements.txt
-      - name: 'Build and test'
-        run: cargo nextest run --workspace --all-targets
+      - name: "Build and test"
+        run: cargo nextest run --workspace --all-targets --no-tests pass
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
           target: ${{ matrix.platform.target }}
           args: --release --out dist --interpreter python-3.10 --interpreter python-3.11 --interpreter python-3.12 --interpreter python-3.13
-          sccache: 'true'
+          sccache: "true"
           manylinux: auto
       - name: Upload wheels
         uses: actions/upload-artifact@v4
@@ -77,17 +77,17 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: 3.x
-          cache: 'pip'
-          cache-dependency-path: '**/test_requirements.txt'
+          cache: "pip"
+          cache-dependency-path: "**/test_requirements.txt"
       - run: pip install -r test_requirements.txt
-      - name: 'Build and test'
-        run: cargo nextest run --workspace --all-targets
+      - name: "Build and test"
+        run: cargo nextest run --workspace --all-targets --no-tests pass
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
           target: ${{ matrix.platform.target }}
           args: --release --out dist --interpreter python-3.10 --interpreter python-3.11 --interpreter python-3.12 --interpreter python-3.13 --interpreter python-3.14
-          sccache: 'true'
+          sccache: "true"
           manylinux: musllinux_1_2
       - name: Upload wheels
         uses: actions/upload-artifact@v4
@@ -115,17 +115,17 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
           architecture: ${{ matrix.platform.target }}
-          cache: 'pip'
-          cache-dependency-path: '**/test_requirements.txt'
+          cache: "pip"
+          cache-dependency-path: "**/test_requirements.txt"
       - run: pip install -r test_requirements.txt
-      - name: 'Build and test'
-        run: cargo nextest run --workspace --target ${{ matrix.platform.rust-target }}
+      - name: "Build and test"
+        run: cargo nextest run --workspace --target ${{ matrix.platform.rust-target }} --no-tests pass
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
           target: ${{ matrix.platform.target }}
           args: --release --out dist
-          sccache: 'true'
+          sccache: "true"
       - name: Upload wheels
         uses: actions/upload-artifact@v4
         with:
@@ -146,17 +146,17 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: 3.x
-          cache: 'pip'
-          cache-dependency-path: '**/test_requirements.txt'
+          cache: "pip"
+          cache-dependency-path: "**/test_requirements.txt"
       - run: pip install -r test_requirements.txt
-      - name: 'Build and test'
-        run: cargo nextest run --workspace --all-targets
+      - name: "Build and test"
+        run: cargo nextest run --workspace --all-targets --no-tests pass
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
           target: ${{ matrix.platform.target }}
           args: --release --out dist --interpreter python
-          sccache: 'true'
+          sccache: "true"
       - name: Upload wheels
         uses: actions/upload-artifact@v4
         with:

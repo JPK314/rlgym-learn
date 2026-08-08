@@ -1,9 +1,11 @@
 use pyo3::prelude::*;
 use strum::IntoEnumIterator;
 
+mod common;
 mod env_action;
 mod env_process;
 mod env_process_interface;
+mod serdes;
 mod synchronization;
 mod timestep;
 
@@ -13,10 +15,10 @@ mod rocket_league;
 // pub use agent_manager::AgentManager;
 pub use env_action::{EnvAction, EnvActionType};
 pub use env_process::env_process_fn;
-pub use env_process_interface::EnvProcessInterface;
+pub use env_process_interface::{EnvCloseReason, EnvProcessInterface};
 pub use pyany_serde::{
-    pyany_serde_impl::{InitStrategy, InitStrategyKind, NumpySerdeConfig, NumpySerdeConfigKind},
     PyAnySerdeType, PyAnySerdeTypeKind,
+    pyany_serde_impl::{InitStrategy, InitStrategyKind, NumpySerdeConfig, NumpySerdeConfigKind},
 };
 pub use synchronization::{recvfrom_byte, sendto_byte};
 pub use timestep::Timestep;
@@ -121,7 +123,7 @@ mod _rlgym_learn {
     use super::*;
 
     #[pymodule_export]
-    use {EnvAction, EnvActionType, Timestep};
+    use {EnvAction, EnvActionType, EnvCloseReason, Timestep};
 
     #[pymodule_init]
     fn module_init(m: &Bound<'_, PyModule>) -> PyResult<()> {

@@ -1,28 +1,11 @@
-use pyo3::exceptions::asyncio::InvalidStateError;
 use pyo3::sync::PyOnceLock;
 use pyo3::types::PyBytes;
-use pyo3::{intern, prelude::*, IntoPyObjectExt};
-use std::fmt::{self, Display, Formatter};
+use pyo3::{IntoPyObjectExt, intern, prelude::*};
 
-#[derive(Debug, PartialEq)]
-pub enum Header {
-    EnvShapesRequest,
-    EnvAction,
-    Stop,
-}
-
-impl Display for Header {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::EnvShapesRequest => write!(f, "EnvShapesRequest"),
-            Self::EnvAction => write!(f, "EnvAction"),
-            Self::Stop => write!(f, "Stop"),
-        }
-    }
-}
+use crate::common::BoundPyAny;
 
 #[pyfunction]
-pub fn recvfrom_byte<'py>(socket: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+pub fn recvfrom_byte<'py>(socket: &BoundPyAny<'py>) -> PyResult<BoundPyAny<'py>> {
     static INTERNED_INT_1: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
     let py = socket.py();
     socket.call_method1(
@@ -32,7 +15,7 @@ pub fn recvfrom_byte<'py>(socket: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyA
 }
 
 #[pyfunction]
-pub fn sendto_byte<'py>(socket: &Bound<'py, PyAny>, address: &Bound<'py, PyAny>) -> PyResult<()> {
+pub fn sendto_byte<'py>(socket: &BoundPyAny<'py>, address: &BoundPyAny<'py>) -> PyResult<()> {
     static INTERNED_BYTES_0: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
     let py = socket.py();
     socket.call_method1(
@@ -48,26 +31,4 @@ pub fn sendto_byte<'py>(socket: &Bound<'py, PyAny>, address: &Bound<'py, PyAny>)
 
 pub fn get_flink(flinks_folder: &str, proc_id: u128) -> String {
     format!("{}/{}", flinks_folder, proc_id)
-}
-
-pub fn append_header(buf: &mut [u8], offset: usize, header: Header) -> usize {
-    buf[offset] = match header {
-        Header::EnvShapesRequest => 0,
-        Header::EnvAction => 1,
-        Header::Stop => 2,
-    };
-    offset + 1
-}
-
-pub fn retrieve_header(slice: &[u8], offset: usize) -> PyResult<(Header, usize)> {
-    let header = match slice[offset] {
-        0 => Ok(Header::EnvShapesRequest),
-        1 => Ok(Header::EnvAction),
-        2 => Ok(Header::Stop),
-        v => Err(InvalidStateError::new_err(format!(
-            "tried to retrieve header from shared_memory but got value {}",
-            v
-        ))),
-    }?;
-    Ok((header, offset + 1))
 }

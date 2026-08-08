@@ -1,17 +1,17 @@
 use std::slice::{from_raw_parts, from_raw_parts_mut};
 
-use numpy::{ndarray::Array1, PyArray1, PyArray2, PyArrayMethods};
+use numpy::{PyArray1, PyArray2, PyArrayMethods, ndarray::Array1};
 use pyany_serde::common::get_bytes_to_alignment;
 use pyo3::{
     buffer::PyBuffer,
-    exceptions::{asyncio::InvalidStateError, PyValueError},
+    exceptions::{PyValueError, asyncio::InvalidStateError},
     intern,
     prelude::*,
     types::PyBytes,
 };
-use rkyv::{rancor::Failure, ser::writer::Buffer, Archive, Deserialize, Serialize};
+use rkyv::{Archive, Deserialize, Serialize, rancor::Failure, ser::writer::Buffer};
 
-use crate::get_class;
+use crate::{common::BoundPyAny, get_class};
 
 use super::math::{
     euler_to_quaternion, quaternion_to_euler_py, quaternion_to_rotation_py, rotation_to_quaternion,
@@ -71,7 +71,7 @@ pub struct PhysicsObjectInner {
 }
 
 impl<'py> PhysicsObject<'py> {
-    pub fn to_inner(&self) -> PyResult<PhysicsObjectInner> {
+    pub fn as_inner(&self) -> PyResult<PhysicsObjectInner> {
         let mut quat;
         if let Some(quaternion) = &self._quaternion {
             quat = quaternion.to_vec()?;
@@ -98,7 +98,7 @@ impl<'py> PhysicsObject<'py> {
 }
 
 impl PhysicsObjectInner {
-    pub fn as_outer<'py>(self, py: Python<'py>) -> PyResult<PhysicsObject<'py>> {
+    pub fn into_outer<'py>(self, py: Python<'py>) -> PyResult<PhysicsObject<'py>> {
         Ok(PhysicsObject {
             position: PyArray1::from_array(py, &Array1::from_vec(self.position)),
             linear_velocity: PyArray1::from_array(py, &Array1::from_vec(self.linear_velocity)),
@@ -128,7 +128,7 @@ impl PhysicsObjectPythonSerde {
 
     fn append<'py>(
         &mut self,
-        buf: Bound<'py, PyAny>,
+        buf: BoundPyAny<'py>,
         mut offset: usize,
         obj: PhysicsObject<'py>,
     ) -> PyResult<usize> {
@@ -139,14 +139,11 @@ impl PhysicsObjectPythonSerde {
             + get_bytes_to_alignment::<ArchivedPhysicsObjectInner>(buf.as_ptr() as usize + offset);
         let (_, buf_after_offset) = buf.split_at_mut(offset);
         let n_bytes = rkyv::api::high::to_bytes_in::<_, Failure>(
-            &obj.to_inner()?,
+            &obj.as_inner()?,
             Buffer::from(buf_after_offset),
         )
         .map_err(|err| {
-            InvalidStateError::new_err(format!(
-                "rkyv error serializing physics object: {}",
-                err.to_string()
-            ))
+            InvalidStateError::new_err(format!("rkyv error serializing physics object: {}", err))
         })?
         .len();
         Ok(offset + n_bytes)
@@ -162,10 +159,10 @@ impl PhysicsObjectPythonSerde {
         let v = vec![0; offset];
         Ok(PyBytes::new(
             py,
-            &rkyv::api::high::to_bytes_in::<_, Failure>(&obj.to_inner()?, v).map_err(|err| {
+            &rkyv::api::high::to_bytes_in::<_, Failure>(&obj.as_inner()?, v).map_err(|err| {
                 InvalidStateError::new_err(format!(
                     "rkyv error serializing physics object: {}",
-                    err.to_string()
+                    err
                 ))
             })?[..],
         ))
@@ -173,7 +170,7 @@ impl PhysicsObjectPythonSerde {
 
     fn retrieve<'py>(
         &mut self,
-        buf: Bound<'py, PyAny>,
+        buf: BoundPyAny<'py>,
         mut offset: usize,
     ) -> PyResult<(PhysicsObject<'py>, usize)> {
         let py = buf.py();
@@ -187,9 +184,9 @@ impl PhysicsObjectPythonSerde {
                 .map_err(|err| {
                     InvalidStateError::new_err(format!(
                         "rkyv error deserializing physics object: {}",
-                        err.to_string()
+                        err
                     ))
                 })?;
-        Ok((inner_physics_object.as_outer(py)?, offset))
+        Ok((inner_physics_object.into_outer(py)?, offset))
     }
 }

@@ -1,17 +1,18 @@
 use std::slice::{from_raw_parts, from_raw_parts_mut};
 
-use numpy::{ndarray::Array1, PyArray1, PyArrayMethods};
-use pyany_serde::{common::get_bytes_to_alignment, PyAnySerde, PyAnySerdeType};
+use numpy::{PyArray1, PyArrayMethods, ndarray::Array1};
+use pyany_serde::{PyAnySerde, PyAnySerdeType, common::get_bytes_to_alignment};
 use pyo3::{
+    PyTypeInfo,
     buffer::PyBuffer,
     exceptions::asyncio::InvalidStateError,
     intern,
     prelude::*,
     types::{PyBytes, PyTuple, PyType},
-    PyTypeInfo,
 };
-use rkyv::{rancor::Failure, ser::writer::Buffer, Archive, Deserialize, Serialize};
+use rkyv::{Archive, Deserialize, Serialize, rancor::Failure, ser::writer::Buffer};
 
+use crate::common::BoundPyAny;
 use crate::get_class;
 
 use super::physics_object::{PhysicsObject, PhysicsObjectInner};
@@ -22,7 +23,7 @@ pub struct Car<'py> {
     pub team_num: u8,
     pub hitbox_type: u8,
     pub ball_touches: u8,
-    pub bump_victim_id: Option<Bound<'py, PyAny>>,
+    pub bump_victim_id: Option<BoundPyAny<'py>>,
     pub demo_respawn_timer: f32,
     pub on_ground: bool,
     pub supersonic_time: f32,
@@ -108,7 +109,7 @@ pub struct CarInner {
 }
 
 impl<'py> Car<'py> {
-    pub fn to_inner(&self) -> PyResult<CarInner> {
+    pub fn as_inner(&self) -> PyResult<CarInner> {
         Ok(CarInner {
             team_num: self.team_num,
             hitbox_type: self.hitbox_type,
@@ -131,16 +132,16 @@ impl<'py> Car<'py> {
             is_autoflipping: self.is_autoflipping,
             autoflip_timer: self.autoflip_timer,
             autoflip_direction: self.autoflip_direction,
-            inner_physics: self.physics.to_inner()?,
+            inner_physics: self.physics.as_inner()?,
         })
     }
 }
 
 impl CarInner {
-    pub fn as_outer<'py>(
+    pub fn into_outer<'py>(
         self,
         py: Python<'py>,
-        bump_victim_id: Option<Bound<'py, PyAny>>,
+        bump_victim_id: Option<BoundPyAny<'py>>,
     ) -> PyResult<Car<'py>> {
         Ok(Car {
             team_num: self.team_num,
@@ -165,7 +166,7 @@ impl CarInner {
             is_autoflipping: self.is_autoflipping,
             autoflip_timer: self.autoflip_timer,
             autoflip_direction: self.autoflip_direction,
-            physics: self.inner_physics.as_outer(py)?,
+            physics: self.inner_physics.into_outer(py)?,
         })
     }
 }
@@ -190,16 +191,16 @@ impl CarPythonSerde {
     }
 
     #[new]
-    fn new<'py>(agent_id_serde_type: PyAnySerdeType) -> PyResult<Self> {
+    fn new(agent_id_serde_type: PyAnySerdeType) -> PyResult<Self> {
         Ok(CarPythonSerde {
             agent_id_serde: agent_id_serde_type.clone().try_into()?,
-            agent_id_serde_type: agent_id_serde_type,
+            agent_id_serde_type,
         })
     }
 
     fn append<'py>(
         &mut self,
-        buf: Bound<'py, PyAny>,
+        buf: BoundPyAny<'py>,
         mut offset: usize,
         obj: Car<'py>,
     ) -> PyResult<usize> {
@@ -208,17 +209,15 @@ impl CarPythonSerde {
             unsafe { from_raw_parts_mut(py_buffer.buf_ptr() as *mut u8, py_buffer.item_count()) };
         offset = self
             .agent_id_serde
-            .append_option(buf, offset, &obj.bump_victim_id.as_ref())?;
+            .append_option(buf, offset, &obj.bump_victim_id)?;
         offset =
             offset + get_bytes_to_alignment::<ArchivedCarInner>(buf.as_ptr() as usize + offset);
         let (_, buf_after_offset) = buf.split_at_mut(offset);
         let n_bytes = rkyv::api::high::to_bytes_in::<_, Failure>(
-            &obj.to_inner()?,
+            &obj.as_inner()?,
             Buffer::from(buf_after_offset),
         )
-        .map_err(|err| {
-            InvalidStateError::new_err(format!("rkyv error serializing car: {}", err.to_string()))
-        })?
+        .map_err(|err| InvalidStateError::new_err(format!("rkyv error serializing car: {}", err)))?
         .len();
         Ok(offset + n_bytes)
     }
@@ -232,7 +231,7 @@ impl CarPythonSerde {
     ) -> PyResult<Bound<'py, PyBytes>> {
         let mut v = Vec::with_capacity(64);
         self.agent_id_serde
-            .append_option_vec(&mut v, start_addr, &obj.bump_victim_id.as_ref())?;
+            .append_option_vec(&mut v, start_addr, &obj.bump_victim_id)?;
         let Some(start_addr) = start_addr else {
             Err(InvalidStateError::new_err(
                 "get_bytes was called on the Car serde, but no start address was provided",
@@ -242,18 +241,15 @@ impl CarPythonSerde {
         v.append(&mut vec![0; offset]);
         Ok(PyBytes::new(
             py,
-            &rkyv::api::high::to_bytes_in::<_, Failure>(&obj.to_inner()?, v).map_err(|err| {
-                InvalidStateError::new_err(format!(
-                    "rkyv error serializing car: {}",
-                    err.to_string()
-                ))
+            &rkyv::api::high::to_bytes_in::<_, Failure>(&obj.as_inner()?, v).map_err(|err| {
+                InvalidStateError::new_err(format!("rkyv error serializing car: {}", err))
             })?[..],
         ))
     }
 
     fn retrieve<'py>(
         &mut self,
-        buf: Bound<'py, PyAny>,
+        buf: BoundPyAny<'py>,
         mut offset: usize,
     ) -> PyResult<(Car<'py>, usize)> {
         let py = buf.py();
@@ -266,11 +262,8 @@ impl CarPythonSerde {
         offset = start + 164;
         let inner_car = rkyv::api::high::from_bytes::<CarInner, Failure>(&buf[start..offset])
             .map_err(|err| {
-                InvalidStateError::new_err(format!(
-                    "rkyv error deserializing car: {}",
-                    err.to_string()
-                ))
+                InvalidStateError::new_err(format!("rkyv error deserializing car: {}", err))
             })?;
-        Ok((inner_car.as_outer(py, bump_victim_id)?, offset))
+        Ok((inner_car.into_outer(py, bump_victim_id)?, offset))
     }
 }

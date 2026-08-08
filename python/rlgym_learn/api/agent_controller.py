@@ -12,7 +12,7 @@ from rlgym.api import (
     StateType,
 )
 
-from .._rlgym_learn import EnvAction, Timestep
+from .._rlgym_learn import EnvAction, EnvCloseReason, Timestep
 from ..basic_config import BaseConfigModel, ProcessConfigModel
 from .typing import AgentControllerConfig
 
@@ -77,14 +77,15 @@ class AgentController(
                 dict[AgentID, bool] | None,
             ],
         ],
-    ) -> dict[int, EnvAction[AgentID, ActionType, StateType]]:
+    ) -> tuple[int, dict[int, EnvAction[AgentID, ActionType, StateType]]]:
         """
         Function to get env actions from the agent controllers.
         :param env_obs_data_dict: Dictionary with environment ids as keys and parallel lists of Agent IDs and observations, to be used to get actions if the env action chosen is "step".
         :param state_info: Dictionary with environment ids as keys and state information as values, to be passed to agent controllers to decide the env action.
-        :return: Dictionary with environment ids as keys and EnvAction instances as values.
+        :return: Tuple where the first value is the number of new environments to create, and the second value is a dictionary with environment ids as keys and EnvAction instances as values.
+
+        If an environment has had DEFER or ENV_SHAPES returned as the env action on the previous call, that environment id will show up here again for processing.
         """
-        # TODO: allow the returned dict to miss keys in the env_*_dict parameters and just defer those to the next loop
 
     @abstractmethod
     def process_timestep_data(
@@ -107,14 +108,26 @@ class AgentController(
         shared info for the environment (if shared_info_serde_type is non-None),
 
         and the state (if the previous EnvAction for this environment id had send_state=True).
+
+        If an environment has had DEFER or ENV_SHAPES used as the env action, that environment id will NOT show up here a second time for processing because the environment has not had any state change.
         """
 
     @abstractmethod
-    def set_space_types(self, obs_space: ObsSpaceType, action_space: ActionSpaceType):
+    def set_space_types(
+        self,
+        env_spaces_data_dict: dict[
+            int, dict[AgentID, tuple[ObsSpaceType, ActionSpaceType]]
+        ],
+    ):
         """
-        Function to handle managing any state related to space types. Called once before load, may be called at other points according to the env action types.
+        Function to handle managing any state related to space types. Called whenever new env processes are created with all of the new environment ids (including when new env processes are created by the user via the interactive terminal) or when the ENV_SPACES env action is used for a step.
         """
-        # TODO: add GetSpaceTypes as env action
+
+    @abstractmethod
+    def handle_env_closes(self, env_close_reason_dict: dict[int, EnvCloseReason]):
+        """
+        Function to handle any cleanup and decision making surrounding processes that have closed (either due to crash, the CLOSE env action, or process removal via terminal input).
+        """
 
     @abstractmethod
     def load(

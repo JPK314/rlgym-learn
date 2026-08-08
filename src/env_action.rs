@@ -6,9 +6,11 @@ use pyo3::{
 };
 
 use pyany_serde::{
-    communication::{append_bool, append_python_option, retrieve_bool, retrieve_python_option},
     PyAnySerde,
+    communication::{append_bool, append_python_option, retrieve_bool, retrieve_python_option},
 };
+
+use crate::common::BoundPyAny;
 
 #[allow(non_camel_case_types)]
 #[pyclass(from_py_object, module = "rlgym_learn._rlgym_learn")]
@@ -37,6 +39,12 @@ pub enum EnvAction {
         send_state: bool,
         prev_timestep_id_dict_option: Option<Py<PyAny>>,
     },
+    #[pyo3(constructor = ())]
+    ENV_SPACES {},
+    #[pyo3(constructor = ())]
+    DEFER {},
+    #[pyo3(constructor = ())]
+    CLOSE {},
 }
 
 #[pymethods]
@@ -46,8 +54,8 @@ impl EnvAction {
     #[pyo3(signature = (key, /))]
     fn __class_getitem__<'py>(
         cls: &Bound<'py, PyType>,
-        key: &Bound<'py, PyAny>,
-    ) -> PyResult<Bound<'py, PyAny>> {
+        key: &BoundPyAny<'py>,
+    ) -> PyResult<BoundPyAny<'py>> {
         Ok(PyGenericAlias::new(cls.py(), cls.as_any(), key)?.into_any())
     }
 
@@ -57,6 +65,9 @@ impl EnvAction {
             EnvAction::STEP { .. } => EnvActionType::STEP,
             EnvAction::RESET { .. } => EnvActionType::RESET,
             EnvAction::SET_STATE { .. } => EnvActionType::SET_STATE,
+            EnvAction::ENV_SPACES { .. } => EnvActionType::ENV_SPACES,
+            EnvAction::DEFER { .. } => EnvActionType::DEFER,
+            EnvAction::CLOSE { .. } => EnvActionType::CLOSE,
         }
     }
 
@@ -75,15 +86,17 @@ impl EnvAction {
                 shared_info_setter_option,
                 ..
             } => shared_info_setter_option,
+            _ => &None,
         }
     }
 
     #[getter]
-    fn send_state(&self) -> &bool {
+    fn send_state(&self) -> Option<&bool> {
         match self {
-            EnvAction::STEP { send_state, .. } => send_state,
-            EnvAction::RESET { send_state, .. } => send_state,
-            EnvAction::SET_STATE { send_state, .. } => send_state,
+            EnvAction::STEP { send_state, .. } => Some(send_state),
+            EnvAction::RESET { send_state, .. } => Some(send_state),
+            EnvAction::SET_STATE { send_state, .. } => Some(send_state),
+            _ => None,
         }
     }
 
@@ -125,8 +138,8 @@ pub fn append_env_action<'py>(
     mut offset: usize,
     env_action: &EnvAction,
     action_serde: &mut Box<dyn PyAnySerde>,
-    shared_info_setter_serde_option: &mut Option<&mut Box<dyn PyAnySerde>>,
-    state_serde_option: &mut Option<&mut Box<dyn PyAnySerde>>,
+    shared_info_setter_serde_option: &mut Option<Box<dyn PyAnySerde>>,
+    state_serde_option: &mut Option<Box<dyn PyAnySerde>>,
 ) -> PyResult<usize> {
     match env_action {
         EnvAction::STEP {
@@ -145,12 +158,12 @@ pub fn append_env_action<'py>(
                 py,
                 buf,
                 offset,
-                &shared_info_setter_option.as_ref(),
+                shared_info_setter_option,
                 shared_info_setter_serde_option,
                 || {
                     InvalidStateError::new_err(
-                    "Received STEP EnvAction with shared_info_setter, but no shared_info_setter serde was provided",
-                )
+                        "Received STEP EnvAction with shared_info_setter, but no shared_info_setter serde was provided",
+                    )
                 },
             )?;
         }
@@ -165,12 +178,12 @@ pub fn append_env_action<'py>(
                 py,
                 buf,
                 offset,
-                &shared_info_setter_option.as_ref(),
+                shared_info_setter_option,
                 shared_info_setter_serde_option,
                 || {
                     InvalidStateError::new_err(
-                    "Received RESET EnvAction from agent controllers with shared_info_setter, but no shared_info_setter serde was provided",
-                )
+                        "Received RESET EnvAction from agent controllers with shared_info_setter, but no shared_info_setter serde was provided",
+                    )
                 },
             )?;
         }
@@ -194,7 +207,7 @@ pub fn append_env_action<'py>(
                 py,
                 buf,
                 offset,
-                &shared_info_setter_option.as_ref(),
+                shared_info_setter_option,
                 shared_info_setter_serde_option,
                 || {
                     InvalidStateError::new_err(
@@ -202,6 +215,18 @@ pub fn append_env_action<'py>(
                     )
                 },
             )?;
+        }
+        EnvAction::ENV_SPACES {} => {
+            buf[offset] = 3;
+            offset += 1;
+        }
+        EnvAction::DEFER {} => {
+            buf[offset] = 4;
+            offset += 1;
+        }
+        EnvAction::CLOSE {} => {
+            buf[offset] = 5;
+            offset += 1;
         }
     }
     Ok(offset)
@@ -213,8 +238,8 @@ pub fn retrieve_env_action<'py>(
     offset: usize,
     n_actions: usize,
     action_serde: &mut Box<dyn PyAnySerde>,
-    shared_info_setter_serde_option: &mut Option<&mut Box<dyn PyAnySerde>>,
-    state_serde_option: &mut Option<&mut Box<dyn PyAnySerde>>,
+    shared_info_setter_serde_option: &mut Option<Box<dyn PyAnySerde>>,
+    state_serde_option: &mut Option<Box<dyn PyAnySerde>>,
 ) -> PyResult<(EnvAction, usize)> {
     let env_action_type = buf[offset];
     let mut offset = offset + 1;
@@ -236,8 +261,8 @@ pub fn retrieve_env_action<'py>(
                 shared_info_setter_serde_option,
                 || {
                     InvalidStateError::new_err(
-                    "Received STEP EnvAction in env process with shared_info_setter, but no shared_info_setter serde was provided",
-                )
+                        "Received STEP EnvAction in env process with shared_info_setter, but no shared_info_setter serde was provided",
+                    )
                 },
             )?;
             Ok((
@@ -260,8 +285,8 @@ pub fn retrieve_env_action<'py>(
                 shared_info_setter_serde_option,
                 || {
                     InvalidStateError::new_err(
-                    "Received RESET EnvAction in env process with shared_info_setter, but no shared_info_setter serde was provided",
-                )
+                        "Received RESET EnvAction in env process with shared_info_setter, but no shared_info_setter serde was provided",
+                    )
                 },
             )?;
             Ok((
@@ -305,6 +330,9 @@ pub fn retrieve_env_action<'py>(
                 offset,
             ))
         }
+        3 => Ok((EnvAction::ENV_SPACES {}, offset)),
+        4 => Ok((EnvAction::DEFER {}, offset)),
+        5 => Ok((EnvAction::CLOSE {}, offset)),
         v => Err(pyo3::exceptions::asyncio::InvalidStateError::new_err(
             format!("Tried to deserialize env action type but got {}", v),
         )),
