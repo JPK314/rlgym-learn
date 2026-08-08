@@ -8,6 +8,7 @@ __all__ = [
     "generate_config",
     "EnvAction",
     "EnvActionType",
+    "EnvCloseReason",
     "Timestep",
     "recvfrom_byte",
     "sendto_byte",
@@ -15,7 +16,7 @@ __all__ = [
     "rust_env_process_fn",
 ]
 
-from ._rlgym_learn import EnvAction, EnvActionType, Timestep
+from ._rlgym_learn import EnvAction, EnvActionType, EnvCloseReason, Timestep
 from ._rlgym_learn._backend import EnvProcessInterface as RustEnvProcessInterface
 from ._rlgym_learn._backend import env_process_fn as rust_env_process_fn
 from ._rlgym_learn._backend import recvfrom_byte, sendto_byte

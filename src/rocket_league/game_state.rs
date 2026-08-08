@@ -9,11 +9,12 @@ use pyany_serde::{PyAnySerde, PyAnySerdeType};
 use pyo3::buffer::PyBuffer;
 use pyo3::exceptions::asyncio::InvalidStateError;
 use pyo3::types::{PyBytes, PyDict, PyTuple, PyType};
-use pyo3::{intern, prelude::*, PyTypeInfo};
+use pyo3::{PyTypeInfo, intern, prelude::*};
 use rkyv::rancor::Failure;
 use rkyv::ser::writer::Buffer;
 use rkyv::{Archive, Deserialize, Serialize};
 
+use crate::common::{BoundPyAny, BoundPyDict};
 use crate::get_class;
 
 use super::car::{Car, CarInner};
@@ -26,7 +27,7 @@ pub struct GameState<'py> {
     pub tick_count: u64,
     pub goal_scored: bool,
     pub config: GameConfig,
-    pub cars: Bound<'py, PyDict>,
+    pub cars: BoundPyDict<'py>,
     pub ball: PhysicsObject<'py>,
     pub boost_pad_timers: Bound<'py, PyArray1<f32>>,
 }
@@ -61,30 +62,30 @@ pub struct GameStateInner {
 }
 
 impl<'py> GameState<'py> {
-    fn to_inner(&self) -> PyResult<GameStateInner> {
+    fn as_inner(&self) -> PyResult<GameStateInner> {
         let cars = self
             .cars
             .values()
             .iter()
-            .map(|car| Ok(car.extract::<Car>()?.to_inner()?))
+            .map(|car| car.extract::<Car>()?.as_inner())
             .collect::<PyResult<Vec<_>>>()?;
         Ok(GameStateInner {
             tick_count: self.tick_count,
             goal_scored: self.goal_scored,
             config: self.config,
             cars,
-            ball: self.ball.to_inner()?,
+            ball: self.ball.as_inner()?,
             boost_pad_timers: self.boost_pad_timers.to_vec()?,
         })
     }
 }
 
 impl GameStateInner {
-    pub fn as_outer<'py>(
+    pub fn into_outer<'py>(
         self,
         py: Python<'py>,
-        agent_ids: Vec<Bound<'py, PyAny>>,
-        bump_victim_ids: Vec<Option<Bound<'py, PyAny>>>,
+        agent_ids: Vec<BoundPyAny<'py>>,
+        bump_victim_ids: Vec<Option<BoundPyAny<'py>>>,
     ) -> PyResult<GameState<'py>> {
         let cars = PyDict::new(py);
         for (agent_id, inner_car, bump_victim_id) in izip!(
@@ -92,14 +93,14 @@ impl GameStateInner {
             self.cars.into_iter(),
             bump_victim_ids.into_iter()
         ) {
-            cars.set_item(agent_id, inner_car.as_outer(py, bump_victim_id)?)?;
+            cars.set_item(agent_id, inner_car.into_outer(py, bump_victim_id)?)?;
         }
         Ok(GameState {
             tick_count: self.tick_count,
             goal_scored: self.goal_scored,
             config: self.config,
             cars,
-            ball: self.ball.as_outer(py)?,
+            ball: self.ball.into_outer(py)?,
             boost_pad_timers: PyArray1::from_array(py, &Array1::from_vec(self.boost_pad_timers)),
         })
     }
@@ -125,16 +126,16 @@ impl GameStatePythonSerde {
     }
 
     #[new]
-    fn new<'py>(agent_id_serde_type: PyAnySerdeType) -> PyResult<Self> {
+    fn new(agent_id_serde_type: PyAnySerdeType) -> PyResult<Self> {
         Ok(GameStatePythonSerde {
             agent_id_serde: agent_id_serde_type.clone().try_into()?,
-            agent_id_serde_type: agent_id_serde_type,
+            agent_id_serde_type,
         })
     }
 
     fn append<'py>(
         &mut self,
-        buf: Bound<'py, PyAny>,
+        buf: BoundPyAny<'py>,
         mut offset: usize,
         obj: GameState<'py>,
     ) -> PyResult<usize> {
@@ -149,22 +150,19 @@ impl GameStatePythonSerde {
         for (agent_id, car) in obj.cars.iter() {
             let car = car.extract::<Car>()?;
             offset = self.agent_id_serde.append(buf, offset, &agent_id)?;
-            offset =
-                self.agent_id_serde
-                    .append_option(buf, offset, &car.bump_victim_id.as_ref())?;
+            offset = self
+                .agent_id_serde
+                .append_option(buf, offset, &car.bump_victim_id)?;
         }
         offset = offset
             + get_bytes_to_alignment::<ArchivedGameStateInner>(buf.as_ptr() as usize + offset);
         let (buf_before_offset, buf_after_offset) = buf.split_at_mut(offset);
         let n_bytes = rkyv::api::high::to_bytes_in::<_, Failure>(
-            &obj.to_inner()?,
+            &obj.as_inner()?,
             Buffer::from(buf_after_offset),
         )
         .map_err(|err| {
-            InvalidStateError::new_err(format!(
-                "rkyv error serializing game state: {}",
-                err.to_string()
-            ))
+            InvalidStateError::new_err(format!("rkyv error serializing game state: {}", err))
         })?
         .len();
         append_usize(buf_before_offset, n_bytes_offset, n_bytes);
@@ -188,11 +186,8 @@ impl GameStatePythonSerde {
             let car = car.extract::<Car>()?;
             self.agent_id_serde
                 .append_vec(&mut v, start_addr, &agent_id)?;
-            self.agent_id_serde.append_option_vec(
-                &mut v,
-                start_addr,
-                &car.bump_victim_id.as_ref(),
-            )?;
+            self.agent_id_serde
+                .append_option_vec(&mut v, start_addr, &car.bump_victim_id)?;
         }
         let Some(start_addr) = start_addr else {
             Err(InvalidStateError::new_err(
@@ -202,28 +197,22 @@ impl GameStatePythonSerde {
         let offset = get_bytes_to_alignment::<ArchivedGameStateInner>(start_addr + v.len());
         v.append(&mut vec![0; offset]);
         let pre_archived_len = v.len();
-        v = rkyv::api::high::to_bytes_in::<_, Failure>(&obj.to_inner()?, v).map_err(|err| {
-            InvalidStateError::new_err(format!(
-                "rkyv error serializing game state: {}",
-                err.to_string()
-            ))
+        v = rkyv::api::high::to_bytes_in::<_, Failure>(&obj.as_inner()?, v).map_err(|err| {
+            InvalidStateError::new_err(format!("rkyv error serializing game state: {}", err))
         })?;
         let n_bytes = v.len() - pre_archived_len;
         append_usize(&mut v, n_bytes_idx, n_bytes);
         Ok(PyBytes::new(
             py,
-            &rkyv::api::high::to_bytes_in::<_, Failure>(&obj.to_inner()?, v).map_err(|err| {
-                InvalidStateError::new_err(format!(
-                    "rkyv error serializing game state: {}",
-                    err.to_string()
-                ))
+            &rkyv::api::high::to_bytes_in::<_, Failure>(&obj.as_inner()?, v).map_err(|err| {
+                InvalidStateError::new_err(format!("rkyv error serializing game state: {}", err))
             })?[..],
         ))
     }
 
     fn retrieve<'py>(
         &mut self,
-        buf: Bound<'py, PyAny>,
+        buf: BoundPyAny<'py>,
         mut offset: usize,
     ) -> PyResult<(GameState<'py>, usize)> {
         let py = buf.py();
@@ -250,13 +239,10 @@ impl GameStatePythonSerde {
             &buf[start..offset],
         )
         .map_err(|err| {
-            InvalidStateError::new_err(format!(
-                "rkyv error deserializing game state: {}",
-                err.to_string()
-            ))
+            InvalidStateError::new_err(format!("rkyv error deserializing game state: {}", err))
         })?;
         Ok((
-            inner_game_state.as_outer(py, agent_ids, bump_victim_ids)?,
+            inner_game_state.into_outer(py, agent_ids, bump_victim_ids)?,
             offset,
         ))
     }

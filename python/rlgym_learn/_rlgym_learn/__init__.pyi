@@ -1,13 +1,8 @@
 # pyright: reportUnusedParameter=false
 
-from __future__ import annotations
-
 from collections.abc import Iterable, Mapping
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Generic, TypeVar, final
-
-if TYPE_CHECKING:
-    from .._rlgym_learn import EnvAction
+from typing import Any, Generic, TypeVar, final
 
 from rlgym.api import (
     ActionType,
@@ -22,9 +17,15 @@ __all__ = [
     "Timestep",
 ]
 
-AgentIDInner = TypeVar("AgentIDInner")
-ActionTypeInner = TypeVar("ActionTypeInner")
-StateTypeInner = TypeVar("StateTypeInner")
+_AgentIDInner = TypeVar("_AgentIDInner")
+_ActionTypeInner = TypeVar("_ActionTypeInner")
+_StateTypeInner = TypeVar("_StateTypeInner")
+
+@final
+class EnvCloseReason(Enum):
+    CLOSE_SENT = ...
+    DELETED = ...
+    EXCEPTION = ...
 
 @final
 class EnvActionType(Enum):
@@ -48,8 +49,8 @@ class EnvAction(Generic[AgentID, ActionType, StateType]):
 
     @final
     class STEP(
-        EnvAction[AgentIDInner, ActionTypeInner, StateTypeInner],
-        Generic[AgentIDInner, ActionTypeInner, StateTypeInner],
+        EnvAction[_AgentIDInner, _ActionTypeInner, _StateTypeInner],
+        Generic[_AgentIDInner, _ActionTypeInner, _StateTypeInner],
     ):
         __match_args__ = (
             "action_list",
@@ -58,15 +59,15 @@ class EnvAction(Generic[AgentID, ActionType, StateType]):
         )
         def __new__(
             cls,
-            action_list: Iterable[ActionTypeInner],
+            action_list: Iterable[_ActionTypeInner],
             shared_info_setter: Mapping[str, Any] | None = None,
             send_state: bool = False,
-        ) -> EnvAction.STEP[AgentIDInner, ActionTypeInner, StateTypeInner]: ...
+        ) -> EnvAction.STEP[_AgentIDInner, _ActionTypeInner, _StateTypeInner]: ...
 
     @final
     class RESET(
-        EnvAction[AgentIDInner, ActionTypeInner, StateTypeInner],
-        Generic[AgentIDInner, ActionTypeInner, StateTypeInner],
+        EnvAction[_AgentIDInner, _ActionTypeInner, _StateTypeInner],
+        Generic[_AgentIDInner, _ActionTypeInner, _StateTypeInner],
     ):
         __match_args__ = (
             "shared_info_setter",
@@ -76,12 +77,12 @@ class EnvAction(Generic[AgentID, ActionType, StateType]):
             cls,
             shared_info_setter: Mapping[str, Any] | None = None,
             send_state: bool = False,
-        ) -> EnvAction.RESET[AgentIDInner, ActionTypeInner, StateTypeInner]: ...
+        ) -> EnvAction.RESET[_AgentIDInner, _ActionTypeInner, _StateTypeInner]: ...
 
     @final
     class SET_STATE(
-        EnvAction[AgentIDInner, ActionTypeInner, StateTypeInner],
-        Generic[AgentIDInner, ActionTypeInner, StateTypeInner],
+        EnvAction[_AgentIDInner, _ActionTypeInner, _StateTypeInner],
+        Generic[_AgentIDInner, _ActionTypeInner, _StateTypeInner],
     ):
         __match_args__ = (
             "desired_state",
@@ -91,11 +92,29 @@ class EnvAction(Generic[AgentID, ActionType, StateType]):
         )
         def __new__(
             cls,
-            desired_state: StateTypeInner,
+            desired_state: _StateTypeInner,
             shared_info_setter: Mapping[str, Any] | None = None,
             send_state: bool = False,
             prev_timestep_id_dict: Any | None = None,
-        ) -> EnvAction.SET_STATE[AgentIDInner, ActionTypeInner, StateTypeInner]: ...
+        ) -> EnvAction.SET_STATE[_AgentIDInner, _ActionTypeInner, _StateTypeInner]: ...
+
+    @final
+    class ENV_SPACES(
+        EnvAction[_AgentIDInner, _ActionTypeInner, _StateTypeInner],
+        Generic[_AgentIDInner, _ActionTypeInner, _StateTypeInner],
+    ):
+        def __new__(
+            cls,
+        ) -> EnvAction.ENV_SPACES[_AgentIDInner, _ActionTypeInner, _StateTypeInner]: ...
+
+    @final
+    class CLOSE(
+        EnvAction[_AgentIDInner, _ActionTypeInner, _StateTypeInner],
+        Generic[_AgentIDInner, _ActionTypeInner, _StateTypeInner],
+    ):
+        def __new__(
+            cls,
+        ) -> EnvAction.CLOSE[_AgentIDInner, _ActionTypeInner, _StateTypeInner]: ...
 
 @final
 class Timestep(Generic[AgentID, ObsType, ActionType, RewardType]):

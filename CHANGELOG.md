@@ -9,7 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- added uv.lock file for python dependency management
+- Added uv.lock file for python dependency management.
+- Env process failures are now reported to the agent controller.
+- The agent controller can now add environments as part of the `get_env_actions` method signature.
+- Added an explicit assertion that all the expected environment ids were returned in the response from the `AgentController`'s method `get_env_actions` to prevent processes getting lost and hanging forever.
+- `DEFER` is now an `EnvAction` variant that tells rlgym-learn that you don't want to perform any env action for this environment right now. When used, the agent controller will receive the same data for this environment next time `get_env_actions` is called.
+- `ENV_SPACES` is now an `EnvAction` variant and can be used at any point in the lifecycle of an environment after startup. When used, rlgym-learn will behave as if the env action was `DEFER` except that it will call the `set_space_types` method with the result of getting the `observation_spaces` and `action_spaces` properties from the RLGym environment.
+- `CLOSE` is now an `EnvAction` variant and can be used at any point in the lifecycle of an environment after startup. When used, rlgym-learn will perform a clean shutdown of the env process.
+- A new class `EnvCloseReason` has been created to distinguish why environments were closed for `handle_env_closes` (below). It is a simple enum that has variants `CLOSE_SENT`, `DELETED`, and `EXCEPTION`.
+- A new abstract method `handle_env_closes` has been added to the `AgentController` class to inform the agent controller of any environments that close. The signature is a dict of environment id keys with `EnvCloseReason` values.
 
 ### Changed
 
@@ -27,10 +35,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - env_id is now a u128 (int) instead of a string. This affects the type signatures of multiple methods in the `AgentController` class as well as multiple places in the backend (such as the `EnvProcessInterface` class methods and the `env_process` function).
 - The concept of multiple agent controllers has been refactored out of rlgym-learn to rlgym-learn-algos' `MultiAgentController` class instead, with some enhancements.
   - The `LearningCoordinatorConfigModel` now accepts a single agent controller config model under the key `agent_controller_config` (previously a dict under the key `agent_controllers_config`) and the `agent_controllers_save_folder` key has been renamed to `agent_controller_save_folder`.
-  - The `AgentController` class no longer has methods `choose_env_actions`, `process_env_actions`, `choose_agents`, and `get_actions`. Instead it has a single method `get_env_actions` which returns a dict of env ids and `EnvAction`s using the agent ids/observations per environment as well as the state info per environment as parameters.
+  - The `AgentController` class no longer has methods `choose_env_actions`, `process_env_actions`, `choose_agents`, and `get_actions`. Instead it has a single method `get_env_actions` which returns a number of new env processes to create and a dict of env ids and `EnvAction`s using the agent ids/observations per environment as well as the state info per environment as parameters.
   - `EnvAction` can now be instantiated from Python and has type stubs available.
   - `EnvActionResponse` has been moved to rlgym-learn-algos for its `MultiAgentController` implementation.
-  - `AgentController` and `PythonSerde` now are abstract base classes to properly force implementation of abstract methods for type checkers.
+- `AgentController` and `PythonSerde` now are abstract base classes to properly force implementation of abstract methods for type checkers.
+- Adding processes has been fixed to send a reset message to the process to allow it to start normally.
+- `observation_spaces` and `action_spaces` in the RLGym environment are now always called after `reset` on startup (previously they were called before).
+- `set_space_types` has had its signature changed to allow for getting space types per agent id per environment.
+- `ObsSpaceType` and `ActionSpaceType` values are no longer collected at startup for a single environment, and instead are collected for all environments during startup.
+- `collect_step_data` in the Python and Rust-side `EnvProcessInterface` has been renamed to `collect_env_responses` and has a reworked return signature to account for the change to space types.
+- Refactored the Rust-side `env_process_fn` and `EnvProcessInterface` to accept the `SerdeTypesConfigModel` directly instead of requiring each serde to be passed individually.
+- `add_process` in the Python and Rust-side `EnvProcessInterface` has been changed to `add_processes` with an intuitively updated method signature.
+- `init_processes` in the Python and Rust-side `EnvProcessInterface` now returns a dict with environment ids as keys and (dicts with agent ids as keys and tuples of `ObsSpaceType` and `ActionSpaceType` as values) as values.
+- `min_process_steps_per_inference` in `ProcessConfigModel` is now `min_frac_process_responses_per_collection` and dynamically determines the minimum process responses (what were previously called process steps) to return based on the specified fraction of however many processes are currently open.
+- `instance_launch_delay` has been renamed to `launch_delay` for simplicity.
 
 ### Removed
 

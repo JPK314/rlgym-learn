@@ -1,8 +1,8 @@
-use pyo3::prelude::*;
+use pyo3::{prelude::*, types::PyInt};
 
 #[pyclass(generic, get_all, set_all, module = "rlgym_learn._rlgym_learn")]
 pub struct Timestep {
-    pub env_id: u128,
+    pub env_id: Py<PyInt>,
     pub timestep_id: u128,
     pub previous_timestep_id: Option<u128>,
     pub agent_id: Py<PyAny>,
@@ -14,11 +14,12 @@ pub struct Timestep {
     pub truncated: bool,
 }
 
+#[allow(clippy::too_many_arguments)]
 #[pymethods]
 impl Timestep {
     #[new]
     pub fn new(
-        env_id: u128,
+        env_id: Py<PyInt>,
         timestep_id: u128,
         previous_timestep_id: Option<u128>,
         agent_id: Py<PyAny>,

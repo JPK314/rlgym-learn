@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Annotated, Any, Generic
 
-from pydantic import BaseModel, InstanceOf, WithJsonSchema, model_validator
+from pydantic import BaseModel, InstanceOf, WithJsonSchema, field_validator
 from rlgym.api import (
     ActionSpaceType,
     ActionType,
@@ -22,17 +22,17 @@ AnyBaseModel = Annotated[
 
 class ProcessConfigModel(BaseModel, extra="forbid"):
     n_proc: int = 8
-    min_process_steps_per_inference: int = -1
+    min_frac_process_responses_per_collection: float = 0.45
     render: bool = False
     render_delay: float | None = None
-    instance_launch_delay: float | None = None
+    launch_delay: float | None = None
     recalculate_agent_id_every_step: bool = False
 
-    @model_validator(mode="after")
-    def set_default_min_process_steps_per_inference(self):
-        if self.min_process_steps_per_inference < 0:
-            self.min_process_steps_per_inference = max(1, int(0.45 * self.n_proc))
-        return self
+    @field_validator("min_frac_process_responses_per_collection")
+    def validate_proper_frac(cls, v: float):
+        assert 0 <= v <= 1, (
+            "min_frac_process_responses_per_collection must be between 0 and 1 (inclusive)"
+        )
 
 
 class SerdeTypesModel(

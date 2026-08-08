@@ -325,10 +325,10 @@ mod tests {
             len_sq = w * w + x * x + y * y + z * z;
         }
         let len = len_sq.sqrt();
-        w = w / len;
-        x = x / len;
-        y = y / len;
-        z = z / len;
+        w /= len;
+        x /= len;
+        y /= len;
+        z /= len;
         vec![w, x, y, z]
     }
 
@@ -399,7 +399,9 @@ mod tests {
         assert!(
             TOL > quat_dist_sq,
             "Failure converting euler angles to and from quaternion starting with {:?} (ended with {:?}, distance squared: {})",
-            euler_start, euler_quat_end, quat_dist_sq
+            euler_start,
+            euler_quat_end,
+            quat_dist_sq
         );
         let mut quat_euler_rot_end = vec![0_f32; 4];
         euler_to_quaternion(
@@ -420,7 +422,9 @@ mod tests {
         assert!(
             TOL > euler_dist_sq,
             "Failure converting quaternion to and from euler angles starting with {:?} (ended with {:?}, distance squared: {})",
-            euler_start, euler_rot_end, euler_dist_sq
+            euler_start,
+            euler_rot_end,
+            euler_dist_sq
         );
     }
 
@@ -448,7 +452,9 @@ mod tests {
         assert!(
             TOL > quat_dist_sq,
             "Failure converting rotation to and from quaternion starting with {:?} (ended with {:?}, distance squared: {})",
-            rot_start, rot_quat_end, quat_dist_sq
+            rot_start,
+            rot_quat_end,
+            quat_dist_sq
         );
         let euler_dist_sq = rot_start
             .iter()
@@ -458,7 +464,9 @@ mod tests {
         assert!(
             TOL > euler_dist_sq,
             "Failure converting rotation to and from euler angles starting with {:?} (ended with {:?}, distance squared: {})",
-            rot_start, rot_euler_end, euler_dist_sq
+            rot_start,
+            rot_euler_end,
+            euler_dist_sq
         );
     }
 
@@ -492,7 +500,9 @@ mod tests {
         assert!(
             TOL > euler_dist_sq,
             "Failure converting quaternion to and from euler angles starting with {:?} (ended with {:?}, distance squared: {})",
-            q_start, q_euler_end, euler_dist_sq
+            q_start,
+            q_euler_end,
+            euler_dist_sq
         );
         let rot_dist_sq1: f32 = q_start
             .iter()
@@ -508,7 +518,9 @@ mod tests {
         assert!(
             TOL > rot_dist_sq,
             "Failure converting quaternion to and from rotation matrix starting with {:?} (ended with {:?}, distance squared: {})",
-            q_start, q_rot_end, rot_dist_sq
+            q_start,
+            q_rot_end,
+            rot_dist_sq
         );
     }
 
