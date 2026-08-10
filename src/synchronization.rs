@@ -1,31 +1,38 @@
-use pyo3::sync::PyOnceLock;
-use pyo3::types::PyBytes;
-use pyo3::{IntoPyObjectExt, intern, prelude::*};
+use mio::net::UdpSocket;
+use mio::{Events, Interest, Poll, Token};
+use pyo3::prelude::*;
+use std::io;
+use std::net::SocketAddr;
 
-use crate::common::BoundPyAny;
-
-#[pyfunction]
-pub fn recvfrom_byte<'py>(socket: &BoundPyAny<'py>) -> PyResult<BoundPyAny<'py>> {
-    static INTERNED_INT_1: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
-    let py = socket.py();
-    socket.call_method1(
-        intern!(py, "recvfrom"),
-        (INTERNED_INT_1.get_or_init(py, || 1_i64.into_py_any(py).unwrap()),),
-    )
+pub fn get_handshake_poll(socket: &mut UdpSocket) -> PyResult<(Poll, Events)> {
+    let poll = Poll::new()?;
+    let events = Events::with_capacity(1);
+    poll.registry()
+        .register(socket, Token(0), Interest::READABLE)?;
+    Ok((poll, events))
 }
 
-#[pyfunction]
-pub fn sendto_byte<'py>(socket: &BoundPyAny<'py>, address: &BoundPyAny<'py>) -> PyResult<()> {
-    static INTERNED_BYTES_0: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
-    let py = socket.py();
-    socket.call_method1(
-        intern!(py, "sendto"),
-        (
-            INTERNED_BYTES_0
-                .get_or_init(py, || PyBytes::new(py, &vec![0_u8][..]).into_any().unbind()),
-            address,
-        ),
-    )?;
+pub fn recvfrom_byte(
+    socket: &mut UdpSocket,
+    poll: &mut Poll,
+    events: &mut Events,
+) -> PyResult<SocketAddr> {
+    loop {
+        poll.poll(events, None)?;
+        if !events.iter().any(|event| event.is_readable()) {
+            continue;
+        }
+        let v = socket.recv_from(&mut [0]);
+        match v {
+            Ok((_, send_addr)) => return Ok(send_addr),
+            Err(e) if e.kind() == io::ErrorKind::WouldBlock => continue,
+            Err(e) => Err(e)?,
+        }
+    }
+}
+
+pub fn sendto_byte(socket: &UdpSocket, address: SocketAddr) -> PyResult<()> {
+    socket.send_to(&[0], address)?;
     Ok(())
 }
 

@@ -68,24 +68,27 @@ class LearningCoordinatorConfigModel(
             | None
         ) = info.context
         data_dict = data
-        if agent_controller is not None:
-            if isinstance(data_dict, dict) and "agent_controller_config" in data:
-                data_dict = cast(dict[Any, Any], data_dict)
-                agent_controller_config_raw = data_dict["agent_controller_config"]
-                agent_controller_config: BaseModel | None
-                agent_controller_config_model_type = agent_controller.config_model
-                if isinstance(agent_controller_config_raw, dict):
-                    if agent_controller_config_model_type is None:
-                        agent_controller_config = None
-                    else:
-                        agent_controller_config = cast(
-                            BaseModel, agent_controller_config_model_type
-                        ).model_validate(
-                            agent_controller_config_raw, context=agent_controller
-                        )
+        if (
+            agent_controller is not None
+            and isinstance(data_dict, dict)
+            and "agent_controller_config" in data
+        ):
+            data_dict = cast(dict[Any, Any], data_dict)
+            agent_controller_config_raw = data_dict["agent_controller_config"]
+            agent_controller_config: BaseModel | None
+            agent_controller_config_model_type = agent_controller.config_model
+            if isinstance(agent_controller_config_raw, dict):
+                if agent_controller_config_model_type is None:
+                    agent_controller_config = None
                 else:
-                    agent_controller_config = agent_controller_config_raw
-                data_dict["agent_controller_config"] = agent_controller_config
+                    agent_controller_config = cast(
+                        BaseModel, agent_controller_config_model_type
+                    ).model_validate(
+                        agent_controller_config_raw, context=agent_controller
+                    )
+            else:
+                agent_controller_config = agent_controller_config_raw
+            data_dict["agent_controller_config"] = agent_controller_config
         return data
 
 

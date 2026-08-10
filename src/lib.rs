@@ -56,8 +56,6 @@ fn backend<'py>(py: Python<'py>, parent: &Bound<PyModule>) -> PyResult<()> {
     // sub.add_class::<AgentManager>()?;
     sub.add_class::<EnvProcessInterface>()?;
     sub.add_function(wrap_pyfunction!(env_process_fn, &sub)?)?;
-    sub.add_function(wrap_pyfunction!(recvfrom_byte, &sub)?)?;
-    sub.add_function(wrap_pyfunction!(sendto_byte, &sub)?)?;
     parent.add_submodule(&sub)?;
     py.import("sys")?
         .getattr("modules")?

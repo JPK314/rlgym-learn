@@ -2,10 +2,6 @@
 
 import datetime
 from collections.abc import Mapping, Sequence
-from socket import (
-    _RetAddress,  # pyright: ignore [reportPrivateUsage]
-    socket,
-)
 from typing import Any, Generic, final
 
 from rlgym.api import (
@@ -25,8 +21,6 @@ from ...basic_config import SerdeTypesModel
 __all__ = [
     "Timestep",
     "env_process_fn",
-    "recvfrom_byte",
-    "sendto_byte",
 ]
 
 @final
@@ -67,13 +61,14 @@ class EnvProcessInterface(
         ObsSpaceType,
         ActionSpaceType,
     ]: ...
+    def get_new_parent_socket(self, proc_id: int) -> str: ...
     def init_processes(
         self,
-        proc_package_defs: Sequence[tuple[Any, Any, Any, int]],
+        proc_package_defs: Sequence[tuple[Any, int]],
     ) -> dict[int, dict[AgentID, tuple[ObsSpaceType, ActionSpaceType]]]: ...
     def add_processes(
         self,
-        proc_package_defs: Sequence[tuple[Any, Any, Any, int]],
+        proc_package_defs: Sequence[tuple[Any, int]],
     ) -> None: ...
     def delete_process(self) -> int: ...
     def increase_min_frac_process_responses_per_collection(self) -> float: ...
@@ -120,8 +115,7 @@ class EnvProcessInterface(
 
 def env_process_fn(
     proc_id: int,
-    child_end: Any,
-    parent_sockname: Any,
+    parent_addr_str: str,
     build_env_fn: Any,
     flinks_folder: str,
     serde_types: SerdeTypesModel[
@@ -137,5 +131,3 @@ def env_process_fn(
     render_delay_option: datetime.timedelta | None = None,
     recalculate_agent_id_every_step: bool = False,
 ) -> None: ...
-def recvfrom_byte(socket: socket) -> Any: ...
-def sendto_byte(socket: socket, address: _RetAddress) -> None: ...
