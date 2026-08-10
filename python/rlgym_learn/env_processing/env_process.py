@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import random
 import signal
-import socket
 from collections.abc import Callable
 from datetime import timedelta
 
@@ -26,13 +25,12 @@ from rlgym.api import (
 )
 
 from .._rlgym_learn._backend import env_process_fn as rust_env_process_fn
-from .._rlgym_learn._backend import recvfrom_byte, sendto_byte
 from ..basic_config import SerdeTypesModel
 
 
 def env_process(
     proc_id: int,
-    parent_sockname: socket._RetAddress,  # pyright: ignore [reportPrivateUsage]
+    parent_addr_str: str,
     build_env_fn: Callable[
         [],
         RLGym[
@@ -62,20 +60,14 @@ def env_process(
     recalculate_agent_id_every_step: bool,
 ):
     _ = signal.signal(signal.SIGINT, signal.SIG_IGN)
-    child_end = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    child_end.bind(("127.0.0.1", 0))
 
     random.seed(seed)
     if NUMPY_AVAILABLE:
         np.random.seed(seed)  # pyright: ignore [reportPossiblyUnboundVariable]
 
-    sendto_byte(child_end, parent_sockname)
-    recvfrom_byte(child_end)
-
     rust_env_process_fn(
         proc_id,
-        child_end,
-        parent_sockname,
+        parent_addr_str,
         build_env_fn,
         flinks_folder,
         serde_types,

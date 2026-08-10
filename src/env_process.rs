@@ -1,3 +1,5 @@
+use mio::net::UdpSocket;
+use mio::{Events, Poll};
 use pyany_serde::communication::{append_bool, append_bytes, append_usize};
 use pyo3::exceptions::asyncio::InvalidStateError;
 use pyo3::prelude::*;
@@ -6,6 +8,7 @@ use pyo3::{PyAny, Python, intern};
 use raw_sync::Timeout;
 use raw_sync::events::{Event, EventInit};
 use shared_memory::ShmemConf;
+use std::net::SocketAddr;
 use std::panic::{AssertUnwindSafe, catch_unwind, resume_unwind};
 use std::thread::sleep;
 use std::time::Duration;
@@ -13,11 +16,16 @@ use std::time::Duration;
 use crate::common::{BoundPyAny, BoundPyDict};
 use crate::env_action::{EnvAction, retrieve_env_action};
 use crate::serdes::Serdes;
-use crate::synchronization::{get_flink, recvfrom_byte, sendto_byte};
+use crate::synchronization::{get_flink, get_handshake_poll, recvfrom_byte, sendto_byte};
 
-fn sync_with_epi<'py>(socket: &BoundPyAny<'py>, address: &BoundPyAny<'py>) -> PyResult<()> {
+fn sync_with_epi(
+    socket: &mut UdpSocket,
+    address: SocketAddr,
+    poll: &mut Poll,
+    events: &mut Events,
+) -> PyResult<()> {
     sendto_byte(socket, address)?;
-    recvfrom_byte(socket)?;
+    recvfrom_byte(socket, poll, events)?;
     Ok(())
 }
 
@@ -99,8 +107,7 @@ struct EnvProcessRunningSettings {
 #[allow(clippy::too_many_arguments)]
 #[pyfunction(signature=(
     proc_id,
-    child_end,
-    parent_sockname,
+    parent_addr_str,
     build_env_fn,
     flinks_folder,
     serde_types,
@@ -109,8 +116,7 @@ struct EnvProcessRunningSettings {
     recalculate_agent_id_every_step=false))]
 pub fn env_process_fn<'py>(
     proc_id: u128,
-    child_end: BoundPyAny<'py>,
-    parent_sockname: BoundPyAny<'py>,
+    parent_addr_str: String,
     build_env_fn: BoundPyAny<'py>,
     flinks_folder: &str,
     serde_types: Serdes,
@@ -126,11 +132,17 @@ pub fn env_process_fn<'py>(
         recalculate_agent_id_every_step,
     };
     let flink = get_flink(flinks_folder, proc_id);
+    let mut child_socket = UdpSocket::bind("127.0.0.1:0".parse()?)?;
+    let parent_addr = parent_addr_str.parse::<SocketAddr>()?;
+    let (mut poll, mut events) = get_handshake_poll(&mut child_socket)?;
+    sync_with_epi(&mut child_socket, parent_addr, &mut poll, &mut events)?;
     let mut shmem;
     let mut attempts = 0;
     loop {
         match ShmemConf::new().flink(flink.clone()).open().map_err(|err| {
-            InvalidStateError::new_err(format!("Unable to open shmem flink {}: {}", flink, err))
+            InvalidStateError::new_err(format!(
+                "{proc_id}: Unable to open shmem flink {flink}: {err}"
+            ))
         }) {
             Ok(_shmem) => {
                 shmem = _shmem;
@@ -147,8 +159,9 @@ pub fn env_process_fn<'py>(
         }
     }
     let (epi_evt, used_bytes) = unsafe {
-        Event::from_existing(shmem.as_ptr())
-            .map_err(|err| InvalidStateError::new_err(format!("Failed to get event: {}", err)))?
+        Event::from_existing(shmem.as_ptr()).map_err(|err| {
+            InvalidStateError::new_err(format!("{proc_id}: Failed to get event: {err}"))
+        })?
     };
     let shm_slice = unsafe { &mut shmem.as_slice_mut()[used_bytes..] };
     // Reserve first byte as 0, this byte will be checked for error state by both EPI and EP
@@ -169,13 +182,19 @@ pub fn env_process_fn<'py>(
             )?;
 
             // Startup complete
-            sync_with_epi(&child_end, &parent_sockname)?;
+            sync_with_epi(&mut child_socket, parent_addr, &mut poll, &mut events)?;
 
             // Start main loop
             loop {
-                epi_evt
-                    .wait(Timeout::Infinite)
-                    .map_err(|err| InvalidStateError::new_err(err.to_string()))?;
+                loop {
+                    match epi_evt.wait(Timeout::Val(Duration::from_secs(5))) {
+                        Ok(()) => break,
+                        Err(e) => {
+                            println!("{proc_id}: Warning: UDP socket send required retry due to error {}", e);
+                            sendto_byte(&child_socket, parent_addr)?;
+                        }
+                    }
+                }
                 // Event should automatically be cleared because it is defined as auto-resetting
                 let env_action;
                 // Read starting at offset 1 because first byte is reserved for error state
@@ -251,12 +270,12 @@ pub fn env_process_fn<'py>(
                     EnvAction::DEFER {} => (),
                     EnvAction::CLOSE {} => {
                         env_close(&env)?;
-                        sendto_byte(&child_end, &parent_sockname)?;
+                        sendto_byte(&child_socket, parent_addr)?;
                         break;
                     }
                 };
 
-                sendto_byte(&child_end, &parent_sockname)?;
+                sendto_byte(&child_socket, parent_addr)?;
             }
             Ok(())
         })
@@ -265,7 +284,7 @@ pub fn env_process_fn<'py>(
             _ = epi_evt.wait(Timeout::Val(Duration::from_secs(1)));
             shm_slice[0] = 1;
             _ = append_bytes(shm_slice, 1, err.to_string().as_bytes());
-            sendto_byte(&child_end, &parent_sockname).unwrap();
+            sendto_byte(&child_socket, parent_addr).unwrap();
         })
     }));
     match result {
@@ -274,7 +293,7 @@ pub fn env_process_fn<'py>(
             // Maybe there is a signal to consume still
             _ = epi_evt.wait(Timeout::Val(Duration::from_secs(1)));
             shm_slice[0] = 2;
-            sendto_byte(&child_end, &parent_sockname).unwrap();
+            sendto_byte(&child_socket, parent_addr).unwrap();
             resume_unwind(err);
         }
     }

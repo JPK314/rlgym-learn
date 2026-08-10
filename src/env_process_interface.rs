@@ -2,15 +2,21 @@ use std::cmp::max;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::fs;
+use std::io;
+use std::net::SocketAddr;
 
+use indicatif::ProgressIterator;
 use itertools::izip;
+use mio::Events;
+use mio::Interest;
+use mio::Poll;
+use mio::Token;
+use mio::net::UdpSocket;
 use pyany_serde::communication::retrieve_bytes;
 use pyany_serde::communication::{retrieve_bool, retrieve_usize};
 use pyo3::{
     exceptions::asyncio::InvalidStateError,
-    intern,
     prelude::*,
-    sync::PyOnceLock,
     types::{PyDict, PyInt},
 };
 use raw_sync::events::Event;
@@ -24,6 +30,7 @@ use crate::common::BoundPyDict;
 use crate::env_action::EnvAction;
 use crate::env_action::append_env_action;
 use crate::serdes::Serdes;
+use crate::synchronization::get_handshake_poll;
 use crate::synchronization::{get_flink, recvfrom_byte, sendto_byte};
 use crate::timestep::Timestep;
 
@@ -74,7 +81,15 @@ pub enum EnvCloseReason {
     EXCEPTION,
 }
 
-static SELECTORS_EVENT_READ: PyOnceLock<u8> = PyOnceLock::new();
+fn sync_with_ep(
+    socket: &mut UdpSocket,
+    poll: &mut Poll,
+    events: &mut Events,
+) -> PyResult<SocketAddr> {
+    let child_addr = recvfrom_byte(socket, poll, events)?;
+    sendto_byte(socket, child_addr)?;
+    Ok(child_addr)
+}
 
 #[pyclass(generic, module = "rlgym_learn._rlgym_learn", unsendable)]
 pub struct EnvProcessInterface {
@@ -83,11 +98,12 @@ pub struct EnvProcessInterface {
     flinks_folder: String,
     shm_buffer_size: usize,
     #[allow(clippy::type_complexity)]
-    proc_packages: Vec<Option<(Py<PyAny>, Py<PyAny>, Shmem, usize, u128, Py<PyInt>)>>,
+    proc_packages: Vec<Option<(UdpSocket, SocketAddr, Shmem, usize, u128, Py<PyInt>)>>,
     min_frac_process_responses_per_collection: f32,
     min_process_responses_per_collection: usize,
-    selector: Py<PyAny>,
+    multiplexer: (Poll, Events),
     proc_id_pid_idx_map: HashMap<u128, usize>,
+    uninitialized_proc_id_parent_socket_map: HashMap<u128, (UdpSocket, Poll, Events)>,
     pid_idx_current_env_action: Vec<Option<EnvAction>>,
     pid_idx_current_agent_id_list_option: Vec<Option<Vec<Py<PyAny>>>>,
     pid_idx_prev_timestep_id_option_list_option: Vec<Option<Vec<Option<u128>>>>,
@@ -112,51 +128,41 @@ impl EnvProcessInterface {
     fn add_proc_package<'py>(
         &mut self,
         py: Python<'py>,
-        proc_package_def: (BoundPyAny<'py>, BoundPyAny<'py>, BoundPyAny<'py>, u128),
+        proc_package_def: (BoundPyAny<'py>, u128),
     ) -> PyResult<()> {
-        let (_, parent_end, child_sockname, proc_id) = proc_package_def;
+        let (_, proc_id) = proc_package_def;
         let flink = get_flink(&self.flinks_folder[..], proc_id);
+        let (mut parent_socket, mut poll, mut events) = self.uninitialized_proc_id_parent_socket_map.remove(&proc_id).ok_or_else(|| InvalidStateError::new_err(format!("add_proc_package was called with proc_id {proc_id}, which didn't have a corresponding entry in uninitialized_proc_id_parent_socket_map.")))?;
+        let child_addr = sync_with_ep(&mut parent_socket, &mut poll, &mut events)?;
+
         let shmem = ShmemConf::new()
             .size(self.shm_buffer_size)
             .flink(flink.clone())
             .create()
             .map_err(|err| {
-                InvalidStateError::new_err(format!(
-                    "Unable to create shmem flink {}: {}",
-                    flink, err
-                ))
+                InvalidStateError::new_err(format!("Unable to create shmem flink {flink}: {err}"))
             })?;
         let (_, used_bytes) = unsafe {
             Event::new(shmem.as_ptr(), true).map_err(|err| {
                 InvalidStateError::new_err(format!(
-                    "EPI: Failed to create event from epi to process {proc_id}: {}",
-                    err
+                    "Failed to create event from epi to process {proc_id}: {err}"
                 ))
             })?
         };
-        self.selector.call_method1(
-            py,
-            intern!(py, "register"),
-            (
-                &parent_end,
-                SELECTORS_EVENT_READ.get_or_init(py, || {
-                    PyModule::import(py, "selectors")
-                        .unwrap()
-                        .getattr("EVENT_READ")
-                        .unwrap()
-                        .extract()
-                        .unwrap()
-                }),
-                self.proc_packages.len(),
-            ),
+
+        self.multiplexer.0.registry().register(
+            &mut parent_socket,
+            Token(self.proc_packages.len()),
+            Interest::READABLE,
         )?;
+
         let pid_idx = self.proc_packages.len();
         self.proc_id_pid_idx_map.insert(proc_id, pid_idx);
 
         let py_proc_id = proc_id.into_pyobject(py)?.unbind();
         self.proc_packages.push(Some((
-            parent_end.unbind(),
-            child_sockname.unbind(),
+            parent_socket,
+            child_addr,
             shmem,
             used_bytes,
             proc_id,
@@ -169,7 +175,8 @@ impl EnvProcessInterface {
     fn add_processes_inner<'py>(
         &mut self,
         py: Python<'py>,
-        proc_package_defs: Vec<(BoundPyAny<'py>, BoundPyAny<'py>, BoundPyAny<'py>, u128)>,
+        proc_package_defs: Vec<(BoundPyAny<'py>, u128)>,
+        silent: bool,
     ) -> PyResult<()> {
         let n_new_procs = proc_package_defs.len();
         self.pid_idx_current_env_action
@@ -183,51 +190,56 @@ impl EnvProcessInterface {
         self.pid_idx_current_action_list
             .append(&mut vec![Vec::new(); n_new_procs]);
         self.pid_idx_awaiting_signal_list
-            .append(&mut vec![true; n_new_procs]);
-        for proc_package_def in proc_package_defs {
-            self.add_proc_package(py, proc_package_def)?;
+            .append(&mut vec![false; n_new_procs]);
+
+        if silent {
+            for proc_package_def in proc_package_defs.into_iter() {
+                self.add_proc_package(py, proc_package_def)?;
+            }
+        } else {
+            for proc_package_def in proc_package_defs.into_iter().progress() {
+                self.add_proc_package(py, proc_package_def)?;
+            }
         }
+        self.multiplexer.1 = Events::with_capacity(self.proc_packages.len());
         self.recalculate_min_process_responses_per_collection();
 
         Ok(())
     }
 
     fn clean_up_ended_process(&mut self, proc_id: u128) -> PyResult<()> {
-        Python::attach(|py| {
-            let last_pid_idx = self.proc_packages.len() - 1;
-            let pid_idx = self.proc_id_pid_idx_map.remove(&proc_id).unwrap();
-            let (parent_end, _, _, _, proc_id, _) =
-                self.proc_packages.swap_remove(pid_idx).unwrap();
-            self.pid_idx_current_agent_id_list_option
-                .swap_remove(pid_idx);
-            self.pid_idx_prev_timestep_id_option_list_option
-                .swap_remove(pid_idx);
-            self.pid_idx_current_obs_list.swap_remove(pid_idx);
-            self.pid_idx_current_env_action.swap_remove(pid_idx);
-            self.pid_idx_current_action_list.swap_remove(pid_idx);
-            self.pid_idx_awaiting_signal_list.swap_remove(pid_idx);
-            self.return_prev_data_proc_ids
-                .retain(|_proc_id| *_proc_id != proc_id);
-            if pid_idx != last_pid_idx {
-                let (updated_pid_idx_parent_end, _, _, _, updated_pid_idx_proc_id, _) =
-                    self.proc_packages[pid_idx].as_ref().unwrap();
-                self.proc_id_pid_idx_map
-                    .insert(*updated_pid_idx_proc_id, pid_idx);
-                self.selector.call_method1(
-                    py,
-                    intern!(py, "modify"),
-                    (
-                        updated_pid_idx_parent_end,
-                        SELECTORS_EVENT_READ.get(py).unwrap(),
-                        pid_idx,
-                    ),
-                )?;
-            }
-            self.recalculate_min_process_responses_per_collection();
-            self.selector
-                .call_method1(py, intern!(py, "unregister"), (parent_end,))?;
-            Ok(())
-        })
+        let last_pid_idx = self.proc_packages.len() - 1;
+        let pid_idx = self.proc_id_pid_idx_map.remove(&proc_id).unwrap();
+        let (mut parent_socket, _, _, _, proc_id, _) =
+            self.proc_packages.swap_remove(pid_idx).unwrap();
+        self.pid_idx_current_agent_id_list_option
+            .swap_remove(pid_idx);
+        self.pid_idx_prev_timestep_id_option_list_option
+            .swap_remove(pid_idx);
+        self.pid_idx_current_obs_list.swap_remove(pid_idx);
+        self.pid_idx_current_env_action.swap_remove(pid_idx);
+        self.pid_idx_current_action_list.swap_remove(pid_idx);
+        self.pid_idx_awaiting_signal_list.swap_remove(pid_idx);
+        self.return_prev_data_proc_ids
+            .retain(|_proc_id| *_proc_id != proc_id);
+        if pid_idx != last_pid_idx {
+            let (updated_pid_idx_parent_socket, _, _, _, updated_pid_idx_proc_id, _) =
+                self.proc_packages[pid_idx].as_mut().unwrap();
+            self.proc_id_pid_idx_map
+                .insert(*updated_pid_idx_proc_id, pid_idx);
+            self.multiplexer.0.registry().reregister(
+                updated_pid_idx_parent_socket,
+                Token(pid_idx),
+                Interest::READABLE,
+            )?;
+        }
+        self.recalculate_min_process_responses_per_collection();
+        self.multiplexer.1 = Events::with_capacity(self.proc_packages.len());
+        self.multiplexer
+            .0
+            .registry()
+            .deregister(&mut parent_socket)?;
+        Ok(())
     }
 
     fn print_env_process_error(&mut self, proc_id: u128, shm_slice: &[u8]) -> PyResult<()> {
@@ -520,8 +532,8 @@ impl EnvProcessInterface {
     fn collect_startup_response_data<'py>(
         &mut self,
         py: Python<'py>,
-        parent_end: &Py<PyAny>,
-        child_sockname: &Py<PyAny>,
+        parent_socket: &UdpSocket,
+        child_addr: SocketAddr,
         pid_idx: usize,
         shm_slice: &[u8],
         mut offset: usize,
@@ -533,7 +545,7 @@ impl EnvProcessInterface {
         (env_spaces_response_data, offset) =
             self.collect_env_spaces_response_data(py, shm_slice, offset)?;
         // Complete startup handshake
-        sendto_byte(parent_end.bind(py), child_sockname.bind(py))?;
+        sendto_byte(parent_socket, child_addr)?;
         let (
             ResponseData::Start {
                 obs_data,
@@ -560,14 +572,14 @@ impl EnvProcessInterface {
         py: Python<'py>,
         pid_idx: usize,
     ) -> PyResult<(Py<PyInt>, ResponseData<'py>)> {
-        let (parent_end, child_sockname, shmem, used_bytes, proc_id, py_proc_id) =
+        let (parent_socket, child_addr, shmem, used_bytes, proc_id, py_proc_id) =
             self.proc_packages.get_mut(pid_idx).unwrap().take().unwrap();
         let shm_slice = unsafe { &shmem.as_slice()[used_bytes..] };
         if shm_slice[0] != 0 {
             self.print_env_process_error(proc_id, shm_slice)?;
             self.proc_packages[pid_idx] = Some((
-                parent_end,
-                child_sockname,
+                parent_socket,
+                child_addr,
                 shmem,
                 used_bytes,
                 proc_id,
@@ -610,16 +622,16 @@ impl EnvProcessInterface {
             Some(EnvAction::CLOSE {}) => (ResponseData::CloseComplete {}, 0),
             None => self.collect_startup_response_data(
                 py,
-                &parent_end,
-                &child_sockname,
+                &parent_socket,
+                child_addr,
                 pid_idx,
                 shm_slice,
                 1,
             )?,
         };
         self.proc_packages[pid_idx] = Some((
-            parent_end,
-            child_sockname,
+            parent_socket,
+            child_addr,
             shmem,
             used_bytes,
             proc_id,
@@ -654,21 +666,27 @@ impl EnvProcessInterface {
         let mut ready_pid_idxs = Vec::with_capacity(self.min_process_responses_per_collection);
         let mut n_process_responses_collected = 0;
         while n_process_responses_collected < n_to_collect {
-            for (key, event) in self
-                .selector
-                .bind(py)
-                .call_method0(intern!(py, "select"))?
-                .extract::<Vec<(Py<PyAny>, u8)>>()?
-            {
-                if event & SELECTORS_EVENT_READ.get(py).unwrap() == 0 {
-                    continue;
+            self.multiplexer.0.poll(&mut self.multiplexer.1, None)?;
+
+            for event in self.multiplexer.1.iter() {
+                if event.is_readable() {
+                    let Token(pid_idx) = event.token();
+                    let (parent_socket, _, _, _, _, _) =
+                        self.proc_packages[pid_idx].as_ref().unwrap();
+                    match parent_socket.recv_from(&mut [0]) {
+                        Ok(_) => {
+                            if !self.pid_idx_awaiting_signal_list[pid_idx] {
+                                self.pid_idx_awaiting_signal_list[pid_idx] = true;
+                                ready_pid_idxs.push(pid_idx);
+                                n_process_responses_collected += 1;
+                            }
+                        }
+                        Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
+                            continue;
+                        }
+                        Err(e) => Err(e)?,
+                    }
                 }
-                let (parent_end, _, _, pid_idx) =
-                    key.extract::<(Py<PyAny>, Py<PyAny>, Py<PyAny>, usize)>(py)?;
-                recvfrom_byte(parent_end.bind(py))?;
-                self.pid_idx_awaiting_signal_list[pid_idx] = true;
-                ready_pid_idxs.push(pid_idx);
-                n_process_responses_collected += 1;
             }
         }
         if let Some((init_obs_data_dict, init_state_info_dict)) =
@@ -751,18 +769,13 @@ impl EnvProcessInterface {
 #[pymethods]
 impl EnvProcessInterface {
     #[new]
-    pub fn new<'py>(
-        py: Python<'py>,
+    pub fn new(
         serde_types: Serdes,
         recalculate_agent_id_every_step: bool,
         flinks_folder: String,
         shm_buffer_size: usize,
         min_frac_process_responses_per_collection: f32,
     ) -> PyResult<Self> {
-        let selector = PyModule::import(py, "selectors")?
-            .getattr("DefaultSelector")?
-            .call0()?
-            .unbind();
         let mut epi = EnvProcessInterface {
             serdes: serde_types,
             recalculate_agent_id_every_step,
@@ -771,8 +784,9 @@ impl EnvProcessInterface {
             proc_packages: Vec::new(),
             min_frac_process_responses_per_collection,
             min_process_responses_per_collection: 0,
-            selector,
+            multiplexer: (Poll::new()?, Events::with_capacity(1)),
             proc_id_pid_idx_map: HashMap::new(),
+            uninitialized_proc_id_parent_socket_map: HashMap::new(),
             pid_idx_current_env_action: Vec::new(),
             pid_idx_current_agent_id_list_option: Vec::new(),
             pid_idx_prev_timestep_id_option_list_option: Vec::new(),
@@ -787,12 +801,22 @@ impl EnvProcessInterface {
         Ok(epi)
     }
 
+    fn get_new_parent_socket(&mut self, proc_id: u128) -> PyResult<String> {
+        let mut socket = UdpSocket::bind("127.0.0.1:0".parse()?)?;
+        let local_addr = socket.local_addr()?;
+        let addr_str = format!("{}:{}", local_addr.ip(), local_addr.port());
+        let (poll, events) = get_handshake_poll(&mut socket)?;
+        self.uninitialized_proc_id_parent_socket_map
+            .insert(proc_id, (socket, poll, events));
+        Ok(addr_str)
+    }
+
     fn init_processes<'py>(
         &mut self,
         py: Python<'py>,
-        proc_package_defs: Vec<(BoundPyAny<'py>, BoundPyAny<'py>, BoundPyAny<'py>, u128)>,
+        proc_package_defs: Vec<(BoundPyAny<'py>, u128)>,
     ) -> PyResult<BoundPyDict<'py>> {
-        self.add_processes_inner(py, proc_package_defs)?;
+        self.add_processes_inner(py, proc_package_defs, false)?;
 
         // total_timesteps_collected will always be 0 here because it's just a reset obs - no step has been taken in the env with which to create a timestep
         let (_, _, closed_dict, obs_data_dict, _, state_info_dict, spaces_data_dict) = self
@@ -816,9 +840,9 @@ impl EnvProcessInterface {
     pub fn add_processes<'py>(
         &mut self,
         py: Python<'py>,
-        proc_package_defs: Vec<(BoundPyAny<'py>, BoundPyAny<'py>, BoundPyAny<'py>, u128)>,
+        proc_package_defs: Vec<(BoundPyAny<'py>, u128)>,
     ) -> PyResult<()> {
-        self.add_processes_inner(py, proc_package_defs)?;
+        self.add_processes_inner(py, proc_package_defs, true)?;
 
         Ok(())
     }
@@ -827,9 +851,12 @@ impl EnvProcessInterface {
         // Find a process to delete
         // First preference is a process that's already awaiting a signal
 
+        // TODO: don't delete process 0 using this unless it's the only process left, because that process is used for rendering if rendering is enabled
+        let exclude_pid_idx_0 = self.proc_packages.len() > 1;
         let pid_idx = if let Some((pid_idx, _)) = self
             .pid_idx_awaiting_signal_list
             .iter()
+            .skip(if exclude_pid_idx_0 { 1 } else { 0 })
             .enumerate()
             .find(|(_, v)| **v)
         {
@@ -837,20 +864,27 @@ impl EnvProcessInterface {
         } else {
             let pid_idx;
             'outer: loop {
-                for (key, event) in self
-                    .selector
-                    .bind(py)
-                    .call_method0(intern!(py, "select"))?
-                    .extract::<Vec<(Py<PyAny>, u8)>>()?
-                {
-                    if event & SELECTORS_EVENT_READ.get(py).unwrap() == 0 {
-                        continue;
+                self.multiplexer.0.poll(&mut self.multiplexer.1, None)?;
+
+                for event in self.multiplexer.1.iter() {
+                    if event.is_readable() {
+                        let Token(_pid_idx) = event.token();
+                        if exclude_pid_idx_0 && _pid_idx == 0 {
+                            continue;
+                        }
+                        let (parent_socket, _, _, _, _, _) =
+                            self.proc_packages[_pid_idx].as_ref().unwrap();
+                        match parent_socket.recv_from(&mut [0]) {
+                            Ok(_) => {
+                                pid_idx = _pid_idx;
+                                break 'outer;
+                            }
+                            Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
+                                continue;
+                            }
+                            Err(e) => Err(e)?,
+                        }
                     }
-                    let parent_end;
-                    (parent_end, _, _, pid_idx) =
-                        key.extract::<(Py<PyAny>, Py<PyAny>, Py<PyAny>, usize)>(py)?;
-                    recvfrom_byte(parent_end.bind(py))?;
-                    break 'outer;
                 }
             }
             pid_idx
@@ -882,7 +916,12 @@ impl EnvProcessInterface {
         ep_evt
             .set(EventState::Signaled)
             .map_err(|err| InvalidStateError::new_err(err.to_string()))?;
-        _ = self.collect_response(py, pid_idx)?;
+        self.pid_idx_current_env_action[pid_idx] = Some(EnvAction::CLOSE {});
+        // The other possibility is ResponseData::Error which would itself handle the closure
+        if let (_, ResponseData::CloseComplete {}) = self.collect_response(py, pid_idx)? {
+            let (_, _, _, _, proc_id, _) = self.proc_packages[pid_idx].as_ref().unwrap();
+            self.clean_up_ended_process(*proc_id)?;
+        }
         Ok(proc_id)
     }
 
@@ -923,23 +962,27 @@ impl EnvProcessInterface {
             .sum();
         let mut n_collected = 0_usize;
         while n_collected < n_not_awaiting_signal {
-            for (key, event) in self
-                .selector
-                .bind(py)
-                .call_method0(intern!(py, "select"))?
-                .extract::<Vec<(Py<PyAny>, u8)>>()?
-            {
-                if event & SELECTORS_EVENT_READ.get(py).unwrap() == 0 {
-                    continue;
+            self.multiplexer.0.poll(&mut self.multiplexer.1, None)?;
+
+            for event in self.multiplexer.1.iter() {
+                if event.is_readable() {
+                    let Token(_pid_idx) = event.token();
+                    let (parent_socket, _, _, _, _, _) =
+                        self.proc_packages[_pid_idx].as_ref().unwrap();
+                    match parent_socket.recv_from(&mut [0]) {
+                        Ok(_) => {
+                            n_collected += 1;
+                        }
+                        Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
+                            continue;
+                        }
+                        Err(e) => Err(e)?,
+                    }
                 }
-                let (parent_end, _, _, _) =
-                    key.extract::<(Py<PyAny>, Py<PyAny>, Py<PyAny>, Py<PyAny>)>(py)?;
-                recvfrom_byte(parent_end.bind(py))?;
-                n_collected += 1;
             }
         }
 
-        for proc_package in self.proc_packages.iter_mut() {
+        for (pid_idx, proc_package) in self.proc_packages.iter_mut().enumerate() {
             let (_, _, shmem, _, _, _) = proc_package.as_mut().unwrap();
             let (ep_evt, used_bytes) = unsafe {
                 Event::from_existing(shmem.as_ptr()).map_err(|err| {
@@ -960,12 +1003,16 @@ impl EnvProcessInterface {
             ep_evt
                 .set(EventState::Signaled)
                 .map_err(|err| InvalidStateError::new_err(err.to_string()))?;
-            // TODO: the below used to be necessary for shared memory to get read correctly but I think this was actually a bandaid patch for a race condition issue that is now fixed
-            // thread::sleep(Duration::from_millis(1));
+            self.pid_idx_current_env_action[pid_idx] = Some(EnvAction::CLOSE {});
         }
-        // Collect responses from all envs (this will make all processes flow through the ResponseData::CloseComplete -> cleanup or ResponseData::Error -> cleanup path)
+        // Collect responses from all envs
         while !self.proc_packages.is_empty() {
-            _ = self.collect_response(py, self.proc_packages.len() - 1)?;
+            let pid_idx = self.proc_packages.len() - 1;
+            // The other possibility is ResponseData::Error which would itself handle the closure
+            if let (_, ResponseData::CloseComplete {}) = self.collect_response(py, pid_idx)? {
+                let (_, _, _, _, proc_id, _) = self.proc_packages[pid_idx].as_ref().unwrap();
+                self.clean_up_ended_process(*proc_id)?;
+            }
         }
 
         // Remove any dangling flinks in the flinks folder

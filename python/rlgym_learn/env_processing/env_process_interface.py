@@ -24,7 +24,6 @@ from rlgym.api import (
 
 from .._rlgym_learn import EnvAction, EnvCloseReason, Timestep
 from .._rlgym_learn._backend import EnvProcessInterface as RustEnvProcessInterface
-from .._rlgym_learn._backend import recvfrom_byte, sendto_byte
 from ..basic_config import SerdeTypesModel
 from .env_process import env_process
 
@@ -133,7 +132,7 @@ class EnvProcessInterface(
             min_frac_process_responses_per_collection,
         )
 
-        self.processes: list[tuple[Process, socket.socket, socket.socket | None, int]]
+        self.processes: list[tuple[Process, int]]
 
     def init_processes(
         self,
@@ -170,18 +169,17 @@ class EnvProcessInterface(
         print("Spawning processes...")
         for proc_idx in tqdm(range(n_processes)):
             proc_id = _system_random.getrandbits(128)
+            parent_addr_str = self.rust_env_process_interface.get_new_parent_socket(
+                proc_id
+            )
 
             render_this_proc = proc_idx == 0 and render
-
-            # Create socket to communicate with child
-            parent_end = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            parent_end.bind(("127.0.0.1", 0))
 
             process = context.Process(
                 target=env_process,
                 args=(
                     proc_id,
-                    parent_end.getsockname(),
+                    parent_addr_str,
                     self.build_env_fn,
                     self.serde_type_config,
                     self.flinks_folder,
@@ -194,27 +192,13 @@ class EnvProcessInterface(
             )
             process.start()
 
-            self.processes.append((process, parent_end, None, proc_id))
-
-        # Initialize child processes
-        print("Initializing processes...")
-        for pid_idx in tqdm(range(n_processes)):
-            process, parent_end, _, proc_id = self.processes[pid_idx]
-
-            # Get child endpoint
-            _, child_sockname = recvfrom_byte(parent_end)
-            sendto_byte(parent_end, child_sockname)
+            self.processes.append((process, proc_id))
 
             if spawn_delay is not None:
                 time.sleep(spawn_delay)
 
-            self.processes[pid_idx] = (
-                process,
-                parent_end,
-                child_sockname,
-                proc_id,
-            )
-
+        # Initialize child processes
+        print("Initializing processes...")
         return self.rust_env_process_interface.init_processes(self.processes)
 
     def increase_min_frac_process_responses_per_collection(self) -> float:
@@ -232,12 +216,13 @@ class EnvProcessInterface(
         start_method = "forkserver" if can_fork else "spawn"
         context = cast(DefaultContext, mp.get_context(start_method))
 
-        new_processes: list[
-            tuple[Process, socket.socket, socket.socket | None, int]
-        ] = []
+        new_processes: list[tuple[Process, int]] = []
         # Set up processes
         for idx in range(n_processes):
             proc_id = _system_random.getrandbits(128)
+            parent_addr_str = self.rust_env_process_interface.get_new_parent_socket(
+                proc_id
+            )
 
             # Create socket to communicate with child
             parent_end = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -247,7 +232,7 @@ class EnvProcessInterface(
                 target=env_process,
                 args=(
                     proc_id,
-                    parent_end.getsockname(),
+                    parent_addr_str,
                     self.build_env_fn,
                     self.serde_type_config,
                     self.flinks_folder,
@@ -260,25 +245,10 @@ class EnvProcessInterface(
             )
             process.start()
 
-            new_processes.append((process, parent_end, None, proc_id))
-
-        # Initialize child processes
-        for idx in range(n_processes):
-            process, parent_end, _, proc_id = new_processes[idx]
-
-            # Get child endpoint
-            _, child_sockname = recvfrom_byte(parent_end)
-            sendto_byte(parent_end, child_sockname)
+            new_processes.append((process, proc_id))
 
             if spawn_delay is not None and idx < n_processes - 1:
                 time.sleep(spawn_delay)
-
-            new_processes[idx] = (
-                process,
-                parent_end,
-                child_sockname,
-                proc_id,
-            )
 
         self.rust_env_process_interface.add_processes(new_processes)
         self.processes += new_processes
@@ -290,12 +260,11 @@ class EnvProcessInterface(
         """
 
         process = None
-        parent_end = None
         try:
             proc_id = self.rust_env_process_interface.delete_process()
             for i, p in enumerate(self.processes):
-                if proc_id == p[3]:
-                    process, parent_end, _, _ = self.processes.pop(i)
+                if proc_id == p[1]:
+                    process, _ = self.processes.pop(i)
                     break
         except Exception:
             print("Failed to send stop signal to child process!")
@@ -309,19 +278,11 @@ class EnvProcessInterface(
                 print("Unable to join process ")
                 traceback.print_exc()
 
-        if parent_end is not None:
-            try:
-                parent_end.close()
-            except Exception:
-                print("Unable to close parent connection")
-                traceback.print_exc()
-
     def _clean_unhandled_closed_process(self, proc_id: int) -> None:
         process = None
-        parent_end = None
         for i, p in enumerate(self.processes):
-            if proc_id == p[3]:
-                process, parent_end, _, _ = self.processes.pop(i)
+            if proc_id == p[1]:
+                process, _ = self.processes.pop(i)
                 break
         self.n_procs = len(self.processes)
 
@@ -330,13 +291,6 @@ class EnvProcessInterface(
                 process.join()
             except Exception:
                 print("Unable to join process")
-                traceback.print_exc()
-
-        if parent_end is not None:
-            try:
-                parent_end.close()
-            except Exception:
-                print("Unable to close parent connection")
                 traceback.print_exc()
 
     def _clean_closed_processes(
@@ -418,16 +372,10 @@ class EnvProcessInterface(
         """
         self.rust_env_process_interface.cleanup()
         for _ in range(len(self.processes)):
-            process, parent_end, _, _ = self.processes.pop()
+            process, _ = self.processes.pop()
 
             try:
                 process.join()
             except Exception:
                 print("Unable to join process")
-                traceback.print_exc()
-
-            try:
-                parent_end.close()
-            except Exception:
-                print("Unable to close parent connection")
                 traceback.print_exc()

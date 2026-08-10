@@ -13,7 +13,9 @@ crate-type = ["cdylib"]
 bytemuck = "1.22.0"
 enum-kinds = "0.5.1"
 fastrand = "2.2.0"
+indicatif = "0.18.6"
 itertools = "0.13.0"
+mio = { version = "1.2.2", features = ["net", "os-poll"] }
 numpy = "0.29.0"
 pyany-serde = "0.7.0"
 pyo3 = { version = "0.29.0", features = ["py-clone"] }
