@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "rlgym-learn"
-description = "A generic framework for using learning algorithms with effecient parallelization of RLGym environments and an ergonomic API"
+description = "A generic framework for using learning algorithms with efficient parallelization of RLGym environments and an ergonomic API"
 requires-python = ">=3.10,<=3.14"
 authors = [
     { name = "Jonathan Keegan" }
@@ -13,9 +13,7 @@ classifiers = [
     "Programming Language :: Rust",
     "Programming Language :: Python :: Implementation :: CPython",
 ]
-# add version back to dynamic once out of alpha
-version = "2.0.0a1"
-dynamic = ["license", "readme"]
+dynamic = ["license", "readme", "version"]
 dependencies = [
     "rlgym>=2.0.0",
     "pydantic>=2.13.0",

@@ -189,8 +189,7 @@ pub fn env_process_fn<'py>(
                 loop {
                     match epi_evt.wait(Timeout::Val(Duration::from_secs(5))) {
                         Ok(()) => break,
-                        Err(e) => {
-                            println!("{proc_id}: Warning: UDP socket send required retry due to error {}", e);
+                        Err(_) => {
                             sendto_byte(&child_socket, parent_addr)?;
                         }
                     }
@@ -299,6 +298,19 @@ pub fn env_process_fn<'py>(
     }
 }
 
+fn update_shared_info<'py>(
+    py: Python<'py>,
+    env: &'py BoundPyAny<'py>,
+    shared_info_setter_option: Option<Py<PyAny>>,
+) -> PyResult<()> {
+    if let Some(shared_info_setter) = shared_info_setter_option {
+        env_shared_info(env)?
+            .cast::<PyDict>()?
+            .update(shared_info_setter.cast_bound::<PyDict>(py)?.as_mapping())?;
+    }
+    Ok(())
+}
+
 #[allow(clippy::too_many_arguments)]
 fn handle_step<'py>(
     py: Python<'py>,
@@ -317,12 +329,9 @@ fn handle_step<'py>(
         actions_dict.set_item(agent_id, action)?;
     }
 
+    update_shared_info(py, env, shared_info_setter_option)?;
     let (obs_dict, rew_dict, terminated_dict, truncated_dict) = env_step(env, actions_dict)?;
-    if let Some(shared_info_setter) = shared_info_setter_option {
-        env_shared_info(env)?
-            .cast::<PyDict>()?
-            .update(shared_info_setter.cast_bound::<PyDict>(py)?.as_mapping())?;
-    }
+
     if settings.recalculate_agent_id_every_step {
         agent_id_list.clear();
         for agent_id in obs_dict.keys().iter() {
@@ -389,14 +398,12 @@ fn handle_step<'py>(
 
 #[allow(clippy::too_many_arguments)]
 fn handle_env_start<'py>(
-    py: Python<'py>,
     settings: &EnvProcessRunningSettings,
     serdes: &mut Serdes,
     env: &'py BoundPyAny<'py>,
     shm_slice: &mut [u8],
     mut offset: usize,
     agent_id_list: &mut Vec<BoundPyAny<'py>>,
-    shared_info_setter_option: Option<Py<PyAny>>,
     send_state: bool,
     obs_dict: BoundPyDict<'py>,
 ) -> PyResult<usize> {
@@ -404,12 +411,6 @@ fn handle_env_start<'py>(
     agent_id_list.clear();
     for agent_id in obs_dict.keys().iter() {
         agent_id_list.push(agent_id);
-    }
-
-    if let Some(shared_info_setter) = shared_info_setter_option {
-        env_shared_info(env)?
-            .cast::<PyDict>()?
-            .update(shared_info_setter.cast_bound::<PyDict>(py)?.as_mapping())?;
     }
 
     offset = append_usize(shm_slice, offset, n_agents);
@@ -456,16 +457,15 @@ fn handle_reset<'py>(
     shared_info_setter_option: Option<Py<PyAny>>,
     send_state: bool,
 ) -> PyResult<usize> {
+    update_shared_info(py, env, shared_info_setter_option)?;
     let obs_dict = env_reset(env)?;
     handle_env_start(
-        py,
         settings,
         serdes,
         env,
         shm_slice,
         offset,
         agent_id_list,
-        shared_info_setter_option,
         send_state,
         obs_dict,
     )
@@ -484,16 +484,15 @@ fn handle_set_state<'py>(
     shared_info_setter_option: Option<Py<PyAny>>,
     send_state: bool,
 ) -> PyResult<usize> {
+    update_shared_info(py, env, shared_info_setter_option)?;
     let obs_dict = env_set_state(env, desired_state.bind(py))?;
     handle_env_start(
-        py,
         settings,
         serdes,
         env,
         shm_slice,
         offset,
         agent_id_list,
-        shared_info_setter_option,
         send_state,
         obs_dict,
     )

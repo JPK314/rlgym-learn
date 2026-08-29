@@ -51,6 +51,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The terminal keypresses 'j' and 'l' now update `min_frac_process_responses_per_collection` to use one process more/fewer than what the previous value did.
 - `instance_launch_delay` has been renamed to `launch_delay` for simplicity.
 - Switched to mio (using `UdpSocket`s) in Rust instead of using `selectors` and `socket` in Python for multiplexing and synchronization between EPI and env processes.
+- The shared info sent using the shared info setter serde to environment processes is now used to update the shared info dict prior to the env action being performed (previously after).
 
 ### Removed
 
