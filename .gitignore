@@ -161,6 +161,9 @@ rlgym-ppo.code-workspace
 # vscode config
 /.vscode
 
+# zed config
+/.zed
+
 # testing data
 /data
 /wandb

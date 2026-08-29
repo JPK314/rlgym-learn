@@ -1,73 +1,52 @@
-use pyo3::exceptions::asyncio::InvalidStateError;
-use pyo3::sync::GILOnceCell;
-use pyo3::types::PyBytes;
-use pyo3::{intern, prelude::*, IntoPyObjectExt};
-use std::fmt::{self, Display, Formatter};
+use mio::net::UdpSocket;
+use mio::{Events, Interest, Poll, Token};
+use pyo3::prelude::*;
+use std::io;
+use std::net::SocketAddr;
 
-#[derive(Debug, PartialEq)]
-pub enum Header {
-    EnvShapesRequest,
-    EnvAction,
-    Stop,
+pub fn get_handshake_poll(socket: &mut UdpSocket) -> PyResult<(Poll, Events)> {
+    let poll = Poll::new()?;
+    let events = Events::with_capacity(1);
+    poll.registry()
+        .register(socket, Token(0), Interest::READABLE)?;
+    Ok((poll, events))
 }
 
-impl Display for Header {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::EnvShapesRequest => write!(f, "EnvShapesRequest"),
-            Self::EnvAction => write!(f, "EnvAction"),
-            Self::Stop => write!(f, "Stop"),
+pub fn drain_socket(socket: &UdpSocket) -> PyResult<bool> {
+    let mut received_any = false;
+    loop {
+        match socket.recv_from(&mut [0]) {
+            Ok(_) => received_any = true,
+            Err(e) if e.kind() == io::ErrorKind::WouldBlock => return Ok(received_any),
+            Err(e) => Err(e)?,
         }
     }
 }
 
-#[pyfunction]
-pub fn recvfrom_byte<'py>(socket: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
-    static INTERNED_INT_1: GILOnceCell<PyObject> = GILOnceCell::new();
-    let py = socket.py();
-    socket.call_method1(
-        intern!(py, "recvfrom"),
-        (INTERNED_INT_1.get_or_init(py, || 1_i64.into_py_any(py).unwrap()),),
-    )
+pub fn recvfrom_byte(
+    socket: &mut UdpSocket,
+    poll: &mut Poll,
+    events: &mut Events,
+) -> PyResult<SocketAddr> {
+    loop {
+        poll.poll(events, None)?;
+        if !events.iter().any(|event| event.is_readable()) {
+            continue;
+        }
+        let v = socket.recv_from(&mut [0]);
+        match v {
+            Ok((_, send_addr)) => return Ok(send_addr),
+            Err(e) if e.kind() == io::ErrorKind::WouldBlock => continue,
+            Err(e) => Err(e)?,
+        }
+    }
 }
 
-#[pyfunction]
-pub fn sendto_byte<'py>(socket: &Bound<'py, PyAny>, address: &Bound<'py, PyAny>) -> PyResult<()> {
-    static INTERNED_BYTES_0: GILOnceCell<PyObject> = GILOnceCell::new();
-    let py = socket.py();
-    socket.call_method1(
-        intern!(py, "sendto"),
-        (
-            INTERNED_BYTES_0
-                .get_or_init(py, || PyBytes::new(py, &vec![0_u8][..]).into_any().unbind()),
-            address,
-        ),
-    )?;
+pub fn sendto_byte(socket: &UdpSocket, address: SocketAddr) -> PyResult<()> {
+    socket.send_to(&[0], address)?;
     Ok(())
 }
 
-pub fn get_flink(flinks_folder: &str, proc_id: &str) -> String {
+pub fn get_flink(flinks_folder: &str, proc_id: u128) -> String {
     format!("{}/{}", flinks_folder, proc_id)
-}
-
-pub fn append_header(buf: &mut [u8], offset: usize, header: Header) -> usize {
-    buf[offset] = match header {
-        Header::EnvShapesRequest => 0,
-        Header::EnvAction => 1,
-        Header::Stop => 2,
-    };
-    offset + 1
-}
-
-pub fn retrieve_header(slice: &[u8], offset: usize) -> PyResult<(Header, usize)> {
-    let header = match slice[offset] {
-        0 => Ok(Header::EnvShapesRequest),
-        1 => Ok(Header::EnvAction),
-        2 => Ok(Header::Stop),
-        v => Err(InvalidStateError::new_err(format!(
-            "tried to retrieve header from shared_memory but got value {}",
-            v
-        ))),
-    }?;
-    Ok((header, offset + 1))
 }
