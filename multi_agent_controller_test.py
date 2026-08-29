@@ -1,75 +1,45 @@
+# pyright: reportMissingTypeStubs=false, reportMissingParameterType=false, reportUnknownMemberType=false, reportUnknownArgumentType=false, reportUnknownVariableType=false
+
 import os
+
+from typing_extensions import override
 
 os.environ["OPENBLAS_NUM_THREADS"] = "1"
 
-from typing import Any, Dict, List, Tuple
+from typing import Any, Literal, TypeAlias
 
 import numpy as np
-from rlgym.api import AgentID, RewardFunction
+from rlgym.api import RLGym
 from rlgym.rocket_league.api import GameState
-from rlgym.rocket_league.common_values import CAR_MAX_SPEED
-from rlgym.rocket_league.obs_builders import DefaultObs
+
+AgentID: TypeAlias = str
+ObsType: TypeAlias = np.ndarray[tuple[Literal[92]], np.dtype[np.float64]]
+ActionType: TypeAlias = np.ndarray[tuple[Literal[90]], np.dtype[np.int64]]
+EngineActionType: TypeAlias = np.ndarray[tuple[Literal[8]], np.dtype[np.generic]]
+RewardType: TypeAlias = float
+StateType: TypeAlias = GameState[AgentID]
+ObsSpaceType: TypeAlias = tuple[str, int]
+ActionSpaceType: TypeAlias = tuple[str, int]
 
 
-class CustomObs(DefaultObs):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.obs_len = -1
-
-    def get_obs_space(self, agent):
-        if self.zero_padding is not None:
-            return "real", 52 + 20 * self.zero_padding * 2
-        else:
-            return (
-                "real",
-                self.obs_len,
-            )
-
-    def build_obs(self, agents, state, shared_info):
-        obs = super().build_obs(agents, state, shared_info)
-        if self.obs_len == -1:
-            self.obs_len = len(list(obs.values())[0])
-        return obs
-
-
-class VelocityPlayerToBallReward(RewardFunction[AgentID, GameState, float]):
-    def reset(
-        self,
-        agents: list[AgentID],
-        initial_state: GameState,
-        shared_info: dict[str, Any],
-    ) -> None:
-        pass
-
-    def get_rewards(
-        self,
-        agents: list[AgentID],
-        state: GameState,
-        is_terminated: dict[AgentID, bool],
-        is_truncated: dict[AgentID, bool],
-        shared_info: dict[str, Any],
-    ) -> dict[AgentID, float]:
-        return {agent: self._get_reward(agent, state) for agent in agents}
-
-    def _get_reward(self, agent: AgentID, state: GameState):
-        ball = state.ball
-        car = state.cars[agent].physics
-
-        car_to_ball = ball.position - car.position
-        car_to_ball = car_to_ball / np.linalg.norm(car_to_ball)
-
-        return np.dot(car_to_ball, car.linear_velocity) / CAR_MAX_SPEED
-
-
-def env_create_function():
-    import numpy as np
-    from rlgym.api import RLGym
-    from rlgym.rocket_league import common_values
+def env_create_function() -> RLGym[
+    AgentID,
+    ObsType,
+    ActionType,
+    EngineActionType,
+    RewardType,
+    StateType,
+    ObsSpaceType,
+    ActionSpaceType,
+]:
+    from rlgym.api import RewardFunction
     from rlgym.rocket_league.action_parsers import LookupTableAction, RepeatAction
+    from rlgym.rocket_league.common_values import CAR_MAX_SPEED
     from rlgym.rocket_league.done_conditions import (
         GoalCondition,
         NoTouchTimeoutCondition,
     )
+    from rlgym.rocket_league.obs_builders import DefaultObs
     from rlgym.rocket_league.reward_functions import CombinedReward, TouchReward
     from rlgym.rocket_league.rlviser import RLViserRenderer
     from rlgym.rocket_league.sim import RocketSimEngine
@@ -78,6 +48,37 @@ def env_create_function():
         KickoffMutator,
         MutatorSequence,
     )
+    from typing_extensions import override
+
+    class VelocityPlayerToBallReward(RewardFunction[AgentID, StateType, RewardType]):
+        @override
+        def reset(
+            self,
+            agents: list[AgentID],
+            initial_state: GameState[AgentID],
+            shared_info: dict[str, Any],
+        ) -> None:
+            pass
+
+        @override
+        def get_rewards(
+            self,
+            agents: list[AgentID],
+            state: GameState[AgentID],
+            is_terminated: dict[AgentID, bool],
+            is_truncated: dict[AgentID, bool],
+            shared_info: dict[str, Any],
+        ) -> dict[AgentID, float]:
+            return {agent: self._get_reward(agent, state) for agent in agents}
+
+        def _get_reward(self, agent: AgentID, state: GameState[AgentID]):
+            ball = state.ball
+            car = state.cars[agent].physics
+
+            car_to_ball = ball.position - car.position
+            car_to_ball = car_to_ball / np.linalg.norm(car_to_ball)
+
+            return np.dot(car_to_ball, car.linear_velocity) / CAR_MAX_SPEED
 
     spawn_opponents = True
     team_size = 1
@@ -92,18 +93,8 @@ def env_create_function():
 
     reward_fn = CombinedReward((TouchReward(), 1), (VelocityPlayerToBallReward(), 0.1))
 
-    obs_builder = CustomObs(
-        zero_padding=None,
-        pos_coef=np.asarray(
-            [
-                1 / common_values.SIDE_WALL_X,
-                1 / common_values.BACK_NET_Y,
-                1 / common_values.CEILING_Z,
-            ]
-        ),
-        ang_coef=1 / np.pi,
-        lin_vel_coef=1 / common_values.CAR_MAX_SPEED,
-        ang_vel_coef=1 / common_values.CAR_MAX_ANG_VEL,
+    obs_builder = DefaultObs(
+        zero_padding=1,
     )
 
     state_mutator = MutatorSequence(
@@ -123,41 +114,85 @@ def env_create_function():
 
 
 if __name__ == "__main__":
-    from rlgym_learn.basic_config import (
+    from typing import cast
+
+    from pydantic import JsonValue
+    from rlgym.rocket_league.api import GameState
+    from rlgym_learn import (
         BaseConfigModel,
-        ProcessConfigModel,
-        PyAnySerdeType,
-        SerdeTypesModel,
-    )
-    from rlgym_learn.learning_coordinator import (
         LearningCoordinator,
         LearningCoordinatorConfigModel,
+        ProcessConfigModel,
+        SerdeTypesModel,
         generate_config,
     )
+    from rlgym_learn.pyany_serde import NumpySerdeConfig, PyAnySerdeType
+    from rlgym_learn_algos.agent_controller.multi_agent import (
+        EnvActionResponse,
+        MultiAgentController,
+        MultiAgentControllerConfigModel,
+    )
     from rlgym_learn_algos.ppo import (
+        ActorCritic,
         BasicCritic,
         DiscreteFF,
         ExperienceBufferConfigModel,
         GAETrajectoryProcessor,
         GAETrajectoryProcessorConfigModel,
-        GAETrajectoryProcessorPurePython,
         NumpyExperienceBuffer,
         PPOAgentController,
         PPOAgentControllerConfigModel,
         PPOLearnerConfigModel,
         PPOMetricsLogger,
+        SeparateActorCritic,
+        log_actor_critic_parameter_counts,
     )
+    from torch import device as _device
+    from torch import dtype as _dtype
+    from torch.optim import Adam, Optimizer
 
-    def actor_factory(
-        obs_space: tuple[str, int], action_space: tuple[str, int], device: str
-    ):
-        return DiscreteFF(obs_space[1], action_space[1], (256, 256, 256), device)
+    def actor_critic_factory(
+        obs_space: tuple[str, int],
+        action_space: tuple[str, int],
+        dtype: _dtype,
+        device: _device,
+        agent_controller: str | None,
+    ) -> ActorCritic[AgentID, ObsType, ActionType]:
+        actor = DiscreteFF(
+            obs_space[1], action_space[1], (256, 256, 256), dtype, device
+        )
+        critic = BasicCritic(obs_space[1], (256, 256, 256), dtype, device)
+        log_actor_critic_parameter_counts(actor, critic, agent_controller)
+        return SeparateActorCritic(
+            actor,
+            critic,
+        )
 
-    def critic_factory(obs_space: tuple[str, int], device: str):
-        return BasicCritic(obs_space[1], (256, 256, 256), device)
+    def optimizers_factory(
+        actor_critic: ActorCritic[AgentID, ObsType, ActionType],
+        optimizer_named_parameter_group_kwargs: dict[str, dict[str, JsonValue]],
+        agent_controller: str | None,
+    ) -> list[Optimizer]:
+        actor_critic = cast(
+            SeparateActorCritic[AgentID, ObsType, ActionType], actor_critic
+        )
+        print(
+            f"{agent_controller}: Current Actor Optimizer Kwargs: {optimizer_named_parameter_group_kwargs['actor']}"
+        )
+        print(
+            f"{agent_controller}: Current Critic Optimizer Kwargs {optimizer_named_parameter_group_kwargs['critic']}"
+        )
+        actor_optimizer = Adam(
+            actor_critic.actor.parameters(),
+            **optimizer_named_parameter_group_kwargs["actor"],  # pyright: ignore [reportArgumentType]
+        )
+        critic_optimizer = Adam(
+            actor_critic.critic.parameters(),
+            **optimizer_named_parameter_group_kwargs["critic"],  # pyright: ignore [reportArgumentType]
+        )
+        return [actor_optimizer, critic_optimizer]
 
-    # 80 processes
-    n_proc = 200
+    n_proc = 150
 
     learner_config = PPOLearnerConfigModel(
         n_epochs=1,
@@ -165,24 +200,25 @@ if __name__ == "__main__":
         n_minibatches=1,
         ent_coef=0.001,
         clip_range=0.2,
-        actor_lr=0.0003,
-        critic_lr=0.0003,
+        optimizer_named_parameter_group_kwargs={
+            "actor": {"lr": 3e-4},
+            "critic": {"lr": 3e-4},
+        },
+        device="cuda:0",  # pyright: ignore [reportArgumentType]
     )
     experience_buffer_config = ExperienceBufferConfigModel(
         max_size=150_000,
         trajectory_processor_config=GAETrajectoryProcessorConfigModel(
-            standardize_returns=True
+            standardize_rewards=True, max_returns_per_stats_increment=None
         ),
+        device="cpu",  # pyright: ignore [reportArgumentType]
     )
     ppo_agent_controller_config = PPOAgentControllerConfigModel(
         timesteps_per_iteration=50_000,
         save_every_ts=600_000,
-        add_unix_timestamp=True,
         checkpoint_load_folder=None,  # "agents_checkpoints/PPO1/rlgym-learn-run-1723394601682346400/1723394622757846600",
         n_checkpoints_to_keep=5,
         random_seed=123,
-        device="auto",
-        log_to_wandb=False,
         learner_config=learner_config,
         experience_buffer_config=experience_buffer_config,
     )
@@ -193,8 +229,20 @@ if __name__ == "__main__":
             base_config=BaseConfigModel(
                 serde_types=SerdeTypesModel(
                     agent_id_serde_type=PyAnySerdeType.STRING(),
-                    action_serde_type=PyAnySerdeType.NUMPY(np.int64),
-                    obs_serde_type=PyAnySerdeType.NUMPY(np.float64),
+                    obs_serde_type=PyAnySerdeType.NUMPY(
+                        np.float32,
+                        config=NumpySerdeConfig.STATIC(
+                            shape=(92,),
+                            allocation_pool_warning_size=None,
+                        ),
+                    ),
+                    action_serde_type=PyAnySerdeType.NUMPY(
+                        np.int64,
+                        config=NumpySerdeConfig.STATIC(
+                            shape=(1,),
+                            allocation_pool_warning_size=None,
+                        ),
+                    ),
                     reward_serde_type=PyAnySerdeType.FLOAT(),
                     obs_space_serde_type=PyAnySerdeType.TUPLE(
                         (PyAnySerdeType.STRING(), PyAnySerdeType.INT())
@@ -202,45 +250,68 @@ if __name__ == "__main__":
                     action_space_serde_type=PyAnySerdeType.TUPLE(
                         (PyAnySerdeType.STRING(), PyAnySerdeType.INT())
                     ),
-                    state_metrics_serde_type=PyAnySerdeType.LIST(
-                        PyAnySerdeType.NUMPY(np.float64)
-                    ),
                 ),
-                timestep_limit=500_000,
+                timestep_limit=10_000_000,
             ),
-            agent_controllers_config={
-                "PPO1": ppo_agent_controller_config,
-                "PPO2": ppo_agent_controller_config,
-            },
+            agent_controller_config=MultiAgentControllerConfigModel(
+                subcontrollers_config={
+                    "PPO1": ppo_agent_controller_config,
+                    "PPO2": ppo_agent_controller_config,
+                }
+            ),
         ),
         config_location="config.json",
         force_overwrite=True,
     )
 
-    agent_controllers = {
+    agent_subcontrollers = {
         "PPO1": PPOAgentController(
-            actor_factory,
-            critic_factory,
+            actor_critic_factory,
+            optimizers_factory,
             NumpyExperienceBuffer(GAETrajectoryProcessor()),
             metrics_logger=PPOMetricsLogger(),
-            agent_choice_fn=lambda agent_ids: [
-                idx for idx, agent_id in enumerate(agent_ids) if "blue" in agent_id
-            ],
         ),
         "PPO2": PPOAgentController(
-            actor_factory,
-            critic_factory,
+            actor_critic_factory,
+            optimizers_factory,
             NumpyExperienceBuffer(GAETrajectoryProcessor()),
             metrics_logger=PPOMetricsLogger(),
-            agent_choice_fn=lambda agent_ids: [
-                idx for idx, agent_id in enumerate(agent_ids) if "orange" in agent_id
-            ],
         ),
     }
 
+    class SimpleMultiAgentController(MultiAgentController):
+        @override
+        def choose_env_actions(
+            self,
+            env_state_info_dict: dict[
+                int,
+                tuple[
+                    dict[str, Any] | None,
+                    StateType | None,
+                    dict[AgentID, bool] | None,
+                    dict[AgentID, bool] | None,
+                ],
+            ],
+        ) -> tuple[int, dict[int, EnvActionResponse[AgentID, StateType]]]:
+            return super().choose_env_actions(env_state_info_dict)
+
+        @override
+        def choose_subcontrollers(
+            self, agent_ids: dict[int, list[AgentID]]
+        ) -> dict[int, list[str]] | None:
+            return {
+                env_id: [
+                    "PPO1" if "blue" in agent_id else "PPO2"
+                    for agent_id in env_agent_ids
+                ]
+                for (env_id, env_agent_ids) in agent_ids.items()
+            }
+
+    agent_controller = SimpleMultiAgentController(agent_subcontrollers)
+
     coordinator = LearningCoordinator(
         env_create_function=env_create_function,
-        agent_controllers=agent_controllers,
+        agent_controller=agent_controller,
         config_location="config.json",
     )
     coordinator.start()

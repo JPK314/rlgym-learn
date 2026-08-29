@@ -17,7 +17,7 @@ indicatif = "0.18.6"
 itertools = "0.13.0"
 mio = { version = "1.2.2", features = ["net", "os-poll"] }
 numpy = "0.29.0"
-pyany-serde = "0.7.0"
+pyany-serde = { path = "../pyany-serde" }
 pyo3 = { version = "0.29.0", features = ["py-clone"] }
 raw_sync = "0.1.5"
 rkyv = "0.8.10"

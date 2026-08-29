@@ -20,6 +20,7 @@ use pyo3::{
     types::{PyDict, PyInt},
 };
 use raw_sync::events::Event;
+use raw_sync::events::EventImpl;
 use raw_sync::events::EventInit;
 use raw_sync::events::EventState;
 use shared_memory::Shmem;
@@ -31,7 +32,7 @@ use crate::env_action::EnvAction;
 use crate::env_action::append_env_action;
 use crate::serdes::Serdes;
 use crate::synchronization::get_handshake_poll;
-use crate::synchronization::{get_flink, recvfrom_byte, sendto_byte};
+use crate::synchronization::{drain_socket, get_flink, recvfrom_byte, sendto_byte};
 use crate::timestep::Timestep;
 
 type ObsData<'py> = (Vec<Py<PyAny>>, Vec<BoundPyAny<'py>>);
@@ -98,7 +99,15 @@ pub struct EnvProcessInterface {
     flinks_folder: String,
     shm_buffer_size: usize,
     #[allow(clippy::type_complexity)]
-    proc_packages: Vec<Option<(UdpSocket, SocketAddr, Shmem, usize, u128, Py<PyInt>)>>,
+    proc_packages: Vec<
+        Option<(
+            UdpSocket,
+            SocketAddr,
+            (Shmem, Box<dyn EventImpl>, usize),
+            u128,
+            Py<PyInt>,
+        )>,
+    >,
     min_frac_process_responses_per_collection: f32,
     min_process_responses_per_collection: usize,
     multiplexer: (Poll, Events),
@@ -142,7 +151,7 @@ impl EnvProcessInterface {
             .map_err(|err| {
                 InvalidStateError::new_err(format!("Unable to create shmem flink {flink}: {err}"))
             })?;
-        let (_, used_bytes) = unsafe {
+        let (evt, used_bytes) = unsafe {
             Event::new(shmem.as_ptr(), true).map_err(|err| {
                 InvalidStateError::new_err(format!(
                     "Failed to create event from epi to process {proc_id}: {err}"
@@ -163,8 +172,7 @@ impl EnvProcessInterface {
         self.proc_packages.push(Some((
             parent_socket,
             child_addr,
-            shmem,
-            used_bytes,
+            (shmem, evt, used_bytes),
             proc_id,
             py_proc_id.clone_ref(py),
         )));
@@ -210,7 +218,7 @@ impl EnvProcessInterface {
     fn clean_up_ended_process(&mut self, proc_id: u128) -> PyResult<()> {
         let last_pid_idx = self.proc_packages.len() - 1;
         let pid_idx = self.proc_id_pid_idx_map.remove(&proc_id).unwrap();
-        let (mut parent_socket, _, _, _, proc_id, _) =
+        let (mut parent_socket, _, _, proc_id, _) =
             self.proc_packages.swap_remove(pid_idx).unwrap();
         self.pid_idx_current_agent_id_list_option
             .swap_remove(pid_idx);
@@ -223,7 +231,7 @@ impl EnvProcessInterface {
         self.return_prev_data_proc_ids
             .retain(|_proc_id| *_proc_id != proc_id);
         if pid_idx != last_pid_idx {
-            let (updated_pid_idx_parent_socket, _, _, _, updated_pid_idx_proc_id, _) =
+            let (updated_pid_idx_parent_socket, _, _, updated_pid_idx_proc_id, _) =
                 self.proc_packages[pid_idx].as_mut().unwrap();
             self.proc_id_pid_idx_map
                 .insert(*updated_pid_idx_proc_id, pid_idx);
@@ -521,7 +529,7 @@ impl EnvProcessInterface {
             let action_space;
             (action_space, offset) = self
                 .serdes
-                .obs_space_serde
+                .action_space_serde
                 .retrieve(py, shm_slice, offset)?;
             spaces_dict.set_item(agent_id, (obs_space, action_space))?;
         }
@@ -572,7 +580,7 @@ impl EnvProcessInterface {
         py: Python<'py>,
         pid_idx: usize,
     ) -> PyResult<(Py<PyInt>, ResponseData<'py>)> {
-        let (parent_socket, child_addr, shmem, used_bytes, proc_id, py_proc_id) =
+        let (parent_socket, child_addr, (shmem, evt, used_bytes), proc_id, py_proc_id) =
             self.proc_packages.get_mut(pid_idx).unwrap().take().unwrap();
         let shm_slice = unsafe { &shmem.as_slice()[used_bytes..] };
         if shm_slice[0] != 0 {
@@ -580,8 +588,7 @@ impl EnvProcessInterface {
             self.proc_packages[pid_idx] = Some((
                 parent_socket,
                 child_addr,
-                shmem,
-                used_bytes,
+                (shmem, evt, used_bytes),
                 proc_id,
                 py_proc_id.clone_ref(py),
             ));
@@ -632,8 +639,7 @@ impl EnvProcessInterface {
         self.proc_packages[pid_idx] = Some((
             parent_socket,
             child_addr,
-            shmem,
-            used_bytes,
+            (shmem, evt, used_bytes),
             proc_id,
             py_proc_id.clone_ref(py),
         ));
@@ -645,8 +651,8 @@ impl EnvProcessInterface {
         &mut self,
         py: Python<'py>,
         n_to_collect: usize,
-        prev_env_obs_data_dict: &mut HashMap<u128, BoundPyAny<'py>>,
-        prev_env_state_info_dict: &mut HashMap<u128, BoundPyAny<'py>>,
+        prev_env_obs_data_dict: &BoundPyDict<'py>,
+        prev_env_state_info_dict: &BoundPyDict<'py>,
     ) -> PyResult<(
         bool,
         usize,
@@ -671,20 +677,11 @@ impl EnvProcessInterface {
             for event in self.multiplexer.1.iter() {
                 if event.is_readable() {
                     let Token(pid_idx) = event.token();
-                    let (parent_socket, _, _, _, _, _) =
-                        self.proc_packages[pid_idx].as_ref().unwrap();
-                    match parent_socket.recv_from(&mut [0]) {
-                        Ok(_) => {
-                            if !self.pid_idx_awaiting_signal_list[pid_idx] {
-                                self.pid_idx_awaiting_signal_list[pid_idx] = true;
-                                ready_pid_idxs.push(pid_idx);
-                                n_process_responses_collected += 1;
-                            }
-                        }
-                        Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
-                            continue;
-                        }
-                        Err(e) => Err(e)?,
+                    let (parent_socket, _, _, _, _) = self.proc_packages[pid_idx].as_ref().unwrap();
+                    if drain_socket(parent_socket)? && !self.pid_idx_awaiting_signal_list[pid_idx] {
+                        self.pid_idx_awaiting_signal_list[pid_idx] = true;
+                        ready_pid_idxs.push(pid_idx);
+                        n_process_responses_collected += 1;
                     }
                 }
             }
@@ -696,11 +693,18 @@ impl EnvProcessInterface {
             obs_data_dict_has_data = true;
             state_info_dict.update(init_state_info_dict.bind(py).as_mapping())?;
         }
-        for proc_id in self.return_prev_data_proc_ids.drain(..) {
-            obs_data_dict.set_item(proc_id, prev_env_obs_data_dict.remove(&proc_id).unwrap())?;
-            obs_data_dict_has_data = true;
-            state_info_dict
-                .set_item(proc_id, prev_env_state_info_dict.remove(&proc_id).unwrap())?;
+        if !self.return_prev_data_proc_ids.is_empty() {
+            let mut prev_env_obs_data_dict =
+                prev_env_obs_data_dict.extract::<HashMap<u128, BoundPyAny<'py>>>()?;
+            let mut prev_env_state_info_dict =
+                prev_env_state_info_dict.extract::<HashMap<u128, BoundPyAny<'py>>>()?;
+            for proc_id in self.return_prev_data_proc_ids.drain(..) {
+                obs_data_dict
+                    .set_item(proc_id, prev_env_obs_data_dict.remove(&proc_id).unwrap())?;
+                obs_data_dict_has_data = true;
+                state_info_dict
+                    .set_item(proc_id, prev_env_state_info_dict.remove(&proc_id).unwrap())?;
+            }
         }
         for pid_idx in ready_pid_idxs.into_iter() {
             let (py_proc_id, response_data) = self.collect_response(py, pid_idx)?;
@@ -741,7 +745,7 @@ impl EnvProcessInterface {
                     spaces_data_dict.set_item(py_proc_id, spaces_dict)?;
                 }
                 ResponseData::CloseComplete {} => {
-                    let (_, _, _, _, proc_id, _) = self.proc_packages[pid_idx].as_ref().unwrap();
+                    let (_, _, _, proc_id, _) = self.proc_packages[pid_idx].as_ref().unwrap();
                     if self.deleted_proc_ids.remove(proc_id) {
                         closed_dict.set_item(py_proc_id, EnvCloseReason::DELETED {})?
                     } else {
@@ -823,8 +827,8 @@ impl EnvProcessInterface {
             .collect_env_responses_inner(
                 py,
                 self.proc_packages.len(),
-                &mut HashMap::new(),
-                &mut HashMap::new(),
+                &PyDict::new(py),
+                &PyDict::new(py),
             )?;
         if closed_dict.len() > 0 {
             return Err(InvalidStateError::new_err(
@@ -850,8 +854,8 @@ impl EnvProcessInterface {
     pub fn delete_process<'py>(&mut self, py: Python<'py>) -> PyResult<u128> {
         // Find a process to delete
         // First preference is a process that's already awaiting a signal
+        // Don't delete process 0 unless there's only 1 process, because process 0 is used for rendering if that's enabled
 
-        // TODO: don't delete process 0 using this unless it's the only process left, because that process is used for rendering if rendering is enabled
         let exclude_pid_idx_0 = self.proc_packages.len() > 1;
         let pid_idx = if let Some((pid_idx, _)) = self
             .pid_idx_awaiting_signal_list
@@ -872,7 +876,7 @@ impl EnvProcessInterface {
                         if exclude_pid_idx_0 && _pid_idx == 0 {
                             continue;
                         }
-                        let (parent_socket, _, _, _, _, _) =
+                        let (parent_socket, _, _, _, _) =
                             self.proc_packages[_pid_idx].as_ref().unwrap();
                         match parent_socket.recv_from(&mut [0]) {
                             Ok(_) => {
@@ -889,7 +893,7 @@ impl EnvProcessInterface {
             }
             pid_idx
         };
-        let (_, _, shmem, _, proc_id, _) = self
+        let (_, _, (shmem, ep_evt, used_bytes), proc_id, _) = self
             .proc_packages
             .get_mut(pid_idx)
             .unwrap()
@@ -897,12 +901,7 @@ impl EnvProcessInterface {
             .unwrap();
         let proc_id = *proc_id;
         self.deleted_proc_ids.insert(proc_id);
-        let (ep_evt, used_bytes) = unsafe {
-            Event::from_existing(shmem.as_ptr()).map_err(|err| {
-                InvalidStateError::new_err(format!("Failed to get event: {}", err))
-            })?
-        };
-        let shm_slice = unsafe { &mut shmem.as_slice_mut()[used_bytes..] };
+        let shm_slice = unsafe { &mut shmem.as_slice_mut()[*used_bytes..] };
         // 1 instead of 0 because first byte is reserved for error state
         append_env_action(
             py,
@@ -919,7 +918,7 @@ impl EnvProcessInterface {
         self.pid_idx_current_env_action[pid_idx] = Some(EnvAction::CLOSE {});
         // The other possibility is ResponseData::Error which would itself handle the closure
         if let (_, ResponseData::CloseComplete {}) = self.collect_response(py, pid_idx)? {
-            let (_, _, _, _, proc_id, _) = self.proc_packages[pid_idx].as_ref().unwrap();
+            let (_, _, _, proc_id, _) = self.proc_packages[pid_idx].as_ref().unwrap();
             self.clean_up_ended_process(*proc_id)?;
         }
         Ok(proc_id)
@@ -967,7 +966,7 @@ impl EnvProcessInterface {
             for event in self.multiplexer.1.iter() {
                 if event.is_readable() {
                     let Token(_pid_idx) = event.token();
-                    let (parent_socket, _, _, _, _, _) =
+                    let (parent_socket, _, _, _, _) =
                         self.proc_packages[_pid_idx].as_ref().unwrap();
                     match parent_socket.recv_from(&mut [0]) {
                         Ok(_) => {
@@ -983,13 +982,8 @@ impl EnvProcessInterface {
         }
 
         for (pid_idx, proc_package) in self.proc_packages.iter_mut().enumerate() {
-            let (_, _, shmem, _, _, _) = proc_package.as_mut().unwrap();
-            let (ep_evt, used_bytes) = unsafe {
-                Event::from_existing(shmem.as_ptr()).map_err(|err| {
-                    InvalidStateError::new_err(format!("Failed to get event: {}", err))
-                })?
-            };
-            let shm_slice = unsafe { &mut shmem.as_slice_mut()[used_bytes..] };
+            let (_, _, (shmem, ep_evt, used_bytes), _, _) = proc_package.as_mut().unwrap();
+            let shm_slice = unsafe { &mut shmem.as_slice_mut()[*used_bytes..] };
             // 1 instead of 0 because first byte is reserved for error state
             append_env_action(
                 py,
@@ -1010,7 +1004,7 @@ impl EnvProcessInterface {
             let pid_idx = self.proc_packages.len() - 1;
             // The other possibility is ResponseData::Error which would itself handle the closure
             if let (_, ResponseData::CloseComplete {}) = self.collect_response(py, pid_idx)? {
-                let (_, _, _, _, proc_id, _) = self.proc_packages[pid_idx].as_ref().unwrap();
+                let (_, _, _, proc_id, _) = self.proc_packages[pid_idx].as_ref().unwrap();
                 self.clean_up_ended_process(*proc_id)?;
             }
         }
@@ -1023,8 +1017,8 @@ impl EnvProcessInterface {
     pub fn collect_env_responses<'py>(
         &mut self,
         py: Python<'py>,
-        mut prev_env_obs_data_dict: HashMap<u128, BoundPyAny<'py>>,
-        mut prev_env_state_info_dict: HashMap<u128, BoundPyAny<'py>>,
+        prev_env_obs_data_dict: BoundPyDict<'py>,
+        prev_env_state_info_dict: BoundPyDict<'py>,
     ) -> PyResult<(
         usize,
         BoundPyDict<'py>,
@@ -1060,8 +1054,8 @@ impl EnvProcessInterface {
         ) = self.collect_env_responses_inner(
             py,
             n_to_collect,
-            &mut prev_env_obs_data_dict,
-            &mut prev_env_state_info_dict,
+            &prev_env_obs_data_dict,
+            &prev_env_state_info_dict,
         )?;
 
         while !obs_data_dict_has_data && !self.proc_packages.is_empty() {
@@ -1084,8 +1078,8 @@ impl EnvProcessInterface {
             ) = self.collect_env_responses_inner(
                 py,
                 n_to_collect,
-                &mut prev_env_obs_data_dict,
-                &mut prev_env_state_info_dict,
+                &prev_env_obs_data_dict,
+                &prev_env_state_info_dict,
             )?;
             // total_timesteps_collected will always be 0 before this executes because it is guaranteed by !obs_data_dict_has_data
             total_timesteps_collected = _total_timesteps_collected;
@@ -1116,21 +1110,13 @@ impl EnvProcessInterface {
     ) -> PyResult<()> {
         for (proc_id, mut env_action) in env_actions.into_iter() {
             let &pid_idx = self.proc_id_pid_idx_map.get(&proc_id).unwrap();
-            let (_, _, shmem, _, _, _) = self
+            let (parent_socket, _, (shmem, ep_evt, used_bytes), _, _) = self
                 .proc_packages
                 .get_mut(pid_idx)
                 .unwrap()
                 .as_mut()
                 .unwrap();
-            let (ep_evt, evt_used_bytes) = unsafe {
-                Event::from_existing(shmem.as_ptr()).map_err(|err| {
-                    InvalidStateError::new_err(format!(
-                        "Failed to get event from epi to process with index {}: {}",
-                        pid_idx, err
-                    ))
-                })?
-            };
-            let shm_slice = unsafe { &mut shmem.as_slice_mut()[evt_used_bytes..] };
+            let shm_slice = unsafe { &mut shmem.as_slice_mut()[*used_bytes..] };
 
             if let EnvAction::DEFER {} = env_action {
             } else {
@@ -1147,6 +1133,7 @@ impl EnvProcessInterface {
                 ep_evt
                     .set(EventState::Signaled)
                     .map_err(|err| InvalidStateError::new_err(err.to_string()))?;
+                drain_socket(parent_socket)?;
                 self.pid_idx_awaiting_signal_list[pid_idx] = false;
             }
 

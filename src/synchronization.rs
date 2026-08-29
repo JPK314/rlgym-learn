@@ -12,6 +12,17 @@ pub fn get_handshake_poll(socket: &mut UdpSocket) -> PyResult<(Poll, Events)> {
     Ok((poll, events))
 }
 
+pub fn drain_socket(socket: &UdpSocket) -> PyResult<bool> {
+    let mut received_any = false;
+    loop {
+        match socket.recv_from(&mut [0]) {
+            Ok(_) => received_any = true,
+            Err(e) if e.kind() == io::ErrorKind::WouldBlock => return Ok(received_any),
+            Err(e) => Err(e)?,
+        }
+    }
+}
+
 pub fn recvfrom_byte(
     socket: &mut UdpSocket,
     poll: &mut Poll,

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import cProfile
 import os
 from collections.abc import Callable
 from typing import Any, Generic
@@ -150,9 +149,6 @@ class LearningCoordinator(
             ),
         )
         print("Learning coordinator successfully initialized!")
-        # TODO: delete and remove import
-        self.prof = cProfile.Profile()
-        self.prof.enable()
 
     def start(self):
         """
@@ -178,8 +174,6 @@ class LearningCoordinator(
                 traceback.print_exc()
 
         finally:
-            self.prof.disable()
-            self.prof.dump_stats("ppo_prof.prof")
             self.cleanup()
 
     def _run(self):
@@ -189,7 +183,7 @@ class LearningCoordinator(
         """
 
         # Class to watch for keyboard hits
-        # kb = KBHit()
+        kb = KBHit()
 
         # Collect the desired number of timesteps from our environments.
         loop_iterations = 0
@@ -235,10 +229,9 @@ class LearningCoordinator(
                 self.env_process_interface.add_processes(
                     procs_to_add, self.config.process_config.launch_delay
                 )
-            # TODO: undo this
-            # if loop_iterations % 50 == 0:
-            #     if self.process_kbhit(kb):
-            #         break
+
+            if loop_iterations % 50 == 0 and self.process_kbhit(kb):
+                break
             prev_env_obs_data_dict = env_obs_data_dict
             prev_env_state_info_dict = env_state_info_dict
         if self.cumulative_timesteps >= self.config.base_config.timestep_limit:
@@ -246,7 +239,7 @@ class LearningCoordinator(
         else:
             print("Quitting and cleaning up...")
 
-    def process_kbhit(self, kb: KBHit):
+    def process_kbhit(self, kb: KBHit) -> bool:
         # Check if keyboard press
         # p: pause, any key to resume
         # c: checkpoint
@@ -258,6 +251,8 @@ class LearningCoordinator(
                 print("Paused, press any key to resume")
                 while True:
                     if kb.kbhit():
+                        # consume hit
+                        _ = kb.getch()
                         break
             if c in ("c", "q"):
                 self.agent_controller.save_checkpoint()
@@ -283,6 +278,7 @@ class LearningCoordinator(
                 print(
                     f"Min frac process responses per collection decreased to {min_frac_process_responses_per_collection} ({min(1, round(min_frac_process_responses_per_collection * self.env_process_interface.n_procs)):.2f} processes)"
                 )
+        return False
 
     def save(self):
         self.agent_controller.save_checkpoint()
