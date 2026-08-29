@@ -1,11 +1,13 @@
 # Changelog
 
-All notable changes to this project will be documented in this file starting with version 0.3.0.
+All notable changes to this project will be documented in this file starting with version 2.0.0.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [2.0.0] - 2026-08-29
 
 ### Added
 
@@ -56,3 +58,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 
 - action associated learning data is no longer managed by rlgym-learn. It is expected that `AgentController` implementations store this data for themselves.
+
+## [1.0.5] - 2025-07-01
