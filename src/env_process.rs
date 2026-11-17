@@ -426,7 +426,7 @@ fn handle_env_start<'py>(
         offset = shared_info_serde.append(shm_slice, offset, &env_shared_info(env)?)?;
     }
     if send_state {
-        serdes.state_serde_option.as_deref_mut().ok_or_else(|| {
+        offset = serdes.state_serde_option.as_deref_mut().ok_or_else(|| {
                 InvalidStateError::new_err(format!(
                     "Env process {} received an env action with send_state = true, but no state serde was provided to use for serialization", settings.proc_id
                 ))
