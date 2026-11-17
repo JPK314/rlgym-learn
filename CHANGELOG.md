@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Setting `shared_info_serde_type` no longer crashes env process startup with a pyany-serde panic (`range end index ... out of range for slice`). The env process interface read the shared info but kept the offset from before it, so it read the env spaces sent after it from the wrong position. The offset after the shared info (and after the state, if sent) is now used for the data that follows.
+
 ## [2.0.0] - 2026-08-29
 
 ### Added
