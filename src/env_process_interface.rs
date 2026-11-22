@@ -274,7 +274,7 @@ impl EnvProcessInterface {
         shm_slice: &[u8],
         mut offset: usize,
         send_state: bool,
-    ) -> PyResult<(Option<BoundPyAny<'py>>, Option<BoundPyAny<'py>>)> {
+    ) -> PyResult<(Option<BoundPyAny<'py>>, Option<BoundPyAny<'py>>, usize)> {
         let shared_info_option;
         if let Some(shared_info_serde) = &mut self.serdes.shared_info_serde_option {
             let shared_info;
@@ -292,13 +292,13 @@ impl EnvProcessInterface {
                         )
                     })?;
             let state;
-            (state, _) = state_serde.retrieve(py, shm_slice, offset)?;
+            (state, offset) = state_serde.retrieve(py, shm_slice, offset)?;
             state_option = Some(state);
         } else {
             state_option = None;
         }
 
-        Ok((shared_info_option, state_option))
+        Ok((shared_info_option, state_option, offset))
     }
 
     fn collect_step_response_data<'py>(
@@ -348,7 +348,7 @@ impl EnvProcessInterface {
             truncated_list.push(truncated);
         }
 
-        let (shared_info_option, state_option) =
+        let (shared_info_option, state_option, _) =
             self.retrieve_shared_info_and_state(py, shm_slice, offset, send_state)?;
 
         // Populate timestep_list
@@ -463,7 +463,7 @@ impl EnvProcessInterface {
             (obs, offset) = self.serdes.obs_serde.retrieve(py, shm_slice, offset)?;
             obs_list.push(obs);
         }
-        let (shared_info_option, state_option) =
+        let (shared_info_option, state_option, offset) =
             self.retrieve_shared_info_and_state(py, shm_slice, offset, send_state)?;
 
         // Populate timestep_list
