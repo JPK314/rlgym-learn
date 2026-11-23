@@ -61,7 +61,7 @@ class EnvProcessInterface(
         ObsSpaceType,
         ActionSpaceType,
     ]: ...
-    def get_new_parent_socket(self, proc_id: int) -> str: ...
+    def get_new_parent_sockets(self, proc_id: int) -> tuple[str, str]: ...
     def init_processes(
         self,
         proc_package_defs: Sequence[tuple[Any, int]],
@@ -115,7 +115,8 @@ class EnvProcessInterface(
 
 def env_process_fn(
     proc_id: int,
-    parent_addr_str: str,
+    parent_handshake_addr_str: str,
+    parent_multiplexing_addr_str: str,
     build_env_fn: Any,
     flinks_folder: str,
     serde_types: SerdeTypesModel[

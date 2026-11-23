@@ -169,8 +169,8 @@ class EnvProcessInterface(
         print("Spawning processes...")
         for proc_idx in tqdm(range(n_processes)):
             proc_id = _system_random.getrandbits(128)
-            parent_addr_str = self.rust_env_process_interface.get_new_parent_socket(
-                proc_id
+            parent_handshake_addr_str, parent_multiplexing_addr_str = (
+                self.rust_env_process_interface.get_new_parent_sockets(proc_id)
             )
 
             render_this_proc = proc_idx == 0 and render
@@ -179,7 +179,8 @@ class EnvProcessInterface(
                 target=env_process,
                 args=(
                     proc_id,
-                    parent_addr_str,
+                    parent_handshake_addr_str,
+                    parent_multiplexing_addr_str,
                     self.build_env_fn,
                     self.serde_type_config,
                     self.flinks_folder,
@@ -220,8 +221,8 @@ class EnvProcessInterface(
         # Set up processes
         for idx in range(n_processes):
             proc_id = _system_random.getrandbits(128)
-            parent_addr_str = self.rust_env_process_interface.get_new_parent_socket(
-                proc_id
+            parent_handshake_addr_str, parent_multiplexing_addr_str = (
+                self.rust_env_process_interface.get_new_parent_sockets(proc_id)
             )
 
             # Create socket to communicate with child
@@ -232,7 +233,8 @@ class EnvProcessInterface(
                 target=env_process,
                 args=(
                     proc_id,
-                    parent_addr_str,
+                    parent_handshake_addr_str,
+                    parent_multiplexing_addr_str,
                     self.build_env_fn,
                     self.serde_type_config,
                     self.flinks_folder,

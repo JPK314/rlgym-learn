@@ -32,6 +32,8 @@ use crate::env_action::EnvAction;
 use crate::env_action::append_env_action;
 use crate::serdes::Serdes;
 use crate::synchronization::get_handshake_poll;
+use crate::synchronization::get_socket;
+use crate::synchronization::get_socket_addr_str;
 use crate::synchronization::{drain_socket, get_flink, recvfrom_byte, sendto_byte};
 use crate::timestep::Timestep;
 
@@ -112,7 +114,7 @@ pub struct EnvProcessInterface {
     min_process_responses_per_collection: usize,
     multiplexer: (Poll, Events),
     proc_id_pid_idx_map: HashMap<u128, usize>,
-    uninitialized_proc_id_parent_socket_map: HashMap<u128, (UdpSocket, Poll, Events)>,
+    uninitialized_proc_id_parent_socket_map: HashMap<u128, (UdpSocket, Poll, Events, UdpSocket)>,
     pid_idx_current_env_action: Vec<Option<EnvAction>>,
     pid_idx_current_agent_id_list_option: Vec<Option<Vec<Py<PyAny>>>>,
     pid_idx_prev_timestep_id_option_list_option: Vec<Option<Vec<Option<u128>>>>,
@@ -141,8 +143,12 @@ impl EnvProcessInterface {
     ) -> PyResult<()> {
         let (_, proc_id) = proc_package_def;
         let flink = get_flink(&self.flinks_folder[..], proc_id);
-        let (mut parent_socket, mut poll, mut events) = self.uninitialized_proc_id_parent_socket_map.remove(&proc_id).ok_or_else(|| InvalidStateError::new_err(format!("add_proc_package was called with proc_id {proc_id}, which didn't have a corresponding entry in uninitialized_proc_id_parent_socket_map.")))?;
-        let child_addr = sync_with_ep(&mut parent_socket, &mut poll, &mut events)?;
+        let (mut parent_handshake_socket, mut handshake_poll, mut handshake_events, mut parent_multiplexing_socket) = self.uninitialized_proc_id_parent_socket_map.remove(&proc_id).ok_or_else(|| InvalidStateError::new_err(format!("add_proc_package was called with proc_id {proc_id}, which didn't have a corresponding entry in uninitialized_proc_id_parent_socket_map.")))?;
+        let child_addr = sync_with_ep(
+            &mut parent_handshake_socket,
+            &mut handshake_poll,
+            &mut handshake_events,
+        )?;
 
         let shmem = ShmemConf::new()
             .size(self.shm_buffer_size)
@@ -160,7 +166,7 @@ impl EnvProcessInterface {
         };
 
         self.multiplexer.0.registry().register(
-            &mut parent_socket,
+            &mut parent_multiplexing_socket,
             Token(self.proc_packages.len()),
             Interest::READABLE,
         )?;
@@ -170,7 +176,7 @@ impl EnvProcessInterface {
 
         let py_proc_id = proc_id.into_pyobject(py)?.unbind();
         self.proc_packages.push(Some((
-            parent_socket,
+            parent_multiplexing_socket,
             child_addr,
             (shmem, evt, used_bytes),
             proc_id,
@@ -805,14 +811,22 @@ impl EnvProcessInterface {
         Ok(epi)
     }
 
-    fn get_new_parent_socket(&mut self, proc_id: u128) -> PyResult<String> {
-        let mut socket = UdpSocket::bind("127.0.0.1:0".parse()?)?;
-        let local_addr = socket.local_addr()?;
-        let addr_str = format!("{}:{}", local_addr.ip(), local_addr.port());
-        let (poll, events) = get_handshake_poll(&mut socket)?;
-        self.uninitialized_proc_id_parent_socket_map
-            .insert(proc_id, (socket, poll, events));
-        Ok(addr_str)
+    fn get_new_parent_sockets(&mut self, proc_id: u128) -> PyResult<(String, String)> {
+        let mut handshake_socket = get_socket()?;
+        let handshake_addr_str = get_socket_addr_str(&handshake_socket)?;
+        let (handshake_poll, handshake_events) = get_handshake_poll(&mut handshake_socket)?;
+        let multiplexing_socket = get_socket()?;
+        let multiplexing_addr_str = get_socket_addr_str(&multiplexing_socket)?;
+        self.uninitialized_proc_id_parent_socket_map.insert(
+            proc_id,
+            (
+                handshake_socket,
+                handshake_poll,
+                handshake_events,
+                multiplexing_socket,
+            ),
+        );
+        Ok((handshake_addr_str, multiplexing_addr_str))
     }
 
     fn init_processes<'py>(
