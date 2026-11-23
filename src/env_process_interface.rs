@@ -4,6 +4,7 @@ use std::collections::HashSet;
 use std::fs;
 use std::io;
 use std::net::SocketAddr;
+use std::net::UdpSocket as StdUdpSocket;
 
 use indicatif::ProgressIterator;
 use itertools::izip;
@@ -31,8 +32,7 @@ use crate::common::BoundPyDict;
 use crate::env_action::EnvAction;
 use crate::env_action::append_env_action;
 use crate::serdes::Serdes;
-use crate::synchronization::get_handshake_poll;
-use crate::synchronization::{drain_socket, get_flink, recvfrom_byte, sendto_byte};
+use crate::synchronization::{drain_socket, get_flink, mio_sendto_byte, recvfrom_byte};
 use crate::timestep::Timestep;
 
 type ObsData<'py> = (Vec<Py<PyAny>>, Vec<BoundPyAny<'py>>);
@@ -82,16 +82,6 @@ pub enum EnvCloseReason {
     EXCEPTION,
 }
 
-fn sync_with_ep(
-    socket: &mut UdpSocket,
-    poll: &mut Poll,
-    events: &mut Events,
-) -> PyResult<SocketAddr> {
-    let child_addr = recvfrom_byte(socket, poll, events)?;
-    sendto_byte(socket, child_addr)?;
-    Ok(child_addr)
-}
-
 #[pyclass(generic, module = "rlgym_learn._rlgym_learn", unsendable)]
 pub struct EnvProcessInterface {
     serdes: Serdes,
@@ -112,7 +102,7 @@ pub struct EnvProcessInterface {
     min_process_responses_per_collection: usize,
     multiplexer: (Poll, Events),
     proc_id_pid_idx_map: HashMap<u128, usize>,
-    uninitialized_proc_id_parent_socket_map: HashMap<u128, (UdpSocket, Poll, Events)>,
+    uninitialized_proc_id_parent_socket_map: HashMap<u128, StdUdpSocket>,
     pid_idx_current_env_action: Vec<Option<EnvAction>>,
     pid_idx_current_agent_id_list_option: Vec<Option<Vec<Py<PyAny>>>>,
     pid_idx_prev_timestep_id_option_list_option: Vec<Option<Vec<Option<u128>>>>,
@@ -141,9 +131,11 @@ impl EnvProcessInterface {
     ) -> PyResult<()> {
         let (_, proc_id) = proc_package_def;
         let flink = get_flink(&self.flinks_folder[..], proc_id);
-        let (mut parent_socket, mut poll, mut events) = self.uninitialized_proc_id_parent_socket_map.remove(&proc_id).ok_or_else(|| InvalidStateError::new_err(format!("add_proc_package was called with proc_id {proc_id}, which didn't have a corresponding entry in uninitialized_proc_id_parent_socket_map.")))?;
-        let child_addr = sync_with_ep(&mut parent_socket, &mut poll, &mut events)?;
-
+        let std_parent_socket = self.uninitialized_proc_id_parent_socket_map.remove(&proc_id).ok_or_else(|| InvalidStateError::new_err(format!("add_proc_package was called with proc_id {proc_id}, which didn't have a corresponding entry in uninitialized_proc_id_parent_socket_map.")))?;
+        // Do first half of sync with EP for initial handshake
+        let child_addr = recvfrom_byte(&std_parent_socket)?;
+        std_parent_socket.set_nonblocking(true)?;
+        let mut parent_socket = UdpSocket::from_std(std_parent_socket);
         let shmem = ShmemConf::new()
             .size(self.shm_buffer_size)
             .flink(flink.clone())
@@ -164,6 +156,8 @@ impl EnvProcessInterface {
             Token(self.proc_packages.len()),
             Interest::READABLE,
         )?;
+        // Do second half of sync with EP, completing initial handshake
+        mio_sendto_byte(&parent_socket, child_addr)?;
 
         let pid_idx = self.proc_packages.len();
         self.proc_id_pid_idx_map.insert(proc_id, pid_idx);
@@ -553,7 +547,7 @@ impl EnvProcessInterface {
         (env_spaces_response_data, offset) =
             self.collect_env_spaces_response_data(py, shm_slice, offset)?;
         // Complete startup handshake
-        sendto_byte(parent_socket, child_addr)?;
+        parent_socket.send_to(&[0], child_addr)?;
         let (
             ResponseData::Start {
                 obs_data,
@@ -806,12 +800,11 @@ impl EnvProcessInterface {
     }
 
     fn get_new_parent_socket(&mut self, proc_id: u128) -> PyResult<String> {
-        let mut socket = UdpSocket::bind("127.0.0.1:0".parse()?)?;
+        let socket = StdUdpSocket::bind("127.0.0.1:0")?;
         let local_addr = socket.local_addr()?;
         let addr_str = format!("{}:{}", local_addr.ip(), local_addr.port());
-        let (poll, events) = get_handshake_poll(&mut socket)?;
         self.uninitialized_proc_id_parent_socket_map
-            .insert(proc_id, (socket, poll, events));
+            .insert(proc_id, socket);
         Ok(addr_str)
     }
 

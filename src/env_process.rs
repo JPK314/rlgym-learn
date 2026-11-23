@@ -1,5 +1,3 @@
-use mio::net::UdpSocket;
-use mio::{Events, Poll};
 use pyany_serde::communication::{append_bool, append_bytes, append_usize};
 use pyo3::exceptions::asyncio::InvalidStateError;
 use pyo3::prelude::*;
@@ -9,6 +7,7 @@ use raw_sync::Timeout;
 use raw_sync::events::{Event, EventInit};
 use shared_memory::ShmemConf;
 use std::net::SocketAddr;
+use std::net::UdpSocket;
 use std::panic::{AssertUnwindSafe, catch_unwind, resume_unwind};
 use std::thread::sleep;
 use std::time::Duration;
@@ -16,16 +15,11 @@ use std::time::Duration;
 use crate::common::{BoundPyAny, BoundPyDict};
 use crate::env_action::{EnvAction, retrieve_env_action};
 use crate::serdes::Serdes;
-use crate::synchronization::{get_flink, get_handshake_poll, recvfrom_byte, sendto_byte};
+use crate::synchronization::{get_flink, recvfrom_byte, sendto_byte};
 
-fn sync_with_epi(
-    socket: &mut UdpSocket,
-    address: SocketAddr,
-    poll: &mut Poll,
-    events: &mut Events,
-) -> PyResult<()> {
+fn sync_with_epi(socket: &UdpSocket, address: SocketAddr) -> PyResult<()> {
     sendto_byte(socket, address)?;
-    recvfrom_byte(socket, poll, events)?;
+    recvfrom_byte(socket)?;
     Ok(())
 }
 
@@ -132,10 +126,9 @@ pub fn env_process_fn<'py>(
         recalculate_agent_id_every_step,
     };
     let flink = get_flink(flinks_folder, proc_id);
-    let mut child_socket = UdpSocket::bind("127.0.0.1:0".parse()?)?;
+    let child_socket = UdpSocket::bind("127.0.0.1:0")?;
     let parent_addr = parent_addr_str.parse::<SocketAddr>()?;
-    let (mut poll, mut events) = get_handshake_poll(&mut child_socket)?;
-    sync_with_epi(&mut child_socket, parent_addr, &mut poll, &mut events)?;
+    sync_with_epi(&child_socket, parent_addr)?;
     let mut shmem;
     let mut attempts = 0;
     loop {
@@ -182,7 +175,7 @@ pub fn env_process_fn<'py>(
             )?;
 
             // Startup complete
-            sync_with_epi(&mut child_socket, parent_addr, &mut poll, &mut events)?;
+            sync_with_epi(&child_socket, parent_addr)?;
 
             // Start main loop
             loop {
