@@ -16,9 +16,7 @@ use std::time::Duration;
 use crate::common::{BoundPyAny, BoundPyDict};
 use crate::env_action::{EnvAction, retrieve_env_action};
 use crate::serdes::Serdes;
-use crate::synchronization::{
-    get_flink, get_handshake_poll, get_socket, recvfrom_byte, sendto_byte,
-};
+use crate::synchronization::{get_flink, get_handshake_poll, recvfrom_byte, sendto_byte};
 
 fn sync_with_epi(
     socket: &mut UdpSocket,
@@ -109,8 +107,7 @@ struct EnvProcessRunningSettings {
 #[allow(clippy::too_many_arguments)]
 #[pyfunction(signature=(
     proc_id,
-    parent_handshake_addr_str,
-    parent_multiplexing_addr_str,
+    parent_addr_str,
     build_env_fn,
     flinks_folder,
     serde_types,
@@ -119,8 +116,7 @@ struct EnvProcessRunningSettings {
     recalculate_agent_id_every_step=false))]
 pub fn env_process_fn<'py>(
     proc_id: u128,
-    parent_handshake_addr_str: String,
-    parent_multiplexing_addr_str: String,
+    parent_addr_str: String,
     build_env_fn: BoundPyAny<'py>,
     flinks_folder: &str,
     serde_types: Serdes,
@@ -136,16 +132,10 @@ pub fn env_process_fn<'py>(
         recalculate_agent_id_every_step,
     };
     let flink = get_flink(flinks_folder, proc_id);
-    let mut child_socket = get_socket()?;
-    let parent_handshake_addr = parent_handshake_addr_str.parse::<SocketAddr>()?;
-    let parent_multiplexing_addr = parent_multiplexing_addr_str.parse::<SocketAddr>()?;
+    let mut child_socket = UdpSocket::bind("127.0.0.1:0".parse()?)?;
+    let parent_addr = parent_addr_str.parse::<SocketAddr>()?;
     let (mut poll, mut events) = get_handshake_poll(&mut child_socket)?;
-    sync_with_epi(
-        &mut child_socket,
-        parent_handshake_addr,
-        &mut poll,
-        &mut events,
-    )?;
+    sync_with_epi(&mut child_socket, parent_addr, &mut poll, &mut events)?;
     let mut shmem;
     let mut attempts = 0;
     loop {
@@ -192,12 +182,7 @@ pub fn env_process_fn<'py>(
             )?;
 
             // Startup complete
-            sync_with_epi(
-                &mut child_socket,
-                parent_multiplexing_addr,
-                &mut poll,
-                &mut events,
-            )?;
+            sync_with_epi(&mut child_socket, parent_addr, &mut poll, &mut events)?;
 
             // Start main loop
             loop {
@@ -205,7 +190,7 @@ pub fn env_process_fn<'py>(
                     match epi_evt.wait(Timeout::Val(Duration::from_secs(5))) {
                         Ok(()) => break,
                         Err(_) => {
-                            sendto_byte(&child_socket, parent_multiplexing_addr)?;
+                            sendto_byte(&child_socket, parent_addr)?;
                         }
                     }
                 }
@@ -284,12 +269,12 @@ pub fn env_process_fn<'py>(
                     EnvAction::DEFER {} => (),
                     EnvAction::CLOSE {} => {
                         env_close(&env)?;
-                        sendto_byte(&child_socket, parent_multiplexing_addr)?;
+                        sendto_byte(&child_socket, parent_addr)?;
                         break;
                     }
                 };
 
-                sendto_byte(&child_socket, parent_multiplexing_addr)?;
+                sendto_byte(&child_socket, parent_addr)?;
             }
             Ok(())
         })
@@ -298,7 +283,7 @@ pub fn env_process_fn<'py>(
             _ = epi_evt.wait(Timeout::Val(Duration::from_secs(1)));
             shm_slice[0] = 1;
             _ = append_bytes(shm_slice, 1, err.to_string().as_bytes());
-            sendto_byte(&child_socket, parent_multiplexing_addr).unwrap();
+            sendto_byte(&child_socket, parent_addr).unwrap();
         })
     }));
     match result {
@@ -307,7 +292,7 @@ pub fn env_process_fn<'py>(
             // Maybe there is a signal to consume still
             _ = epi_evt.wait(Timeout::Val(Duration::from_secs(1)));
             shm_slice[0] = 2;
-            sendto_byte(&child_socket, parent_multiplexing_addr).unwrap();
+            sendto_byte(&child_socket, parent_addr).unwrap();
             resume_unwind(err);
         }
     }

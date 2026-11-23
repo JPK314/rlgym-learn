@@ -30,8 +30,7 @@ from ..basic_config import SerdeTypesModel
 
 def env_process(
     proc_id: int,
-    parent_handshake_addr_str: str,
-    parent_multiplexing_addr_str: str,
+    parent_addr_str: str,
     build_env_fn: Callable[
         [],
         RLGym[
@@ -68,8 +67,7 @@ def env_process(
 
     rust_env_process_fn(
         proc_id,
-        parent_handshake_addr_str,
-        parent_multiplexing_addr_str,
+        parent_addr_str,
         build_env_fn,
         flinks_folder,
         serde_types,

@@ -4,15 +4,6 @@ use pyo3::prelude::*;
 use std::io;
 use std::net::SocketAddr;
 
-pub fn get_socket() -> PyResult<UdpSocket> {
-    Ok(UdpSocket::bind("127.0.0.1:0".parse()?)?)
-}
-
-pub fn get_socket_addr_str(socket: &UdpSocket) -> PyResult<String> {
-    let local_addr = socket.local_addr()?;
-    Ok(format!("{}:{}", local_addr.ip(), local_addr.port()))
-}
-
 pub fn get_handshake_poll(socket: &mut UdpSocket) -> PyResult<(Poll, Events)> {
     let poll = Poll::new()?;
     let events = Events::with_capacity(1);
