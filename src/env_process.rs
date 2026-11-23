@@ -194,7 +194,7 @@ pub fn env_process_fn<'py>(
             // Startup complete
             sync_with_epi(
                 &mut child_socket,
-                parent_handshake_addr,
+                parent_multiplexing_addr,
                 &mut poll,
                 &mut events,
             )?;
